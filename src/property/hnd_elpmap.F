@@ -1,6 +1,6 @@
       subroutine hnd_elpmap(rtdb,basis,geom)
 c
-c $Id$
+c $Id: hnd_elpmap.F 26040 2014-08-26 03:43:05Z niri $
 c
 c     This routine calculates the electrostatic potential
 c     for a given density at the atomic positions.
@@ -153,6 +153,14 @@ c     -------------------------------------------------
         do_points = .false.
         do_output = .true.
       end if
+
+c mw529
+      if(.true.) then
+         call get_points_from_iso(rtdb,basis,geom, 
+     & 0.002D0, 0.00003D0,nprp,i_prp_c)
+         do_points = .true.
+      endif
+
 c
       if (.not. ma_push_get(mt_dbl,nprp,'epot pnt',l_epot,k_epot))
      &    call errquit('hnd_elfmap: ma failed',911,MA_ERR)
@@ -317,7 +325,8 @@ c     ----- release memory block -----
 c
   300 call ga_sync()
 
-      if(ga_nodeid().eq.0.and.ocube) then
+c      if(ga_nodeid().eq.0.and.ocube) then
+      if(.false.) then
         call util_print_centered(luout, 
      >    "writing esp potential to "//cube_name,.true.,.true.)
         call prop_grid_write_cube(geom,nprp,dbl_mb(k_tepot),cube_name)
@@ -339,6 +348,8 @@ c     -----------------------------------------------
         if (.not. rtdb_put(rtdb,'prop:epot_xyz',mt_dbl,
      >                        nprp,dbl_mb(k_tepot)))
      &      call errquit('hnd_elpmap: epot_xyz failed',0,RTDB_ERR)
+
+        call write_ESP_to_grid_file(nprp, i_prp_c, k_tepot)
       end if
 cc
 c     ------- Deallocate MA memory ------
@@ -349,6 +360,7 @@ c
      &   ('hnd_elpmap, ma_pop_stack of l_tepot failed',911,MA_ERR)
       if (.not.ma_pop_stack(l_epot)) call errquit
      &   ('hnd_elpmap, ma_pop_stack of l_epot failed',911,MA_ERR)
+
       if(.not.ocube)  then
         if (.not.ma_pop_stack(h_prp_c)) call errquit
      &      ('hnd_elpmap, ma_pop_stack of h_prp_c failed',911,MA_ERR)
