@@ -1,6 +1,6 @@
       subroutine prop_input(rtdb)
 *
-* $Id$
+* $Id: prop_input.F 25061 2013-12-31 20:34:16Z jochen $
 *
       implicit none
 #include "errquit.fh"
@@ -754,7 +754,24 @@ c
 c
 600   continue
       if(.not.inp_a(token)) goto 20
-      if (inp_compare(.false.,'pad',token)) then
+      if (inp_compare(.false.,'step',token)) then
+        ic = 0
+        do i=1,1
+          if(.not.inp_f(f3(i))) exit
+          ic = ic + 1
+        end do
+        if(ic.eq.1) then
+          f3 = f3(1)
+        else if(ic.ne.3) then
+           call errquit(pname//'need 1 float '//token,
+     >                  0, INPUT_ERR)
+        end if
+        tag="prop:grid:step"
+        if(.not.rtdb_put(rtdb,tag,mt_dbl,1,f3))
+     >       goto 999
+
+c
+      else if (inp_compare(.false.,'pad',token)) then
         ic = 0
         do i=1,3
           if(.not.inp_f(f3(i))) exit
@@ -770,6 +787,7 @@ c
         f3 = f3*cang2au
         if(.not.rtdb_put(rtdb,tag,mt_dbl,3,f3)) 
      >       goto 999
+c
       else if (inp_compare(.false.,'rmin',token)) then
         ic = 0
         do i=1,3
@@ -832,4 +850,4 @@ c      --------------------------
      >        RTDB_ERR)
 
       end
-c $Id$
+c $Id: prop_input.F 25061 2013-12-31 20:34:16Z jochen $
