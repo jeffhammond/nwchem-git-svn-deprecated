@@ -5,6 +5,7 @@
 *.mod
 *.start
 *.finished
+*.pyc
 bin
 lib
 src/tools/ga-*
