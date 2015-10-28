@@ -2853,7 +2853,8 @@ c
 c     
       if (zmt_source(geom) .ne. ' ' .and. 
      $     util_print('geomzmat',print_none)) then
-         geom_print = geom_print_zmatrix(geom,0.d0,' ',.false.)
+c        JEM: Must pass an array, not a scalar
+         geom_print = geom_print_zmatrix(geom,(/0.d0/),' ',.false.)
       else
          geom_print = .true.
       endif
@@ -4670,7 +4671,7 @@ c
       external geom_check_handle
 c
       geom_atomct_set = geom_check_handle(geom, 'geom_atomct_set')
-      if (.not. geom_atomct_set) return
+      if (.not. geom_atomct_set)  return
 c
       if (ncent.le.0) then
          write(LuOut,*) ' geom_atomct_set: too few centers ',ncent,

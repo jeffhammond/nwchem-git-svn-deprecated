@@ -14,6 +14,8 @@
 	movecs_log.o \
 	nbf_to_mbf.o \
 	dft_frozemb.o \
+	dft_frozemb_fde.o \
+	int_1e_fde.o \
 	sca_lab_mat.o \
 	dft_utilmap.o \
 	dft_genutils.o

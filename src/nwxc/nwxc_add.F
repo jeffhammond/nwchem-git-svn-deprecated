@@ -272,25 +272,25 @@ c       nwxc_wght_hf = nwxc_wght_hf + 0.46d0*dfweight
         nwxc_cam_srhfex = .false.
       else if (dfname.eq."xcampbe".or.dfname.eq."xcampbe96") then
         nwxc_add_df = nwxc_all_add_func(NWXCP_X_CAMPBE,dfweight)
-        nwxc_wght_hf    = nwxc_wght_hf + 0.25d0*dfweight
+        nwxc_wght_hf    = nwxc_wght_hf + 1.00d0*dfweight
         nwxc_cam_alpha  = 0.0d0
         nwxc_cam_beta   = 1.0d0
         nwxc_cam_gamma  = 0.33d0
-        nwxc_cam_srhfex = .true.
+        nwxc_cam_srhfex = .false.
       else if (dfname.eq."xcamrevpbe") then
         nwxc_add_df = nwxc_all_add_func(NWXCP_X_CAMREVPBE,dfweight)
-        nwxc_wght_hf    = nwxc_wght_hf + 0.25d0*dfweight
+        nwxc_wght_hf    = nwxc_wght_hf + 1.00d0*dfweight
         nwxc_cam_alpha  = 0.0d0
         nwxc_cam_beta   = 1.0d0
         nwxc_cam_gamma  = 0.33d0
-        nwxc_cam_srhfex = .true.
+        nwxc_cam_srhfex = .false.
       else if (dfname.eq."xcamrpbe") then
         nwxc_add_df = nwxc_all_add_func(NWXCP_X_CAMRPBE,dfweight)
-        nwxc_wght_hf    = nwxc_wght_hf + 0.25d0*dfweight
+        nwxc_wght_hf    = nwxc_wght_hf + 1.00d0*dfweight
         nwxc_cam_alpha  = 0.0d0
         nwxc_cam_beta   = 1.0d0
         nwxc_cam_gamma  = 0.33d0
-        nwxc_cam_srhfex = .true.
+        nwxc_cam_srhfex = .false.
       else if (dfname.eq."xcams12g".or.dfname.eq."xcam-s12g") then
         nwxc_add_df = nwxc_all_add_func(NWXCP_X_CAMS12G,dfweight)
         nwxc_wght_hf    = nwxc_wght_hf + dfweight
@@ -524,6 +524,8 @@ c       nwxc_add_df = nwxc_all_add_func(NWXCP_C_HCTH_A,dfweight)
         nwxc_add_df = nwxc_all_add_func(NWXCP_C_M11,dfweight)
       else if (dfname.eq."cm11-l") then
         nwxc_add_df = nwxc_all_add_func(NWXCP_C_M11_L,dfweight)
+      else if (dfname.eq."cmpbe") then
+        nwxc_add_df = nwxc_all_add_func(NWXCP_C_MPBE,dfweight)
       else if (dfname.eq."cop".or.dfname.eq."op") then
         nwxc_add_df = nwxc_all_add_func(NWXCP_C_OP,dfweight)
       else if (dfname.eq."optc") then

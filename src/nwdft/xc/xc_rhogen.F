@@ -1,3 +1,4 @@
+#define STAG 1
 * $Id$
 c     Modified for construction of multiple sets of perturbed densities
 c     and explicit derivative densities wrt nuclei
@@ -18,7 +19,7 @@ C>
 C> \brief Evaluate the density and their derivatives on a grid
 C>
 C> 
-      Subroutine xc_rhogen(what,
+      Subroutine xc_rhogen(what_in,
      T     tol_rho, basis, g_dens, max_at_bf, 
      N     natoms, curatoms, ncuratoms, npert,       
      I     ipol, nq, nbf, mbf, GRAD, ipol2,
@@ -29,6 +30,7 @@ C>
      &     rdelchi_atom, rdens_atom, cetobfr, wmax, 
      &     ttau, kske, dolap)
       implicit none
+#include "global.fh"
 #include "errquit.fh"
 #include "mafdecls.fh"
 #include "dftpara.fh"
@@ -39,7 +41,7 @@ C>
                    !< functional
       Logical kske !< [Input] .true. when using kinetic energy density
                    !< functional
-      integer what !< [Input] What to calculate
+      integer what_in !< [Input] What to calculate
                    !< - what=0: calculate density
                    !< - what=1: calculate perturbed density (derivative
                    !<   with respect to electron position)
@@ -47,7 +49,7 @@ C>
                    !<   nuclear coordinates
        logical dolap       !< [Input] .true. if the Laplacian of the 
                            !< density is required
-
+c what=-1 dplot aka density contours
 c what=0 dens
 c what=1 pert
 c what=2 nucder
@@ -93,7 +95,7 @@ c     local declarations
 c
       integer i0, ii, mu, n, npol
       integer ipert        ! perturbation loop index
-      integer iat, inizia, ifirst, ilast, nbfia, nnia
+      integer iat, inizia, ifirst, ilast, nbfia, nnia, iat_in
       integer ifinia, ifinja
       integer jat, inizja, jfirst, jlast, nbfja, nnja
       integer iatcur, jatcur
@@ -110,11 +112,22 @@ c
       integer nonzero,nonz0
       integer i_nz,l_nz
       integer sizeblk, gindx
+      integer what
+      logical zapnegatives
 #ifdef DEBUG
       integer ga_nodeid
       external ga_nodeid
 #endif
+      g_keepd(1)=0
+      g_keepd(2)=0
       call starttimer(monitor_xcrho)
+      if(what_in.ge.0) then
+         what=what_in
+         zapnegatives=.true.
+      else
+         what=-what_in
+         zapnegatives=.false.
+      endif
 c
 c     Evaluate the charge density and its gradient at each of the
 c     sampling points 
@@ -184,7 +197,13 @@ c
      A        Pmat,nbhandl)
       endif
 
+#ifdef STAG
+      do 230 iat_in = 1+ga_nodeid(), natoms+ga_nodeid()
+         iat=mod(iat_in,natoms)
+         if(iat.eq.0) iat=natoms
+#else
       do 230 iat = 1, natoms
+#endif
          inizia = iniz(iat)
          if (inizia.eq.0)goto 230
          if(what.eq.2) then
@@ -408,6 +427,7 @@ c
   220    continue
   225    continue
   230 continue
+      if(zapnegatives) then
 c
 c     Enforce results that are compatible with the laws of physics.
 c     I.e. Rho >= 0, Tau >= 0, Rho=0 ==> Grad(Rho)=0, and
@@ -497,6 +517,7 @@ c
             enddo
           enddo
         endif
+      endif
       endif
 c
       call starttimer(monitor_rhocomp2)
@@ -624,6 +645,7 @@ c@@@@@@@@@@@@@@@@@
      O     nz,
      R     rchi_atom,rdelchi_atom,rdens_atom)
       implicit none
+#include "global.fh"
       logical grad
       integer ipol,natoms,npert
       integer iniz(natoms) ! mapping of nbf_ao -> mbf
@@ -636,7 +658,7 @@ c      output
 c
       integer nz(*)
 c
-      integer iat,jat,inizia,inizja
+      integer iat,jat,inizia,inizja,iat_in
       integer ipert
       double precision FUNC_MAXI,FUNC_MAXJ,DELFUNC_MAX,FUNC_MAX,
      ,     P_MAXJ,P_MAXJ_A,P_MAXJ_B,P_MAXIJ
@@ -649,8 +671,14 @@ c
       if(grad) DELFUNC_MAX = dabsmax(natoms,rdelchi_atom)
       
       nonzero=0
-
+cscat
+#ifdef STAG
+      do iat_in = 1+ga_nodeid(), natoms+ga_nodeid()
+         iat=mod(iat_in,natoms)
+         if(iat.eq.0) iat=natoms
+#else
       do iat = 1, natoms
+#endif
          inizia = iniz(iat)
          if (inizia.ne.0) then
 c     

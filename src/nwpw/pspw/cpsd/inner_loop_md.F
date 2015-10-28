@@ -20,7 +20,7 @@
      >                      npack1,nfft3d,nemaxq,
      >                      psi0,psi1,psi2,dn,
      >                      it_in,it_sum,E,
-     >                      hml,lmd,
+     >                      hml,lmd,lmd1,
      >                      Hpsi,psi_r,
      >                      calc_pressure,pressure,p1,p2,
      >                      fractional,occ0,occ1,occ2)
@@ -35,7 +35,7 @@
       real*8     dn(2*nfft3d,2)
       integer    it_in,it_sum
       real*8     E(*)
-      real*8     hml(*),lmd(*)
+      real*8     hml(*),lmd(*),lmd1(*)
 
 *     **** very big workspace variables ****
       complex*16 Hpsi(npack1,nemaxq)
@@ -63,6 +63,7 @@ ccccccc#include "frac_occ.fh"
       real*8  ehsic,phsic,exsic,pxsic,ehfx,phfx,espring,enlocal
       !real*8  e_ionmm,e_qmmm,e_mmmm,e_pol,e_vib,e_cav
       real*8   e_lj,e_q,e_spring
+      real*8   ehartree_atom,ecmp_cmp,ecmp_pw,exc_atom,pxc_atom
       real*8  s,r
 
 
@@ -132,7 +133,13 @@ c     real*8     fion(3,natmx)
       real*8   nwpw_meta_gga_pxc,ion_disp_energy
       external nwpw_meta_gga_pxc,ion_disp_energy
 
-
+*     ***** PAW external functions ****
+      logical  psp_pawexist
+      external psp_pawexist
+      real*8   psp_hartree_atom,psp_hartree_cmp_cmp,psp_hartree_cmp_pw
+      external psp_hartree_atom,psp_hartree_cmp_cmp,psp_hartree_cmp_pw
+      real*8   psp_kinetic_core,psp_ion_core
+      external psp_kinetic_core,psp_ion_core
 
       call Parallel_np(np)
       call Pack_npack(0,npack0)
@@ -216,6 +223,10 @@ c     real*8     fion(3,natmx)
       fmass = control_fake_mass()
       dte   = dt*dt/fmass
       if (.not. verlet) dte=0.5d0*dte
+      h = 1.0d0/(2.0d0*dt)
+
+      sa1 = 1.0d0
+      sa2 = 1.0d0
       if (.not.nose) then
         sa1 =    1.0d0/(2.0d0-sa_alpha(1))
         sa2 = sa_alpha(1)/(2.0d0-sa_alpha(1))
@@ -249,6 +260,7 @@ c     real*8     fion(3,natmx)
 *       ********************************
         call phafac()
         if (control_version().eq.3) call ewald_phafac()
+        if (psp_pawexist()) call nwpw_gintegrals_set(.true.)
 
         call nwpw_timing_start(11)
 *       *******************
@@ -424,10 +436,34 @@ c           call D3dB_r_SMul(1,0.5d0,dcpl_mb(tmp1(1)),dcpl_mb(tmp1(1)))
            call semicore_xc_F(ispin,dbl_mb(xcp(1)),dbl_mb(fion(1)))
         end if
 
+*       ***********************************************
+*       **** get the paw lagrange multiplier force ****
+*       ***********************************************
+        if (psp_pawexist()) then
+           if (.not.verlet) then
+              call Dneall_ffm_sym_Multiply(0,psi1,Hpsi,npack1,hml)
+              call Dneall_m_scal(0,(-1.0d0),hml)
+              call Dneall_mm_copy(0,hml,lmd)
+              call Dneall_mm_copy(0,hml,lmd1)
+           end if
+           !tmp_L = 2*lmd - lmda1
+           call Dneall_mm_copy(0,lmd,dbl_mb(tmp_L(1)))
+           call Dneall_m_scal(0,2.0d0,dbl_mb(tmp_L(1)))
+           call Dneall_mm_daxpy(0,-1.0d0,lmd1,dbl_mb(tmp_L(1)))
+           call psp_paw_overlap_fion(ispin,
+     >                          dbl_mb(tmp_L(1)),
+     >                          psi1,
+     >                          dbl_mb(fion(1)))
+        end if
+
+*       ****************************
 *       **** get the qmmm force ****
+*       ****************************
         if (pspw_qmmm_found()) call pspw_qmmm_fion(dbl_mb(fion(1)))
 
+*       **********************************
 *       **** get the dispersion force ****
+*       **********************************
         if (ion_disp_on()) call ion_disp_force(dbl_mb(fion(1)))
 
 
@@ -504,16 +540,24 @@ c              call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
         !**** orthoganality constraint ****
         dte0 = dte
         if (nose.and.verlet) dte0 = dte*sse
-        if (fractional) then
-        call psi_lmbda2(ispin,neq,nemaxq,npack1,psi1,psi2,
-     >                  dte0,occ1,
-     >                  lmd,dbl_mb(tmp_L(1)),ierr)
+
+        if (psp_pawexist()) then
+           call psp_overlap_S(ispin,neq,psi1,psi_r)
+           call phafac2()
+           call Dneall_mm_copy(0,lmd,lmd1)
+           call psi_lmbda_paw(ispin,ne,nemaxq,npack1,psi_r,psi2,
+     >                        dte,
+     >                        lmd,dbl_mb(tmp_L(1)),ierr)
+        else if (fractional) then
+           call psi_lmbda2(ispin,ne,nemaxq,npack1,psi1,psi2,
+     >                     dte0,occ1,
+     >                     lmd,dbl_mb(tmp_L(1)),ierr)
         else if (sic) then
-        call psi_lmbda_sic(ispin,neq,nemaxq,npack1,psi1,psi2,dte0,
-     >                 lmd,dbl_mb(tmp_L(1)),ierr)
+           call psi_lmbda_sic(ispin,ne,nemaxq,npack1,psi1,psi2,dte0,
+     >                        lmd,dbl_mb(tmp_L(1)),ierr)
         else
-        call psi_lmbda(ispin,neq,nemaxq,npack1,psi1,psi2,dte0,
-     >                 lmd,dbl_mb(tmp_L(1)),ierr)
+           call psi_lmbda(ispin,ne,nemaxq,npack1,psi1,psi2,dte0,
+     >                    lmd,dbl_mb(tmp_L(1)),ierr)
         end if
 
         !**** center of mass constraint ****
@@ -526,15 +570,28 @@ c              call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
 *       **************************
         if (nose) then
           if (verlet) then
-             eke = 0.0d0
-             do i=1,n2(ispin)
-                call Pack_cc_idot(1,psi2(1,i),psi0(1,i),sum)
-                eke = eke+sum
-             end do
-             if (np.gt.1) call Parallel_SumAll(eke)
-             eke = (ne(1)+ne(2) - eke)
-             if (ispin.eq.1) eke = 2.0d0*eke
-             eke = 0.5d0*(fmass/(dt*dt))*eke
+             if (psp_pawexist()) then
+                eke = 0.0d0
+                do i=1,n2(ispin)
+                   call Pack_c_SMul1(1,-h,psi0(1,i))
+                   call Pack_cc_daxpy(1,h,psi2(1,i),psi0(1,i))
+                   call Pack_cc_idot(1,psi0(1,i),psi0(1,i),sum)
+                   eke = eke+sum
+                end do
+                if (np.gt.1) call Parallel_SumAll(eke)
+                if (ispin.eq.1) eke = 2.0d0*eke
+                eke = eke*fmass
+             else
+                eke = 0.0d0
+                do i=1,n2(ispin)
+                   call Pack_cc_idot(1,psi2(1,i),psi0(1,i),sum)
+                   eke = eke+sum
+                end do
+                if (np.gt.1) call Parallel_SumAll(eke)
+                eke = (ne(1)+ne(2) - eke)
+                if (ispin.eq.1) eke = 2.0d0*eke
+                eke = 0.5d0*(fmass/(dt*dt))*eke
+             end if
              eki = ion_ke()
              call Nose_Verlet_Step(eke,eki)
           else
@@ -575,6 +632,7 @@ c              call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
       call nwpw_timing_start(10)
       call Parallel2d_np_i(np_i)
       call Parallel2d_np_j(np_j)
+      if (psp_pawexist()) call phafac() !*** reset phase factors to r1 ***
 
 *     *** get orbital energies ****
       call Dneall_ffm_sym_Multiply(0,psi1,Hpsi,npack1,hml)
@@ -598,7 +656,6 @@ c              call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
       if (control_version().eq.4) eion = ion_ion_e()
 
 
-    
            
 *     **** get coulomb energy ****
       if (control_version().eq.3) ehartr = coulomb_e(dcpl_mb(dng(1)))
@@ -629,22 +686,20 @@ c              call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
          pxc = pxc + nwpw_meta_gga_pxc(ispin,neq,psi1)
       end if
 
-
-
         
 *     **** velocity and kinetic energy of psi ****
-      h = 1.0d0/(2.0d0*dt)
-      eke = 0.0d0
-      do i=1,n2(ispin)
-c         call Pack_c_SMul(1,-h,psi0(1,i),psi0(1,i))
-         call Pack_c_SMul1(1,-h,psi0(1,i))
-         call Pack_cc_daxpy(1,h,psi2(1,i),psi0(1,i))
-         call Pack_cc_idot(1,psi0(1,i),psi0(1,i),sum)
-         eke = eke+sum
-      end do
-      if (np.gt.1) call Parallel_SumAll(eke)
-      eke = eke*fmass
-      if (ispin.eq.1) eke = 2.0d0*eke
+      if ((.not.psp_pawexist()).or.(.not.nose)) then
+         eke = 0.0d0
+         do i=1,n2(ispin)
+            call Pack_c_SMul1(1,-h,psi0(1,i))
+            call Pack_cc_daxpy(1,h,psi2(1,i),psi0(1,i))
+            call Pack_cc_idot(1,psi0(1,i),psi0(1,i),sum)
+            eke = eke+sum
+         end do
+         if (np.gt.1) call Parallel_SumAll(eke)
+         eke = eke*fmass
+         if (ispin.eq.1) eke = 2.0d0*eke
+      end if
 
  
 
@@ -669,6 +724,28 @@ c         call Pack_c_SMul(1,-h,psi0(1,i),psi0(1,i))
          E(11) = e_lj
          E(12) = e_q
          E(13) = e_spring
+      end if
+
+*     **** PAW ee terms ****
+      if (psp_pawexist()) then
+
+         ehartree_atom = psp_hartree_atom(ispin,neq,psi1)
+         ecmp_cmp      = psp_hartree_cmp_cmp(ispin)
+         ecmp_pw       = psp_hartree_cmp_pw(ispin,dcpl_mb(dng(1)),dn)
+         !E(40) = ehartree_atom             !*** vcoulomb atom  ***
+         !E(41) = ecmp_cmp                  !*** ncmp-ncmp coulomb energy ***
+         !E(42) = ecmp_pw                   !*** ncmp-pw coulomb energy ***
+
+         call psp_xc_atom(ispin,neq,psi1,exc_atom,pxc_atom)
+         !E(43) = exc_atom                  !*** exc atom  ***
+         !E(44) = pxc_atom                  !*** pxc atom  ***
+
+         E(36) = psp_kinetic_core()        !*** kinetic core  - independent of psi ***
+         E(45) = psp_ion_core()            !*** ion core energy - independent of psi ***
+
+         E(2) = E(2)
+     >        + exc_atom - pxc_atom
+     >        - ehartree_atom - ecmp_cmp - ecmp_pw
       end if
 
 *     **** SIC corrections ****

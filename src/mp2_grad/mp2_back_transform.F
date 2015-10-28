@@ -47,7 +47,7 @@
 c
 c     Allocate memory for back transformation routine
 c
-      integer g_buf
+      integer g_buf,g_buf_trans
       integer nshpair, nshpairlocal, nbfpair, nbfpairlocal
       integer l_shpairs, k_shpairs, l_shpairslocal, k_shpairslocal
       integer l_shdim, k_shdim, l_shlo, k_shlo
@@ -141,10 +141,15 @@ c
      $     'mp2: backt', 1, 1, int_mb(k_map), nblock, g_buf))
      $     call errquit('mp2: backt: ga_create failed', nva*nbfpair,
      &       GA_ERR)
+      if (.not.(ga_create( mt_dbl, nva, nbfpair,'mp2: backt2',
+     $                     0, nbfpair, g_buf_trans )))
+     $   call errquit('mp2:backt: ga_create2 failed', nva*nbfpair,
+     &       GA_ERR)
 c     
       call util_file_name('2pdm', .true., .true., fname)
 #ifdef NOIO
        eaftype=mp2_eaftype(rtdb,p_file_size)
+      if(ga_nodeid().eq.0) write(6,*) ' mp2_eaf for 2pdm  ',eaftype
 #else
        eaftype=eaf_rw
 #endif
@@ -172,7 +177,7 @@ c
      $     nshpairlocal, nbfpairlocal, int_mb(k_shpairslocal),
      $     int_mb(k_shdim), int_mb(k_shlo),
      $     dbl_mb(k_t), dbl_mb(k_iauv), dbl_mb(k_tmp),
-     $     int_mb(k_map), g_buf)
+     $     int_mb(k_map), g_buf, g_buf_trans)
       call pstat_off(ps_backt)
       call ga_sync()
 c
@@ -180,6 +185,8 @@ c     Free up some memory and then contract with gradient integrals.
 c
       if (.not. ga_destroy(g_buf)) call errquit
      $     ('mp2: backt: ga destroy failed', 0, GA_ERR)
+      if (.not. ga_destroy(g_buf_trans)) call errquit
+     $     ('mp2: backt: ga destroy failed', 1, GA_ERR)
       if (.not. ma_chop_stack(l_t)) call errquit
      $     ('mp2:backt: first chop stack failed', 0, MA_ERR)
 c
@@ -300,7 +307,7 @@ c
      $     nshpairlocal, nbfpairlocal, shpairslocal,
      $     shdim, shlo,
      $     t, ia_uv, tmp,
-     $     map, g_buf)
+     $     map, g_buf, g_buf_trans)
       implicit none
 #include "errquit.fh"
 #include "global.fh"
@@ -338,6 +345,7 @@ c
       integer twopdmunit        ! Unit no. for part transformed two-PDM
       integer map(0:*)          ! First index of g_buf on each node
       integer g_buf             ! Global array handle for transpose buffer
+      integer g_buf_trans       ! Global array handle for tr-transpose buffer
 c     
 *     double precision tsum
 
@@ -374,7 +382,7 @@ c     flag and scaling factors for SCS-MP2
       endif
 c     
       do i=oseg_lo,oseg_hi 
-	 call ga_fill_patch(g_buf,1,nva,1,nbfpair,99.0d0) ! For debug
+cedo	 call ga_fill_patch(g_buf,1,nva,1,nbfpair,99.0d0) ! For debug
          symi=irs_a(i)
          do a=nva_lo_local,nva_hi_local
             syma=irs_a(a)
@@ -452,11 +460,21 @@ c     nshpairlocal              no. of shellpairs assigned to this processor
 c     nbfpairlocal              no. of bfpairs assigned to this processor
 c     shpairslocal(1:2,1:nshpairlocal) (u>=v) local shell pair indices
 c     
-            call ga_put(g_buf, a-nva_lo+1, a-nva_lo+1,
+            call ga_put(g_buf_trans, a-nva_lo+1, a-nva_lo+1,
      $           1, nbfpair, tmp, 1)
 c     
          end do                 ! End of a
-         call ga_sync
+         call ga_sync()
+#if 0
+         call ga_copy(g_buf_trans,g_buf)
+#else
+      call mp2_copyback(g_buf,g_buf_trans)
+#endif
+cc      call ga_print(g_buf_trans)
+cc      call ga_print(g_buf)
+c               call ga_sync()
+c         call ga_mask_sync(.true.,.false.)
+         call ga_sync()
 c     
 c     Now have locally (a,1:nbfpairlocal).  Loop thru local shell pairs
 c     transform the a index and write to disk.
@@ -494,6 +512,7 @@ c
             ptr = ptr + count*(oseg_hi-oseg_lo+1)
          end do
 c     
+cedo         call ga_mask_sync(.true.,.false.)
          call ga_sync
 c     
       end do                    ! End of i
@@ -1037,3 +1056,100 @@ c
 c
       end
 c--------------------------------------------------
+      subroutine mp2_copyback(g_a,g_a_trans)
+      implicit none
+#include "mafdecls.fh"
+#include "global.fh"
+#include "errquit.fh"
+c
+c     re-arrange (a la transponse) from one GA distrib. to the opposite
+c
+      integer g_a,g_a_trans
+c
+      integer dim1,dim2,type
+      integer ilo,ihi,jlo,jhi
+      integer i_length,j_length
+      integer k_buff,l_buff
+      integer i_chunk
+      logical dowork
+c
+      call ga_distribution(g_a, ga_nodeid(), ilo, ihi, jlo, jhi)
+      dowork=.true.
+      if ((ilo.eq.0).and.(ihi.eq.-1))  dowork=.false.
+      if(dowork) then
+         i_length=ihi-ilo+1
+         j_length=jhi-jlo+1
+         if (.not. ma_push_get(mt_dbl,i_length*j_length,
+     M        'mp2 copyb',l_buff,k_buff))
+     $        call errquit('mp2:copyb could not allocate buff',
+     L        i_length*j_length,MA_ERR)
+      endif
+      call mp2_copyback0(dowork,g_a,g_a_trans,
+     C     dbl_mb(k_buff),ilo,ihi,jlo,jhi)
+      if(dowork) then
+         if (.not. ma_chop_stack(l_buff)) call errquit
+     $        ('mp2: backt: failed chopping stack',0, MA_ERR)
+      endif
+
+      return
+      end
+      subroutine mp2_copyback0(dowork,g_a,g_a_trans,
+     B     buff,ilo,ihi,jlo,jhi)
+      implicit none
+#include "mafdecls.fh"
+#include "global.fh"
+#include "errquit.fh"
+      logical dowork
+      integer g_a,g_a_trans
+      integer ilo,ihi,jlo,jhi
+      double precision buff(ilo:ihi,jlo:jhi)
+c
+      integer dim1,dim2,type
+      integer i_length,j_length
+      integer i_chunk,iseg,i_ld,i_0,i_1
+      integer t_ilo, t_ihi, t_jlo, t_jhi
+      integer nsegs,iseg_in
+      double precision tr,tr_tr
+c
+      call ga_distribution(g_a_trans, ga_nodeid(), 
+     T     t_ilo, t_ihi, t_jlo, t_jhi)
+      i_chunk=t_ihi-t_ilo+1
+ 123  format(i4,a,2i9)
+      call ga_igop(123,i_chunk,1,'max')
+      if(i_chunk.lt.1) then
+         write(6,123) ga_nodeid(),'1trans ilo ihi ',t_ilo, t_ihi
+         call errquit(' mp2_copyback: bad i_chunk',i_chunk,0)
+      endif
+
+      if(dowork) then
+         call ga_inquire(g_a, type, dim1, dim2)
+c     scatter first value
+c     check for remainder
+         nsegs=dim1/i_chunk
+         if(mod(dim1,i_chunk).ne.0) nsegs=nsegs+1
+cstaggered
+         do iseg_in=ga_nodeid()+1,ga_nodeid()+nsegs
+            iseg=mod(iseg_in,nsegs)+1
+c            i_ld=i_chunk
+            i_ld=ihi-ilo+1
+c     check for remainder
+            i_0=(iseg-1)*i_chunk+1
+            i_1=iseg*i_chunk
+            if(iseg.eq.nsegs) i_1=dim1
+            call ga_get(g_a_trans,i_0,i_1,
+     A           jlo,jhi,buff(i_0,jlo),i_ld)
+         enddo
+      endif
+c     everybody needs to have the buffer filled
+      call ga_sync()
+      if(dowork) call ga_put(g_a, ilo, ihi, jlo, jhi, buff, ihi-ilo+1)
+#if 0
+      call ga_sync()
+      tr=ga_ddot(g_a,g_a)
+      tr_tr=ga_ddot(g_a_trans,g_a_trans)
+      if(abs(tr-tr_tr).gt.1d-6)then
+         if(ga_nodeid().eq.0)write(6,*) 'tr ',tr,' tr_tr ',tr_tr
+      endif
+#endif
+      return
+      end

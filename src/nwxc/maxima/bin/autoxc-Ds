@@ -125,6 +125,9 @@ version="$Id$"
 version=($version)
 revision="${version[1]}, revision ${version[2]} ${version[3]}"
 #
+revision_rewrap=`./bin/rewrap.py --version`
+revision_subr=`./bin/call_subroutine.py --version`
+#
 # The input file containing the DFT functional specification as a
 # Maxima expression
 #
@@ -227,6 +230,12 @@ sed -e 's/ *$//' -e 's/;$/$/' $inputfile > $f_quiet
 # What version of Maxima are we using?
 #
 maxima_version=`maxima --version`
+#
+# Work out what LISP interpreter Maxima is using
+#
+f_maxima=${TMPDIR:-/tmp}/fnc_maxima.$$
+echo > $f_maxima
+lisp_version=`maxima -b $f_maxima | grep -i lisp | sed -e 's/using Lisp //'`
 #
 # Write Maxima code to analyze the functional given
 #
@@ -548,6 +557,152 @@ TeX_opt(l,e) := block( [ll: l, le: optimize(e)],
       else print("Pos2: What the heck?: ",p)
   else TeX_block(ll,le)
   )$
+
+/* eliminateAt
+
+In this application for the closed density functional derivatives we will
+have entities of the form at(diff(densfunc(rhoa,rhob),rhoa,1),rhob=rhoa).
+The "at" function interferes with the expression optimizer eventually leading
+to Fortran code that cannot easily be transformed into valid Fortran that
+calls the right subroutines. 
+
+The important pieces of information in the offending entity are:
+1. densfunc
+   - the name of the subroutine we need to call eventually
+2. the number of arguments to densfunc
+   - specifies the type of functional (LDA, GGA, or meta-GGA) and hence the
+     parameter list for the subroutine call
+3. the further arguments of diff
+   - specifies the order of differentiation and the parameters with respect to
+     which the functional is differentiated, and by extension the variables
+     returned from the subroutine call that hold the relevant data.
+   - beware though that the cross derivative
+     diff(lda(rhoa,rhob)*gga(rhoa,rhob,gammaaa,gammaab,gammabb),rhoa,rhob)
+     leads to terms involving diff(lda(rhoa,rhob),rhob) which is not computed
+     in the closed shell lda implementation, instead diff(lda(rhoa,rhob),rhoa)
+     is calculated and has the same value. Hence additional translations are
+     needed to ensure we pick the right results from the subroutines we
+     invoke.
+Hence we can replace the entity given above by diff(densfunc(rhoa,rhoa),rhoa,1)
+without losing the three crucial bits of information but at the same time
+eliminating the troublesome "at" function.
+
+The eliminateAt function executes this substitution and returns the resulting
+expression.
+*/
+eliminateAt(expression) :=
+  block( [ops,args,result,arg],
+         if atom(expression)
+           then expression
+           else
+              ( ops:  op(expression),
+                args: args(expression),
+                if piece=nounify('at)
+                then processAt(first(args))
+                else
+                   (
+                     result: [],
+                     for arg in args do (
+                        result: endcons(eliminateAt(arg),result)
+                     ),
+                     apply(ops,result)
+                   )
+              )
+       )$
+
+/* processAt
+
+This function take diff(densfunc(rhoa,rhob),rhoa,1) and substitutes 
+rhoa for rhob, gammaaa for gammaab and gammabb, and taua for taub in the
+argument list of densfunc. It returns the modified diff expression of the 
+form diff(densfunc(rhoa,rhoa),rhoa,1).
+*/
+processAt(expression) :=
+   block( [ops,args,result,arg],
+          if atom(expression)
+            then error("The contents of at() should not be an atom")
+            else
+               ( ops:  op(expression),
+                 args: args(expression),
+                 if piece#nounify('derivative)
+                 then error("Only diff() is supposed to appear in at() at this point")
+                 else
+                    (
+                      result: [],
+                      arg: first(args),
+                      result: endcons(processFunc(arg),result),
+                      args: rest(args),
+                      args: canonicalArgs(args),
+                      for arg in args do (
+                         result: endcons(arg,result)
+                      ),
+                      apply(ops,result)
+                    )
+               )
+        )$
+
+/* canonicalArgs
+
+This function takes the argument list of the diff-construct (i.e. for
+diff(densfunc(rhoa,rhob),rhoa,1,rhob,2) it takes [rhoa,1,rhob,2]) and,
+if needed, replaces it with the derivative that the closed shell codes
+calculate (i.e. [rhoa,2,rhob,1] in the previous example).
+The implementation of this function is mind-bogglingly dumb. I just go 
+through all possible cases and check whether the list of arguments matches
+one. If so I return the canonical list of arguments for that case.
+*/
+canonicalArgs(args) :=
+   block( [],
+          if (args = [rhob,1]) then
+             return([rhoa,1])
+          elseif (args = [gammabb,1]) then
+             return([gammaaa,1])
+          elseif (args = [taub,1]) then
+             return([taua,1])
+          elseif (args = [rhob,1,taua,1]) then
+             return([rhoa,1,taub,1])
+          elseif (args = [rhob,1,taub,1]) then
+             return([rhoa,1,taua,1])
+          elseif (args = [rhob,1,gammaaa,1]) then
+             return([rhoa,1,gammabb,1])
+          elseif (args = [rhob,1,gammaab,1]) then
+             return([rhoa,1,gammaab,1])
+          elseif (args = [gammaab,1,gammabb,1]) then
+             return([gammaaa,1,gammaab,1])
+          elseif (args = [gammabb,2]) then
+             return([gammaaa,2])
+          elseif (args = [gammaab,1,taub,1]) then
+             return([gammaab,1,taua,1])
+          elseif (args = [gammabb,1,taua,1]) then
+             return([gammaaa,1,taub,1])
+          elseif (args = [gammabb,1,taub,1]) then
+             return([gammaaa,1,taua,1])
+          elseif (args = [taub,2]) then
+             return([taua,2])
+          else
+             return(args)
+        )$
+
+/* processFunc
+
+This function takes an expression of the form densfunc(rhoa,rhob) and applies
+the relevant substitutions to the argument list and returns the expression of
+the densfunc(rhoa,rhoa) form.
+*/
+processFunc(expression) :=
+   block( [ops,args,arg,result],
+          ops: op(expression),
+          args: args(expression),
+          result: [],
+          for arg in args do (
+             arg: subst(rhoa,rhob,arg),
+             arg: subst(gammaaa,gammaab,arg),
+             arg: subst(gammaaa,gammabb,arg),
+             arg: subst(taua,taub,arg),
+             result: endcons(arg,result)
+          ),
+          apply(ops,result)
+        )$
 
 /* Ideally we want reasonably compact expressions so we extend diff to try and
    generate those.
@@ -1324,13 +1479,13 @@ cl1g: [ Cmat(iq,D1_GAA), Cmat(iq,D1_GAB) ] $
 cl1t: [ Mmat(iq,D1_TA) ] $
 
 ce0 : [ func(rhoa,rhoa,gammaaa,gammaaa,gammaaa,taua,taua) ] $
-ce1r: [ at(df1ra(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
-ce1g: [ at(df1gaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df1gab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
-ce1t: [ at(df1ta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
+ce1r: [ eliminateAt(at(df1ra(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
+ce1g: [ eliminateAt(at(df1gaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df1gab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
+ce1t: [ eliminateAt(at(df1ta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
 
 ce0lab : [ funclab(rhoa,rhoa) ] $
-ce1lr: [ at(dflab1ra(rhoa,rhob),[rhoa=rhoa,rhob=rhoa]) ] $
+ce1lr: [ eliminateAt(at(dflab1ra(rhoa,rhob),[rhoa=rhoa,rhob=rhoa])) ] $
 ce1lg: [ 0,
            0 ] $
 ce1lt: [ 0 ] $
@@ -1584,25 +1739,25 @@ cl2t: [ Mmat2(iq,D2_RA_TA),   Mmat2(iq,D2_RA_TB),
         Mmat2(iq,D2_GAB_TA),
         Mmat2(iq,D2_TA_TA),   Mmat2(iq,D2_TA_TB) ] $
 
-ce2r: [ at(df2rara(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2rarb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
-ce2g: [ at(df2ragaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2ragab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2ragbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2gaagaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2gaagab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2gaagbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2gabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
-ce2t: [ at(df2rata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2ratb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2gaata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2gaatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2gabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2tata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df2tatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
+ce2r: [ eliminateAt(at(df2rara(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2rarb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
+ce2g: [ eliminateAt(at(df2ragaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2ragab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2ragbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2gaagaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2gaagab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2gaagbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2gabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
+ce2t: [ eliminateAt(at(df2rata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2ratb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2gaata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2gaatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2gabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2tata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df2tatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
 
-ce2lr: [ at(dflab2rara(rhoa,rhob),[rhoa=rhoa,rhob=rhoa]),
-         at(dflab2rarb(rhoa,rhob),[rhoa=rhoa,rhob=rhoa]) ] $
+ce2lr: [ eliminateAt(at(dflab2rara(rhoa,rhob),[rhoa=rhoa,rhob=rhoa])),
+         eliminateAt(at(dflab2rarb(rhoa,rhob),[rhoa=rhoa,rhob=rhoa])) ] $
 ce2lg: [ 0,
          0,
          0,
@@ -2214,47 +2369,47 @@ cl3t: [ Mmat3(iq,D3_RA_RA_TA),    Mmat3(iq,D3_RA_RA_TB),
         Mmat3(iq,D3_GAA_GBB_TA),  Mmat3(iq,D3_GAB_GAB_TA),
         Mmat3(iq,D3_TA_TA_TA),    Mmat3(iq,D3_TA_TA_TB) ] $
 
-ce3r: [ at(df3rarara(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3rararb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
+ce3r: [ eliminateAt(at(df3rarara(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3rararb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
 
-ce3g: [ at(df3raragaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3raragab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3raragbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3rarbgaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3rarbgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragaagaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragaagab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragaagbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragabgbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragbbgbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagaagaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagaagab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagaagbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagabgbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gabgabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
+ce3g: [ eliminateAt(at(df3raragaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3raragab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3raragbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3rarbgaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3rarbgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragaagaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragaagab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragaagbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragabgbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragbbgbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagaagaa(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagaagab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagaagbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagabgbb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gabgabgab(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
 
-ce3t: [ at(df3rarata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3raratb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3rarbta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragaata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragaatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragabtb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragbbta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3ragbbtb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagaata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagaatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagabtb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gaagbbta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3gabgabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3tatata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]),
-        at(df3tatatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua]) ] $
+ce3t: [ eliminateAt(at(df3rarata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3raratb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3rarbta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragaata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragaatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragabtb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragbbta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3ragbbtb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagaata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagaatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagabtb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gaagbbta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3gabgabta(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3tatata(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])),
+        eliminateAt(at(df3tatatb(rhoa,rhob,gammaaa,gammaab,gammabb,taua,taub),[rhoa=rhoa,rhob=rhoa,gammaaa=gammaaa,gammaab=gammaaa,gammabb=gammaaa,taua=taua,taub=taua])) ] $
 
-ce3lr: [ at(dflab3rarara(rhoa,rhob),[rhoa=rhoa,rhob=rhoa]),
-         at(dflab3rararb(rhoa,rhob),[rhoa=rhoa,rhob=rhoa]) ] $
+ce3lr: [ eliminateAt(at(dflab3rarara(rhoa,rhob),[rhoa=rhoa,rhob=rhoa])),
+         eliminateAt(at(dflab3rararb(rhoa,rhob),[rhoa=rhoa,rhob=rhoa])) ] $
 
 ce3lg: [ 0,
          0,
@@ -2387,8 +2542,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -2400,7 +2555,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,rgamma,tau,fnc,Amat,Cmat,Mmat)"),
@@ -2414,21 +2575,30 @@ ce3lt: [ 0,
           print("#endif"),
           print("#include \"nwxc_param.fh\""),
           print("      double precision param(*)     !< [Input] Parameters of functional"),
-          print("      double precision tol_rho      !< [Input] The lower limit on the density"),
-          print("      integer ipol                  !< [Input] The number of spin channels"),
+          print("      double precision tol_rho      !< [Input] The lower limit on the"),
+          print("                                    !< density"),
+          print("      integer ipol                  !< [Input] The number of spin"),
+          print("                                    !< channels"),
           print("      integer nq                    !< [Input] The number of points"),
-          print("      double precision wght         !< [Input] The weight of the functional"),
+          print("      double precision wght         !< [Input] The weight of the"),
+          print("                                    !< functional"),
           print("      double precision rho(nq,NCOL_RHO)      !< [Input] The density"),
-          print("      double precision rgamma(nq,NCOL_GAMMA) !< [Input] The norm of the density"),
-          print("                                             !< gradients"),
-          print("      double precision tau(nq,NCOL_TAU)      !< [Input] The kinetic energy density"),
-          print("      double precision fnc(nq)      !< [Output] The value of the functional"),
+          print("      double precision rgamma(nq,NCOL_GAMMA) !< [Input] The norm of the"),
+          print("                                             !< density gradients"),
+          print("      double precision tau(nq,NCOL_TAU)      !< [Input] The kinetic"),
+          print("                                             !< energy density"),
+          print("      double precision fnc(nq)      !< [Output] The value of the"),
+          print("                                    !< functional"),
+
           print("c"),
           print("c     Sampling Matrices for the XC Kernel"),
           print("c"),
-          print("      double precision Amat(nq,NCOL_AMAT)   !< [Output] The derivative wrt rho"),
-          print("      double precision Cmat(nq,NCOL_CMAT)   !< [Output] The derivative wrt rgamma"),
-          print("      double precision Mmat(nq,NCOL_MMAT)   !< [Output] The derivative wrt tau"),
+          print("      double precision Amat(nq,NCOL_AMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt rho"),
+          print("      double precision Cmat(nq,NCOL_CMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt rgamma"),
+          print("      double precision Mmat(nq,NCOL_MMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt tau"),
           print("      integer iq"),
           print("      double precision tmp"),
           print("      double precision rhoa,rhob"),
@@ -2436,6 +2606,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -2489,7 +2660,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}"),
           print("C>"),
           print("C> \\\\brief Evaluate the $functional_name functional [1]"),
           print("C>"),
@@ -2497,8 +2668,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -2510,7 +2681,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}_d2(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,rgamma,tau,fnc,Amat,Amat2,Cmat,Cmat2,Mmat,Mmat2)"),
@@ -2524,29 +2701,40 @@ ce3lt: [ 0,
           print("#endif"),
           print("#include \"nwxc_param.fh\""),
           print("      double precision param(*)     !< [Input] Parameters of functional"),
-          print("      double precision tol_rho      !< [Input] The lower limit on the density"),
-          print("      integer ipol                  !< [Input] The number of spin channels"),
+          print("      double precision tol_rho      !< [Input] The lower limit on the"),
+          print("                                    !< density"),
+          print("      integer ipol                  !< [Input] The number of spin"),
+          print("                                    !< channels"),
           print("      integer nq                    !< [Input] The number of points"),
-          print("      double precision wght         !< [Input] The weight of the functional"),
+          print("      double precision wght         !< [Input] The weight of the"),
+          print("                                    !< functional"),
           print("      double precision rho(nq,NCOL_RHO)      !< [Input] The density"),
-          print("      double precision rgamma(nq,NCOL_GAMMA) !< [Input] The norm of the density"),
-          print("                                             !< gradients"),
-          print("      double precision tau(nq,NCOL_TAU)      !< [Input] The kinetic energy density"),
-          print("      double precision fnc(nq)      !< [Output] The value of the functional"),
+          print("      double precision rgamma(nq,NCOL_GAMMA) !< [Input] The norm of the"),
+          print("                                             !< density gradients"),
+          print("      double precision tau(nq,NCOL_TAU)      !< [Input] The kinetic"),
+          print("                                             !< energy density"),
+          print("      double precision fnc(nq)      !< [Output] The value of the"),
+          print("                                    !< functional"),
           print("c"),
           print("c     Sampling Matrices for the XC Kernel"),
           print("c"),
-          print("      double precision Amat(nq,NCOL_AMAT)   !< [Output] The derivative wrt rho"),
-          print("      double precision Cmat(nq,NCOL_CMAT)   !< [Output] The derivative wrt rgamma"),
-          print("      double precision Mmat(nq,NCOL_MMAT)   !< [Output] The derivative wrt tau"),
+          print("      double precision Amat(nq,NCOL_AMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt rho"),
+          print("      double precision Cmat(nq,NCOL_CMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt rgamma"),
+          print("      double precision Mmat(nq,NCOL_MMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt tau"),
           print("c"),
           print("c     Sampling Matrices for the XC Kernel"),
           print("c"),
-          print("      double precision Amat2(nq,NCOL_AMAT2)  !< [Output] The 2nd derivative wrt rho"),
-          print("      double precision Cmat2(nq,NCOL_CMAT2)  !< [Output] The 2nd derivative wrt rgamma"),
+          print("      double precision Amat2(nq,NCOL_AMAT2)  !< [Output] The 2nd"),
+          print("                                             !< derivative wrt rho"),
+          print("      double precision Cmat2(nq,NCOL_CMAT2)  !< [Output] The 2nd"),
+          print("                                             !< derivative wrt rgamma"),
           print("                                             !< and possibly rho"),
-          print("      double precision Mmat2(nq,NCOL_MMAT2)  !< [Output] The 2nd derivative wrt tau"),
-          print("                                             !< and possibly rho"),
+          print("      double precision Mmat2(nq,NCOL_MMAT2)  !< [Output] The 2nd"),
+          print("                                             !< derivative wrt tau and"),
+          print("                                             !< possibly rho or rgamma"),
           print("      integer iq"),
           print("      double precision tmp"),
           print("      double precision rhoa,rhob"),
@@ -2554,6 +2742,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -2607,7 +2796,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}_d2"),
           print("C>"),
           print("C> \\\\brief Evaluate the $functional_name functional [1]"),
           print("C>"),
@@ -2615,8 +2804,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -2628,7 +2817,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}_d3(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,rgamma,tau,fnc,Amat,Amat2,Amat3,"),
@@ -2643,37 +2838,51 @@ ce3lt: [ 0,
           print("#endif"),
           print("#include \"nwxc_param.fh\""),
           print("      double precision param(*)     !< [Input] Parameters of functional"),
-          print("      double precision tol_rho      !< [Input] The lower limit on the density"),
-          print("      integer ipol                  !< [Input] The number of spin channels"),
+          print("      double precision tol_rho      !< [Input] The lower limit on the"),
+          print("                                    !< density"),
+          print("      integer ipol                  !< [Input] The number of spin"),
+          print("                                    !< channels"),
           print("      integer nq                    !< [Input] The number of points"),
-          print("      double precision wght         !< [Input] The weight of the functional"),
+          print("      double precision wght         !< [Input] The weight of the"),
+          print("                                    !< functional"),
           print("      double precision rho(nq,NCOL_RHO)      !< [Input] The density"),
-          print("      double precision rgamma(nq,NCOL_GAMMA) !< [Input] The norm of the density"),
-          print("                                             !< gradients"),
-          print("      double precision tau(nq,NCOL_TAU)      !< [Input] The kinetic energy density"),
-          print("      double precision fnc(nq)      !< [Output] The value of the functional"),
+          print("      double precision rgamma(nq,NCOL_GAMMA) !< [Input] The norm of the"),
+          print("                                             !< density gradients"),
+          print("      double precision tau(nq,NCOL_TAU)      !< [Input] The kinetic"),
+          print("                                             !< energy density"),
+          print("      double precision fnc(nq)      !< [Output] The value of the"),
+          print("                                    !< functional"),
           print("c"),
           print("c     Sampling Matrices for the XC Kernel"),
           print("c"),
-          print("      double precision Amat(nq,NCOL_AMAT)   !< [Output] The derivative wrt rho"),
-          print("      double precision Cmat(nq,NCOL_CMAT)   !< [Output] The derivative wrt rgamma"),
-          print("      double precision Mmat(nq,NCOL_MMAT)   !< [Output] The derivative wrt tau"),
+          print("      double precision Amat(nq,NCOL_AMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt rho"),
+          print("      double precision Cmat(nq,NCOL_CMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt rgamma"),
+          print("      double precision Mmat(nq,NCOL_MMAT)   !< [Output] The derivative"),
+          print("                                            !< wrt tau"),
           print("c"),
           print("c     Sampling Matrices for the XC Kernel"),
           print("c"),
-          print("      double precision Amat2(nq,NCOL_AMAT2)  !< [Output] The 2nd derivative wrt rho"),
-          print("      double precision Cmat2(nq,NCOL_CMAT2)  !< [Output] The 2nd derivative wrt rgamma"),
+          print("      double precision Amat2(nq,NCOL_AMAT2)  !< [Output] The 2nd"),
+          print("                                             !< derivative wrt rho"),
+          print("      double precision Cmat2(nq,NCOL_CMAT2)  !< [Output] The 2nd"),
+          print("                                             !< derivative wrt rgamma"),
           print("                                             !< and possibly rho"),
-          print("      double precision Mmat2(nq,NCOL_MMAT2)  !< [Output] The 2nd derivative wrt tau"),
-          print("                                             !< and possibly rho"),
+          print("      double precision Mmat2(nq,NCOL_MMAT2)  !< [Output] The 2nd"),
+          print("                                             !< derivative wrt tau and"),
+          print("                                             !< possibly rho or rgamma"),
           print("c"),
           print("c     Sampling Matrices for the XC Kernel"),
           print("c"),
-          print("      double precision Amat3(nq,NCOL_AMAT3)  !< [Output] The 3rd derivative wrt rho"),
-          print("      double precision Cmat3(nq,NCOL_CMAT3)  !< [Output] The 3rd derivative wrt rgamma"),
+          print("      double precision Amat3(nq,NCOL_AMAT3)  !< [Output] The 3rd"),
+          print("                                             !< derivative wrt rho"),
+          print("      double precision Cmat3(nq,NCOL_CMAT3)  !< [Output] The 3rd"),
+          print("                                             !< derivative wrt rgamma"),
           print("                                             !< and possibly rho"),
-          print("      double precision Mmat3(nq,NCOL_MMAT3)  !< [Output] The 3rd derivative wrt tau"),
-          print("                                             !< and possibly rho"),
+          print("      double precision Mmat3(nq,NCOL_MMAT3)  !< [Output] The 3rd"),
+          print("                                             !< derivative wrt tau and"),
+          print("                                             !< possibly rho or rgamma"),
           print("      integer iq"),
           print("      double precision tmp"),
           print("      double precision rhoa,rhob"),
@@ -2681,6 +2890,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -2734,7 +2944,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}_d3"),
           print("C> @}")
           )
           )
@@ -2791,8 +3001,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -2804,7 +3014,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,rgamma,fnc,Amat,Cmat)"),
@@ -2838,6 +3054,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -2860,7 +3077,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}"),
           print("C>"),
           print("C> \\\\brief Evaluate the $functional_name functional [1]"),
           print("C>"),
@@ -2868,8 +3085,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -2881,7 +3098,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}_d2(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,rgamma,fnc,Amat,Amat2,Cmat,Cmat2)"),
@@ -2921,6 +3144,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -2943,7 +3167,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}_d2"),
           print("C>"),
           print("C> \\\\brief Evaluate the $functional_name functional [1]"),
           print("C>"),
@@ -2951,8 +3175,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -2964,7 +3188,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}_d3(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,rgamma,fnc,Amat,Amat2,Amat3,"),
@@ -3011,6 +3241,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -3033,7 +3264,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}_d3"),
           print("C> @}")
           )
           )
@@ -3090,8 +3321,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -3103,7 +3334,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,fnc,Amat)"),
@@ -3134,6 +3371,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -3152,7 +3390,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}"),
           print("C>"),
           print("C> \\\\brief Evaluate the $functional_name functional [1]"),
           print("C>"),
@@ -3160,8 +3398,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -3173,7 +3411,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}_d2(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,fnc,Amat,Amat2)"),
@@ -3209,6 +3453,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -3227,7 +3472,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}_d2"),
           print("C>"),
           print("C> \\\\brief Evaluate the $functional_name functional [1]"),
           print("C>"),
@@ -3235,8 +3480,8 @@ ce3lt: [ 0,
           TeX_opt(tl,te),
           print("C> \\\\f}"),
           print("C>"),
-          print("C> Code generated with $maxima_version [2]"),
-          print("C> driven by autoxc-Ds [3]."),
+          print("C> Code generated with $maxima_version [2,3]"),
+          print("C> driven by autoxc-Ds [4,5,6]."),
           print("C>"),
           print("C> ### References ###"),
           print("C>"),
@@ -3248,7 +3493,13 @@ ce3lt: [ 0,
           print("C> <a href=\"http://maxima.sourceforge.net/\">"),
           print("C> http://maxima.sourceforge.net/</a>"),
           print("C>"),
-          print("C> [3] $revision"),
+          print("C> [3] $lisp_version"),
+          print("C>"),
+          print("C> [4] $revision"),
+          print("C>"),
+          print("C> [5] $revision_rewrap"),
+          print("C>"),
+          print("C> [6] $revision_subr"),
           print("C>"),
           print("      subroutine ${functional_name}_d3(param,tol_rho,ipol,nq,wght,"),
           print("     +rho,fnc,Amat,Amat2,Amat3)"),
@@ -3288,6 +3539,7 @@ ce3lt: [ 0,
           print("      double precision taua,taub"),
           print("      double precision nwxcm_heaviside"),
           print("      external         nwxcm_heaviside"),
+          print("CDIR$ NOVECTOR"),
           print("      do iq = 1, nq"),
           print("        if (ipol.eq.1) then"),
           print("          rhoa    = 0.5d0*rho(iq,R_T)"),
@@ -3306,7 +3558,7 @@ ce3lt: [ 0,
           print("          endif ! rhoa.gt.tol_rho.and.rhob.gt.tol_rho"),
           print("        endif ! ipol.eq.1"),
           print("      enddo ! iq"),
-          print("      end"),
+          print("      end subroutine ${functional_name}_d3"),
           print("C> @}")
           )
           )
@@ -3358,3 +3610,16 @@ rm $f_quiet
 rm $f_maxima
 rm $f_dependency
 rm $f_dependency_sh
+#
+# Convert the partial Fortran files
+#
+./bin/rewrap.py < $outputfile > tmpa.$$
+error=$?
+if [ $error -eq 0 ] ; then
+   ./bin/call_subroutine.py < tmpa.$$ > tmpb.$$
+   error=$?
+   if [ $error -eq 0 ] ; then
+      mv tmpb.$$ $outputfile
+      rm tmpa.$$
+   fi
+fi

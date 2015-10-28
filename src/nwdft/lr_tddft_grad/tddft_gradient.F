@@ -165,6 +165,9 @@ c     Get the start times
       tddft_grad_wall = -util_wallsec()
       tddft_grad_cpu  = -util_cpusec()
 c
+c     Init pstat
+      call dft_pstat_init(rtdb)
+c
 c     Print header
       if (oroot) call tddft_grad_print_header(luout)
 c
@@ -491,6 +494,7 @@ c
 c
 c <-- MN solvation models 
 c
+      call dft_pstat_print
       return
       end
 c $Id$

@@ -979,7 +979,8 @@ C     END DO
 * --------------------------------------------------
 *
 *. Increase for MRCC to include N+3, N+4, N-3, N-4
-      I_MAYBE_DO_MRCC = 1
+cVOG  I_MAYBE_DO_MRCC = 1
+      I_MAYBE_DO_MRCC = 0
 *. Number of electrons to be subtracted or added
       MAXSUB = 2
       MAXADD = 2
@@ -2822,7 +2823,7 @@ C?    write(6,*) ' LCISPC : NICISP ', NICISP
    50 CONTINUE
   100 CONTINUE
 *
-      NTEST = 1
+      NTEST = 5
       NTEST = MAX(NTEST,IPRNT)
       if (ga_nodeid().eq.0) then
       WRITE(6,*) 
@@ -2928,7 +2929,7 @@ C         CALL WRTMAT(XISPSM(1,ICI),1,NSMCI,1,NSMCI)
       DIMENSION IBLTP(*)
 *
       CALL LUCIAQENTER('NGASD')
-      NTEST = 0 
+      NTEST = 0
       IF(NTEST.GE.10) THEN
         WRITE(6,*) ' NGASDT speaking'
         WRITE(6,*) ' ==============='

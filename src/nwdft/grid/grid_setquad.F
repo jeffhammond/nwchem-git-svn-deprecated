@@ -24,6 +24,9 @@ c     Set up needed info by atom type (ntypes info; e.g., nuclear charge,
 c     Bragg-Slater radii, etc)
 c
       call grid_atom_type_info
+cc AJL/Begin/FDE
+      if (frozemb_fde) call grid_atom_type_info_fde
+cc AJL/End
 c
 c     Determine desired integration accuracy and set 
 c     corresponding quadrature definition.

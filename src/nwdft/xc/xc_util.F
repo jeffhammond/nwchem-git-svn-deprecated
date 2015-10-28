@@ -9,11 +9,11 @@ c
 c
 #include "cdft.fh"
 #include "steric.fh"
-#include "nwxc.fh"
 #include "util.fh"
 c
 c     see if any Gradient Corrected Functional is not null
 c
+      logical out1,out2
       double precision tot,eps
       parameter(eps=1.d-10)
 c
@@ -36,7 +36,42 @@ c
      + cfac(48) + cfac(49) + cfac(50) + cfac(51) +
      + xfac(52) + xfac(53) + xfac(54) + xfac(55) + xfac(56) +
      + cfac(52) + cfac(53) + cfac(54) +
-     + xfac(60) + xfac(61) + xfac(62) + xfac(63) + lxdm
+     + xfac(60) + xfac(61) + xfac(62) + xfac(63) + lxdm +
+cc AJL/Begin/FDE
+     + xfac_fde(3) + xfac_fde(4) + xfac_fde(5) + xfac_fde(6) + 
+     + xfac_fde(7) +
+     + xfac_fde(8)  + xfac_fde(9)  + xfac_fde(10) + xfac_fde(11) +
+     + xfac_fde(12)+ xfac_fde(13)+
+     + xfac_fde(14) + xfac_fde(15) + xfac_fde(16)+xfac_fde(17)+
+     + xfac_fde(18) +xfac_fde(19) +
+     + xfac_fde(22) +
+     + xfac_fde(30) + xfac_fde(31) + xfac_fde(33) + xfac_fde(39) + 
+     + cfac_fde(29) +
+     + cfac_fde(2)  + cfac_fde(4)  + cfac_fde(5)  + cfac_fde(12) +
+     + cfac_fde(13) + cfac_fde(14) + cfac_fde(15) + cfac_fde(16) + 
+     + cfac_fde(17)+cfac_fde(18)+
+     + cfac_fde(19) + cfac_fde(20) + cfac_fde(21) + cfac_fde(22) + 
+     + cfac_fde(23) + cfac_fde(24) +
+     + xfac_fde(25) + cfac_fde(25) + cfac_fde(26) + xfac_fde(20) + 
+     + xfac_fde(21) + cfac_fde(27) +
+     + xfac_fde(26) + xfac_fde(27) + xfac_fde(28) + xfac_fde(29) + 
+     + cfac_fde(31) + xfac_fde(32) +
+     + cfac_fde(32) + cfac_fde(33) + cfac_fde(34) + cfac_fde(35) + 
+     + cfac_fde(36) +
+     + xfac_fde(34) + xfac_fde(35) + xfac_fde(36) + xfac_fde(37) +
+     + cfac_fde(30) + cfac_fde(38) + cfac_fde(39) + cfac_fde(40) + 
+     + cfac_fde(41) + cfac_fde(42) +
+     + xfac_fde(43) +
+     + xfac_fde(46) + cfac_fde(46) + xfac_fde(47) + cfac_fde(47) + 
+     + xfac_fde(40) + xfac_fde(41) +
+     + xfac_fde(48) + xfac_fde(49) + xfac_fde(50) + xfac_fde(51) +
+     + cfac_fde(48) + cfac_fde(49) + cfac_fde(50) + cfac_fde(51) +
+     + xfac_fde(52) + xfac_fde(53) + xfac_fde(54) + xfac_fde(55) + 
+     + xfac_fde(56) +
+     + cfac_fde(52) + cfac_fde(53) + cfac_fde(54) +
+     + xfac_fde(60) + xfac_fde(61) + xfac_fde(62) + xfac_fde(63) +
+     + tsfac(2)
+cc AJL/End
 c
       if (abs(tot).gt.eps.or.lb94.or.cs00) then
          xc_chkgrad = .true.
@@ -46,7 +81,9 @@ c
          xc_chkgrad = .false.
       end if
       if (util_module_avail("nwxc")) then
-         xc_chkgrad = xc_chkgrad .or. nwxc_is_gga().or.nwxc_is_mgga()
+         call nwxc_getvals("nwxc_is_gga",out1)
+         call nwxc_getvals("nwxc_is_mgga",out2)
+         xc_chkgrad = xc_chkgrad .or. out1.or.out2
       endif
 c
       return
@@ -55,21 +92,25 @@ c
       logical function xc_gotxc()
       implicit none
 #include "cdft.fh"
-#include "nwxc.fh"
 #include "util.fh"
       double precision tot
       integer i
+      logical out1
 c
 c     return true if there is any XC functional to compute 
 c     (other than HF Exch)
 c
-      tot = -abs(xfac(1))
+cc AJL/Begin/FDE
+      tot = -abs(xfac(1)) - abs(xfac_fde(1))
       do i = 1, numfunc
          tot = tot + abs(xfac(i)) + abs(cfac(i))
+         tot = tot + abs(xfac_fde(i)) + abs(cfac_fde(i))
+cc AJL/End
       enddo
       xc_gotxc = tot.gt.1d-8.or.lb94.or.cs00
       if (util_module_avail("nwxc")) then
-        xc_gotxc = xc_gotxc.or.nwxc_has_xc()
+         call nwxc_getvals("nwxc_has_xc",out1)
+        xc_gotxc = xc_gotxc.or.out1
       endif
       return
       end
@@ -94,8 +135,8 @@ c
       implicit none
 c
 #include "cdft.fh"
-#include "nwxc.fh"
 #include "util.fh"
+      logical out1
 c
       xc_got2nd=.not.(
 c
@@ -164,7 +205,8 @@ chp414     .     cfac(21).ne.0d0.or.
      .     cfac(54).ne.0d0.or.
      .     cfac(36).ne.0d0)
       if (util_module_avail("nwxc")) then
-        xc_got2nd = xc_got2nd .or. nwxc_has_2nd()
+         call nwxc_getvals("nwxc_has_2nd",out1)
+        xc_got2nd = xc_got2nd .or. out1
       endif
 c
       return
@@ -180,10 +222,10 @@ c
 c     see if any metaGGA Functional using TAU is not null
 c
 #include "cdft.fh"
-#include "nwxc.fh"
 #include "util.fh"
 C  note in cdft.fh,they define cfac(numfunc) and xfac(numfunc)
 c 
+      logical out1
       double precision tot,eps
       parameter(eps=1.d-10)
       tot = xfac(18) + cfac(25) + xfac(21) + cfac(27) +
@@ -193,7 +235,19 @@ c
      +      cfac(29) + cfac(31) + cfac(32) + cfac(33) +
      +      cfac(34) + cfac(35) + cfac(30) + cfac(38) +
      +      cfac(39) + cfac(40) + xfac(32) + cfac(42) +
-     +      cfac(48) + cfac(49) + cfac(50) + cfac(51)
+     +      cfac(48) + cfac(49) + cfac(50) + cfac(51) +
+cc AJL/Begin/FDE
+     +      xfac_fde(18) + cfac_fde(25) + xfac_fde(21) + cfac_fde(27) +
+     +      xfac_fde(28) + xfac_fde(29) + xfac_fde(33) + xfac_fde(34) + 
+     +      xfac_fde(35) +
+     +      xfac_fde(36) + xfac_fde(37) + xfac_fde(48) + xfac_fde(49) + 
+     +      xfac_fde(50) +
+     +      xfac_fde(51) + lxdm +
+     +      cfac_fde(29) + cfac_fde(31) + cfac_fde(32) + cfac_fde(33) +
+     +      cfac_fde(34) + cfac_fde(35) + cfac_fde(30) + cfac_fde(38) +
+     +      cfac_fde(39) + cfac_fde(40) + xfac_fde(32) + cfac_fde(42) +
+     +      cfac_fde(48) + cfac_fde(49) + cfac_fde(50) + cfac_fde(51)
+cc AJL/End
 c
       if (abs(tot).gt.eps)then
          xc_chktau = .true.
@@ -201,7 +255,8 @@ c
          xc_chktau = .false.
       endif
       if (util_module_avail("nwxc")) then
-         xc_chktau = xc_chktau .or. nwxc_is_mgga()
+         call nwxc_getvals("nwxc_is_mgga",out1)
+         xc_chktau = xc_chktau .or. out1
       endif
       return
       end
@@ -213,6 +268,24 @@ c     load cfac and xfac into cdft.fh
 #include "cdft.fh"
 #include "rtdb.fh"
 #include "mafdecls.fh"
+#include "util.fh"
+      logical use_nwxc, lhashfxc
+      use_nwxc=util_module_avail("nwxc")
+      if (use_nwxc) then
+        call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+      endif
+      if (use_nwxc) then
+        call nwxc_getvals("nwxc_is_on",use_nwxc)
+      endif
+      if (use_nwxc) then
+        call nwxc_getvals("nwxc_has_hfx",lhashfxc)
+        if (lhashfxc) then
+          call nwxc_getwght("nwxc_wght_hfx",xfac(1))
+        endif
+      endif
+      xc_getxcfac=use_nwxc
+      if (use_nwxc) return
+c
       xc_getxcfac=rtdb_get(rtdb, 'dft:xfac', mt_dbl, numfunc,
      &xfac)
       xc_getxcfac=xc_getxcfac.and.
@@ -229,7 +302,7 @@ c
 #include "cdft.fh"
 #include "case.fh"
 #include "util.fh"
-#include "nwxc.fh"
+      logical out1
 c
       xc_hascam=(
      .     xfac(38).ne.0d0.or.
@@ -242,7 +315,8 @@ c
 c
       xc_hascam = xc_hascam.or.cam_exch
       if (util_module_avail("nwxc")) then
-        xc_hascam = xc_hascam.or.nwxc_has_cam()
+         call nwxc_getvals("nwxc_has_cam",out1)
+        xc_hascam = xc_hascam.or.out1
       endif
 c
       return
@@ -417,3 +491,4 @@ c
 c
       return
       end
+

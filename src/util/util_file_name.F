@@ -329,6 +329,7 @@ c
       logical debug
 c
       debug = .false.
+      from_nwchemrc = .false.
 c
 c     1: check for NWCHEM_SCRATCH_DIR environment variable
 c
@@ -391,6 +392,8 @@ c
       logical debug
 c
       debug = .false.
+      from_nwchemrc = .false.
+      from_environment = .false.
 c
 c     1: check for NWCHEM_PERMANENT_DIR environment variable
 c
@@ -780,7 +783,7 @@ c
       nattpt=0
       avail0=0
       avail1=0
-#ifdef NOFSCHECK
+#ifdef NOIO
       avail0=10**8
       nuse=ga_nnodes()
       avail1=-16d0*nuse+avail0

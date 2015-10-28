@@ -775,6 +775,10 @@ c
            cdata = "M11-L Correlation (R Peverati, DG Truhlar, "
      +             //"J.Phys.Chem.Lett. 2, 2810 (2011)"
      +             //" doi:10.1021/jz201170d)"
+         case (NWXCP_C_MPBE)
+           cdata = "Modified PBE Correlation (JP Perdew, S Kurth, "
+     +             //"A Zupan, P Blaha, Phys.Rev.Lett. 82, 2544 (1999)"
+     +             //" doi:10.1103/PhysRevLett.82.2544)"
          case (NWXCP_C_PBE)
            cdata = "PBE Correlation (JP Perdew, K Burke, M Ernzerhof, "
      +             //"Phys.Rev.Lett. 77, 3865 (1996)"
@@ -1117,3 +1121,48 @@ c
 C>
 C> @}
 c $Id$
+      subroutine nwxc_getvals(argin,argout)
+      implicit none
+#include "nwxc.fh"
+      character*(*) argin
+      logical argout
+      if(argin.eq.'nwxc_has_cam') then
+         argout=nwxc_has_cam()
+      elseif(argin.eq.'nwxc_has_hfx') then
+         argout=nwxc_has_hfx()
+      elseif(argin.eq.'nwxc_has_xc') then
+         argout=nwxc_has_xc()
+      elseif(argin.eq.'nwxc_has_2nd') then
+         argout=nwxc_has_2nd()
+      elseif(argin.eq.'nwxc_is_on') then
+         argout=nwxc_is_on()
+      elseif(argin.eq.'nwxc_is_gga') then
+         argout=nwxc_is_gga()
+      elseif(argin.eq.'nwxc_is_mgga') then
+         argout=nwxc_is_mgga()
+      elseif(argin.eq.'nwxc_has_disp') then
+         argout=nwxc_has_disp()
+      elseif(argin.eq.'nwxc_has_mp2c') then
+         argout=nwxc_has_mp2c()
+      else
+         write(6,*) ' argin = ',argin
+         call errquit('nwxcgetvls: wrong argin ',0,0)
+      endif
+      return
+      end
+      
+      subroutine nwxc_getwght(argin,argout)
+      implicit none
+#include "nwxc.fh"
+      character*(*) argin
+      double precision argout
+      if(argin.eq.'nwxc_wght_hfx') then
+         argout=nwxc_wght_hfx()
+      elseif(argin.eq.'nwxc_wght_mp2c') then
+         argout=nwxc_wght_mp2c()
+      else
+         call errquit('nwxcgetwght: wrong argin ',0,0)
+      endif
+      return
+      end
+      

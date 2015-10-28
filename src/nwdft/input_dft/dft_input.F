@@ -18,7 +18,6 @@ c
 #include "stdio.fh"
 #include "cdft.fh"
 #include "case.fh"
-#include "nwxc.fh"
 #include "util.fh"
 c
 c     read input for DFT calculation.  All input is of the form:
@@ -29,7 +28,10 @@ c
       logical status
       integer ind               ! Index of matched directive
       integer num_dirs          ! No. of known directives
-      parameter (num_dirs = 48)
+cc AJL/Begin/FDE
+c      parameter (num_dirs = 48)
+      parameter (num_dirs = 50)
+cc AJL/End
       character*12 dirs(num_dirs)
       character*255 test
       logical disp
@@ -56,7 +58,11 @@ c
       logical steric
       logical efield
       logical swapab
-      logical frozemb
+cc AJL/Begin/FDE
+c  Is this variable necessary here? Or have we defined it elsewhere?
+c  I can't remember but this variable isn't in my version so will check
+c      logical frozemb
+cc AJL/End
       logical cgmin
       double precision efield_x
       double precision efield_y
@@ -71,19 +77,21 @@ c
 c     xdm variables
       double precision xdm_a1, xdm_a2
       logical xdm_onlyc, xdm_varc
+      logical out1
 c
 c     xps variables
       logical lxps
       integer lenstr
       character*255 inp_vecs
-c
+
       data dirs /'convergence','decomp','dft','direct','semidirect',
      $         'ecp','grid','vectors','incore','iterations', 
      $         'max_ovl','mulliken','mult','noio','noprint','odft', 
      $         'print','tolerances', 'xc','sym','adapt','sic', 
      $         'smear','fon','lb94','cs00','cdft','cam','disp',
      $         'dftmp2','molden','noscf','steric','efield','swapab',
-     $         'frozemb','cgmin','nocgmin','tol2e','ri-scf','lock',
+     $         'frozemb', 'frozemb_xc', 'frozemb_ts',
+     $         'cgmin','nocgmin','tol2e','ri-scf','lock',
      $         'rodft','fukui','maxiter','vspec','xps','xdm','end'/
 c
 c Qin / cdft
@@ -136,7 +144,8 @@ c
       goto (100,  200,  300,  400,  450,  500,  600,  700,  800,
      $      900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700,
      $     1800, 1900, 2000, 2100, 2200, 2300, 2400, 2500, 2600, 
-     $     2700, 2800, 2900, 3000, 3100, 3200, 3300, 3400, 3500, 
+     $     2700, 2800, 2900, 3000, 3100, 3200, 3300, 3400, 
+     $     3500, 3520, 3530,
      $     3600, 3600, 3700, 3800, 3900, 4000, 4100, 4200, 4300,
      $     4400, 4500, 9999) ind
 
@@ -330,13 +339,13 @@ c
       if (test(1:3).eq."old") then
         call xc_input(rtdb, 'dft')
       else if (test(1:3).eq."new") then
-        if (.not.nwxc_input()) then
+         call nwxc_input(out1)
+        if (.not.out1) then
           call errquit("dft_input: nwxc_input failed",0,UERR)
         endif
-        if (.not.nwxc_rtdb_store(rtdb,"dft")) then
-          call errquit("dft_input: nwxc_rtdb_store failed",0,UERR)
-        endif
-        if (nwxc_has_cam()) then
+        call nwxc_rtdb_store(rtdb,"dft")
+        call nwxc_getvals("nwxc_has_cam",out1)
+        if (out1) then
           cam_exch = .true.
           call nwxc_get_cam(cam_alpha,cam_beta,cam_omega,cam_srhf)
         else
@@ -694,7 +703,48 @@ c
       if (.not.rtdb_put(rtdb,'dft:frozemb', mt_log, 1, frozemb))
      &   call errquit('dft_input: rtdb_put failed', 3500, RTDB_ERR)
 c
+cc AJL/Begin/FDE
+c      goto 10
+c
+ 3510 if (.not. inp_a(test)) goto 10
+c frozemb environment
+      if (inp_compare(.false.,'geometry', test)) then
+        if (.not. inp_a(test))
+     &     call errquit('dft_input: frozemb geometry failed', 0, 
+     &     INPUT_ERR)
+        if (.not. rtdb_cput(rtdb, 'dft:frozemb:geometry', 1, test))
+     &    call errquit('dft_input: rtdb_put failed frozemb geometry', 
+     &    3510, RTDB_ERR)
+        goto 3510
+      else if (inp_compare(.false.,'vectors', test)) then
+        if (.not. inp_a(test))
+     &     call errquit('dft_input: frozemb movecs failed', 0, 
+     &     INPUT_ERR)
+        if (.not. rtdb_cput(rtdb, 'dft:frozemb:movecs', 1, test))
+     &    call errquit('dft_input: rtdb_put failed frozemb movecs',
+     &    3510, RTDB_ERR)
+        goto 3510
+      else
+        call errquit('dft_input: frozemb unrecognised command: '//test,
+     &     0, INPUT_ERR)
+      endif
+c
+c
       goto 10
+c
+c     FDE xc;
+c             
+ 3520 call xc_input(rtdb, 'dft:frozemb')
+c
+      goto 10
+c
+c     FDE Ts;
+c             
+ 3530 call ts_input(rtdb, 'dft:frozemb')
+c
+      goto 10
+c
+cc AJL/End
 c
 c     conjugate-gradient direct minimization 
 c

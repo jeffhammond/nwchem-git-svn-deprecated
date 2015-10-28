@@ -40,7 +40,7 @@ c
 #include "dftps.fh"
 #include "cosmo.fh"
 #include "zora.fh"
-#include "nwxc.fh"
+#include "dimqm.fh"
 c     
       Logical movecs_write, movecs_converged, movecs_read
       External movecs_write, movecs_converged, movecs_read
@@ -135,7 +135,10 @@ c
       double precision dft_dencvg, dft_time
       external dft_dencvg
       integer l_ir, k_ir
-      logical last_time_energy,noscf,frozemb
+cc AJL/Begin/FDE
+c      logical last_time_energy,noscf,frozemb
+      logical last_time_energy,noscf
+cc AJL/End
       logical fon, reorth
       character*7 name
       character*4 scftype
@@ -212,7 +215,11 @@ c -----FA: 04-21-11: for Gaussian Nuclear Model --- END
 
 c ... jochen: MO analysis print threshold
       double precision tanalyze
-
+cc     AJL/Begin/FDE
+      integer g_vxc_fde(4)
+      integer g_xcinv_fde
+      integer g_dens_fde(2)
+cc     AJL/End
 c
       gotsmear(ss)=abs(ss).gt.1d-9
 c
@@ -431,7 +438,7 @@ c    Jorge Garza/Begin
 c     Jorge Garza/End
       use_nwxc = util_module_avail("nwxc")
       if (use_nwxc) then
-        use_nwxc = nwxc_is_on()
+         call nwxc_getvals("nwxc_is_on",use_nwxc)
       endif
 c
 c     Set aside some memory for reduced density matrix
@@ -928,15 +935,29 @@ c
 c     
 c     Top of infinite SCF iteration loop
 c
+cc AJL/Begin/FDE
+c
 c     == if frozen embedding ==
-      frozemb = .false.
-      if (.not.rtdb_get(rtdb, 'dft:frozemb', mt_log, 1, frozemb))
-     &    frozemb=.false.
+c     AJL: This is already stored in commons
+c      frozemb = .false.
+c      if (.not.rtdb_get(rtdb, 'dft:frozemb', mt_log, 1, frozemb))
+c     &    frozemb=.false.
       if (frozemb) then ! get the frozen density embedding potential
         if (.not. ga_duplicate(g_fock, g_frozemb, 'froz matrix'))
      &     call errquit('dft_scf:failed duplicate',g_frozemb, GA_ERR)
         call ga_zero(g_frozemb)
-        call dft_frozemb(rtdb,g_frozemb)
+        if (frozemb_fde) then
+c Initialise frozen density embedding
+          call dft_frozemb_fde_init(rtdb,test_sic,g_vxc,g_vxc_fde,
+     &                              g_xcinv_fde)
+c Calculate the frozen density embedding contributions to fock matrix
+          call dft_frozemb_fde(rtdb,g_frozemb,g_dens,g_dens_fde)
+        else
+c     Old embedding method, read from file
+          call dft_frozemb(rtdb,g_frozemb)
+        endif 
+cc AJL/End
+c
 c      call ga_print(g_frozemb)
 c      call ga_print(g_s)
       end if
@@ -1081,6 +1102,15 @@ c
      &    call ga_dadd(one, g_dens(1), one, g_dens(2), g_dens(1))
       end if ! cosmo check
 c
+c     DIM/QM JEM
+c     Calculate DIM/QM dipoles
+c     We use the total density to calculate the dipoles.
+c
+      if(ldimqm .and. dimqm_go) then
+        call dimqm_main(rtdb, ao_bas_han, geom, g_dens, .false.)
+      end if
+
+c
 c     Determine HOMO energy (for Zhan-Nichols-Dixon AC)
 c
       e_homo = dbl_mb(k_eval(1)+noc(1)-1)
@@ -1118,7 +1148,10 @@ c
      ,     test_sic,exact_pot,ecoul_aux,dif_lamda,totsic,
      ,     i_degen,g_rho_exact,g_tmp_exact, g_addit_exact,
      ,     n_levels, act_levels, oprint_time,
-     &     g_zora_sf,g_frozemb)
+cc AJL/Begin/FDE
+c     &     g_zora_sf,g_frozemb)
+     &     g_zora_sf,g_frozemb,g_vxc_fde,g_xcinv_fde,g_dens_fde)
+cc AJL/End
       if(util_print('dft timings', print_high))
      &      time2=util_cpusec()  ! end fock matrix build time
 c
@@ -1152,6 +1185,11 @@ c
              etnew = etnew + ecosmo
         end if
       end if
+c
+c     DIM/QM JEM
+c     Add DIM energy
+      if (ldimqm .and. dimqm_go) Etnew = Etnew + Edimqm
+c
 c     
 c     == is this a oneshot "noscf" type calculation, no diagonalization ==
       noscf = .false.
@@ -1277,6 +1315,20 @@ c Constrained DFT: label 2004 is associated with optimization of cdft.
      $           cdft_maxiter,RTDB_ERR)
         endif
       endif
+
+cc AJL/Begin/FDE
+      if(util_print('Intermediate Fock Matrix', print_debug)) then
+        if (ga_nodeid() .eq. 0) then
+          write(6,*)
+          call util_print_centered(6,
+     $         'Intermediate Fock Matrix',40,.true.)
+          write(6,*)
+          call util_flush(6)
+        end if
+        call ga_print(g_focks(1))
+        if (ipol.eq.2) call ga_print(g_focks(2))
+      endif
+cc AJL/End
 
       do ispin = 1, ipol
          if(lcdft) then
@@ -1596,6 +1648,8 @@ c
 c     
 c     Check for SCF convergence.
 c     
+c     DIM/QM JEM
+      dimqm_go = .true.
       call ga_sync
       if (oprint_time)
      &     call dft_tstamp(' calling scfcvg ')
@@ -1683,6 +1737,11 @@ c
              etnew = etnew + ecosmo
            end if
       end if
+c
+c     DIM/QM JEM
+c     Add DIM energy
+      if(ldimqm .and. dimqm_go) Etnew = Etnew + Edimqm
+c
 c    
       if (.not. ga_destroy(g_denso(1))) call errquit
      &   ('dft_scf: could not destroy g_denso', 0, GA_ERR)
@@ -1737,6 +1796,7 @@ c     or include dispersion if this a functional that includes dispersion
 c
       if(disp.or.xc_chkdispauto())
      &      call xc_vdw(rtdb,geom,Etnew,dum,'energy')
+c
 c
 c     ----- if cosmo ... after gas_phase, do sol_phase ... -----
 c
@@ -1867,6 +1927,13 @@ c
            end if
          end if
 c
+c        DIM/QM JEM
+c        Add DIM energy
+c        NOTE: Why are we redoing this energy sum?
+         if(ldimqm .and. dimqm_go) Etnew = Etnew + Edimqm
+
+c        DIM/QM JEM
+        
          dft_time = dft_time+util_cpusec()
          if (nexc.le.1)then
           write(LuOut,222)etnew+enuc, 
@@ -2050,6 +2117,14 @@ c
         if (ipol.eq.2) ! reinstate total in g_dens(1)
      &    call ga_dadd(one, g_dens(1), one, g_dens(2), g_dens(1))
       end if ! cosmo_esp
+c
+c     DIM/QM JEM
+c     Final DIM dipoles
+c
+      if (ldimqm) then
+        call dimqm_main(rtdb, ao_bas_han, geom, g_dens, .true.)
+      end if
+
 c
 c     Print all the eigenvalues
 c
@@ -2385,9 +2460,14 @@ C---------------------------------------------------------------------------
 c
 c     == if frozen embedding ==
       if (frozemb) then
-       if (.not. ga_destroy(g_frozemb)) call errquit
-     &   ('dft_scf: could not destroy g_frozemb', 0, GA_ERR)
-      end if
+        if (.not. ga_destroy(g_frozemb)) call errquit
+     &     ('dft_scf: could not destroy g_frozemb', 0, GA_ERR)
+cc AJL/Begin/FDE
+        if (frozemb_fde) 
+c Destroy all allocations and reset variables that have been altered
+     &  call dft_frozemb_fde_end(rtdb,g_vxc_fde,g_dens_fde, g_xcinv_fde)
+      end if !frozemb
+cc AJL/End
 c
 cdft...Deallocate cdft arrays
       if(lcdft) then

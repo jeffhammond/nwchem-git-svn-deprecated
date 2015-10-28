@@ -126,7 +126,7 @@ c
       integer g_d, g_j, g_k
       integer g_dens2, g_fock2, g_work2
       integer l_jfac, k_jfac, l_kfac, k_kfac
-      integer alo(3), ahi(3), blo(2), bhi(2), dims(3), chunk(3)
+      integer alo(3), ahi(3), blo(3), bhi(3), dims(3), chunk(3)
       double precision tol2e_local
       double precision itol_floor, itol_ceil
       double precision xc_xfac1
@@ -136,6 +136,9 @@ c      logical ga_create_atom_blocked
       external ga_create_atom_blocked
       double precision zero, one, mone, four
       parameter (zero=0.0d0, one=1.0d0, mone=-1.0d0, four=4.0d0)
+c     DIM/QM
+      integer g_dens, g_dim
+      logical ldimqm
 c
 c     First allocated arrays and build the AO densities.
 c     This will be cleaner when we restructure the fock build to take
@@ -245,6 +248,53 @@ c
       if (.not.ga_destroy(g_d)) call errquit('uhf_hv2e: GA?',0,
      &       GA_ERR)
 c
+c     DIM/QM JEM
+c     Calculate DIM dipoles and DIM potential from TOTAL density
+      if (.not.rtdb_get(bgj_get_rtdb_handle(), 'dimqm:lrsp', mt_log,
+     $                  1, ldimqm)) ldimqm = .false.
+      if (ldimqm) then
+        dims(1) = nvec
+        chunk(1) = dims(1)
+        if (.not. nga_create(MT_DBL, 3, dims, 'tdens', chunk, g_dens))
+     $    call errquit('uhf_hessv2: DIM dens create', 0, GA_ERR)
+c        if (.not. nga_create(MT_DBL, 3, dims, 'g_dim', chunk, g_dim))
+c     $    call errquit('uhf_hessv2: DIM pot create', 0, GA_ERR)
+        alo(1) = 1
+        ahi(1) = nvec
+c       Copy Alpha
+        call nga_copy_patch('n', g_dens2, alo, ahi, g_dens, alo, ahi)
+        alo(1) = nvec+1
+        ahi(1) = 2*nvec
+        blo(1) = 1
+        bhi(1) = nvec
+        blo(2) = 1
+        bhi(2) = nbf
+        blo(3) = 1
+        bhi(3) = nbf
+c       Add Beta
+c       Seems like we need to divide both alpha and beta by 4
+c       to match closed shell routine?
+        call nga_add_patch(0.25d0, g_dens2, alo, ahi,
+     $                     0.25d0, g_dens,  blo, bhi,
+     $                             g_dens,  blo, bhi)
+        call dimqm_rohf_calcDIM(bgj_get_rtdb_handle(), geom, basis,
+     $                          nbf, nvec, g_dens, g_dim)
+c        call dimqm_indDipoles(bgj_get_rtdb_handle(), nbf, geom,
+c     $                          basis, g_dens)
+c        call ga_zero(g_dim)
+c        call fock_dim(geom, nbf, basis, nvec, g_dim, 0, 1)
+c        call ga_symmetrize(g_dim)
+        if(.not. ga_destroy(g_dens))
+     $    call errquit('uhf_hessv2: DIM destroy dens', 0, GA_ERR)
+c       Reset dimensions for the rest of the subroutine
+        dims(1) = 2*nvec
+        chunk(1) = dims(1)
+        blo(1) = 1
+        bhi(1) = nbf
+        blo(2) = 1
+        bhi(3) = nbf
+      end if
+c
 c     Now make all the J & K matrices with one pass thru the integrals
 c
 c     NOTE that symmetrization is not yet implemented except for
@@ -287,6 +337,8 @@ c
      $     dbl_mb(k_jfac), dbl_mb(k_kfac),
      $     tol2e, g_dens2, g_fock2, noskew_uhf)
       end if ! cam_exch
+      !call ga_print(g_dens2)
+
 c
       if (.not.ma_pop_stack(l_kfac))
      $  call errquit('uhf_hessv_2e2: pop problem with l_jfac',555,
@@ -388,6 +440,28 @@ c
      $             one, g_ax, istart_diff, iend_diff, ivec, ivec,
      $                  g_ax, istart_diff, iend_diff, ivec, ivec)
            endif
+c
+c     DIM/QM JEM
+c
+           if (ldimqm) then
+             alo(1) = ivec
+             ahi(1) = alo(1)
+             call nga_copy_patch('N', g_dim, alo, ahi, g_k, blo, bhi)
+c            Mulitply DIM potential by 4 due to earlier divide.
+             call ga_matmul_patch('n', 'n', 4.0d0, zero,
+     $             g_k, 1, nbf, 1, nbf,
+     $             g_vecs, 1, nbf, 1, nocc,
+     $             g_tmp1, 1, nbf, 1, nocc)
+              call ga_matmul_patch('t', 'n', one, zero,
+     $             g_vecs, vbase, nmo, 1, nbf,
+     $             g_tmp1, 1, nbf, 1, nocc,
+     $             g_tmp2, 1, nvir, 1, nocc)
+              call ga_dadd_patch(
+     $             four, g_tmp2, 1, nvir, 1, nocc,
+     $             one, g_ax, istart, iend, ivec, ivec,
+     $             g_ax, istart, iend, ivec, ivec)
+
+           end if
  200       continue
         enddo
         if (.not. ga_destroy(g_tmp1)) call errquit('uhf_hessv: GA?',0,
@@ -406,5 +480,9 @@ c
      &       GA_ERR)
       if (.not. ga_destroy(g_fock2)) call errquit('uhf_hessv: GA?',0,
      &       GA_ERR)
+      if (ldimqm) then
+        if (.not. ga_destroy(g_dim))
+     $    call errquit('uhf_hessv2 destroy g_dim failed', 1, GA_ERR)
+      end if
 c
       end

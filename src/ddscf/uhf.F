@@ -665,7 +665,10 @@ c
       integer d(4), f(6), nfock
       integer g_a_dens, g_a_coul, g_a_exch, g_a_xc
       integer g_b_dens, g_b_coul, g_b_exch, g_b_xc
-      integer g_hcore
+cc AJL/Begin/SPIN ECPs
+c      integer g_hcore
+      integer g_a_hcore, g_b_hcore
+c AJL/End
       integer g_tmp(6),ifock
       double precision jfac(4), kfac(4), one, zero, mone
       parameter (one=1.0d0, zero=0.0d0, mone=-1.0d0)
@@ -679,6 +682,19 @@ c
       double precision ecosmo !< [Output] The COSMO solvation energy
       integer g_dens(2),i
       character*255 cosmo_file
+c     DIM/QM JEM
+      logical ldimqm
+      integer g_vdim
+      double precision edimqm
+c
+cc AJL/Begin/SPIN ECPs
+      integer ecp_handle
+      integer ecp_channels
+      logical bas_get_ecp_handle
+      external bas_get_ecp_handle
+      logical ecp_get_high_chan
+      external ecp_get_high_chan
+cc AJL/End
 c     
 c     Check
 c     
@@ -892,13 +908,39 @@ c
 c
 c     reuse g_a_exch to hold the 1-e integrals
 c
-      g_hcore = g_a_exch
-      call ga_zero(g_hcore)
-      call int_1e_ga(basis, basis, g_hcore, 'kinetic', oskel)  ! kinetic
+cc AJL/Begin/SPIN ECPs
+c      g_hcore = g_a_exch
+c      call ga_zero(g_hcore)
+
+      ecp_channels = 1 
+      if (bas_get_ecp_handle(basis,ecp_handle)) then 
+        if (ecp_get_high_chan(ecp_handle,ecp_channels)) 
+     &    continue
+      end if
+
+      g_a_hcore = g_a_exch
+      g_b_hcore = g_b_exch
+      call ga_zero(g_a_hcore)
+      call ga_zero(g_b_hcore)
+c
+      call int_1e_ga(basis, basis, g_a_hcore, 'kinetic', oskel)  ! kinetic
       if (do_zora .and. .not.(do_NonRel)) then
-        call ga_dadd(1.d0,g_hcore,1.d0,g_zora_Kinetic(1),g_hcore) ! zora kinetic
+        call ga_dadd(1.d0,g_a_hcore,1.d0,g_zora_Kinetic(1),g_a_hcore) ! zora kinetic
       endif
-      call int_1e_ga(basis, basis, g_hcore, 'potential', oskel) ! potential
+
+cc If spin polarised ECP, split g_hcore
+      if (ecp_channels.gt.1)
+     &  call ga_copy(g_a_hcore,g_b_hcore)
+
+cc Put normal potential in to alpha hcore
+c      call int_1e_ga(basis, basis, g_hcore, 'potential', oskel) !potential
+      call int_1e_ga(basis, basis, g_a_hcore, 'potential', oskel) !potential
+      if (ecp_channels.gt.1) then ! Put beta potential in to beta hcore
+        call int_1e_ga(basis, basis, g_b_hcore, 'potential_beta', oskel)!potential_beta
+      else ! it is spin independent, so copy alpha to beta
+        call ga_copy(g_a_hcore,g_b_hcore)
+      endif
+cc AJL/End
 c
 c     cosmo charges, potential and energy contribution
 c
@@ -914,25 +956,52 @@ c
      &                                  2,           ! 2 = open shell 
      &                                  g_dens,      ! input density
      &                                  cosmo_file)  ! cosmo charges file name
-        call int_1e_ga(basis,basis,g_hcore,'cos_chg_pot',.false.)
+cc AJL/Begin/SPIN ECPs
+        call int_1e_ga(basis,basis,g_a_hcore,'cos_chg_pot',.false.)
+        call int_1e_ga(basis,basis,g_b_hcore,'cos_chg_pot',.false.)
+cc AJL/End
         do i = 1, 2
          if (.not.ga_destroy(g_dens(i)))
      &    call errquit('uhf_energy: ga_destroy failed g_dens',0,GA_ERR)
         enddo
       endif  ! cosmo check
 c
+c     DIM/QM JEM
+c     Calculate DIM potential
+      if (.not. rtdb_get(rtdb, 'dimqm:lrsp', mt_log, 1, ldimqm))
+     $  ldimqm = .false.
+      if (ldimqm) then
+c       We need to combine the alpha and beta densities to calculate the total DIM dipoles
+        g_dens(1) = ga_create_atom_blocked(geom,
+     $                                     basis, 'dim density matrix')
+        call ga_copy(g_a_dens, g_dens(1))
+        call ga_dadd(one, g_dens(1), one, g_b_dens, g_dens(1))
+        call dimqm_rohf_wrap(rtdb, geom, basis, nbf, g_dens(1), g_vdim)
+        if(.not.ga_destroy(g_dens(1)))
+     $    call errquit('uhf_energy: ga_destroy failed DIM den',0,GA_ERR)
+      end if
+c
 c     add in frozen embedding
       if (frozemb) then
-        call ga_dadd(1.d0,g_hcore,1.d0,g_frozemb,g_hcore)
+cc AJL/Begin/Spin ECPs
+        call ga_dadd(1.d0,g_a_hcore,1.d0,g_frozemb,g_a_hcore)
+        call ga_dadd(1.d0,g_b_hcore,1.d0,g_frozemb,g_b_hcore)
+cc AJL/End
       end if
 c
       call ga_sync()
 c
       eone = 
-     $     (ga_ddot(g_a_dens,g_hcore) + ga_ddot(g_b_dens,g_hcore))
-      call ga_dadd(one, g_hcore, one, g_a_coul, g_a_coul)
-      call ga_dadd(one, g_hcore, one, g_b_coul, g_b_coul)
+     $     (ga_ddot(g_a_dens,g_a_hcore) + ga_ddot(g_b_dens,g_b_hcore))
+      call ga_dadd(one, g_a_hcore, one, g_a_coul, g_a_coul)
+      call ga_dadd(one, g_b_hcore, one, g_b_coul, g_b_coul)
 c
+c     DIM/QM JEM
+c     Add DIM potential
+      if (ldimqm) then
+        call ga_dadd(one, g_vdim, one, g_a_coul, g_a_coul)
+        call ga_dadd(one, g_vdim, one, g_b_coul, g_b_coul)
+      end if
       if (oskel) then
          if (oscfps) call pstat_on(ps_sym_sym)
          call sym_symmetrize(geom, basis, .false., g_a_coul)
@@ -979,6 +1048,11 @@ c
      &       GA_ERR)
       if (.not. ga_destroy(g_b_coul)) call errquit('uhf_e: destroy',0,
      &       GA_ERR)
+c      DIM/QM JEM
+      if (ldimqm) then
+        if(.not.ga_destroy(g_vdim))
+     $    call errquit('uhf_energy: destroy vdim failed',0,GA_ERR)
+      end if
 c
 c     extract the gradient
 c
@@ -998,6 +1072,14 @@ c
      &       RTDB_ERR)
          energy=energy+ecosmo
       endif  ! cosmo check
+c
+c     DIM/QM JEM
+c     DIM energy term
+      if (ldimqm) then
+        if (.not.rtdb_get(rtdb, 'dimqm:edimqm', mt_dbl, 1, edimqm))
+     $    call errquit('uhf_energy get edimqm failed', 1, RTDB_ERR)
+        energy = energy + edimqm
+      end if
 c
       if (odebug .and. ga_nodeid().eq.0) then
          write(6,*) ' eone, etwo, enrep, energy ',

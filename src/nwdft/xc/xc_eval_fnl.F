@@ -41,7 +41,6 @@ c xc-third derivative header file
 cHvD
 #include "errquit.fh"
 #include "mafdecls.fh"
-#include "nwxc.fh"
 #include "util.fh"
       integer l_f, k_f
       integer l_g, k_g
@@ -89,6 +88,9 @@ c
 
       logical do_2nd, do_3rd
       logical ldew, ldew2, ldew3
+cc AJL/Unused
+c      logical out1
+cc AJL/End
 c
       double precision eps,dumd
       integer nx,nc,dumi
@@ -126,7 +128,7 @@ c
 c
       use_nwxc = util_module_avail("nwxc")
       if (use_nwxc) then
-        use_nwxc = nwxc_is_on()
+         call nwxc_getvals("nwxc_is_on",use_nwxc)
       endif
       if (use_nwxc) then
 c
@@ -168,7 +170,19 @@ c
      +                        Amat,Cmat,Mmat)
           endif
         endif
-
+c
+c       The NWXC module calculates derivatives wrt the proper 
+c       kinetic energy density. It seems that the original subroutines
+c       calculate derivatives wrt. twice the kinetic energy density
+c       (in many cases people choose to absorb the factor half in the
+c       kinetic energy density in the functional expression). As a
+c       result there is factor half between what NWXC calculates and
+c       what NWChem expects. Hence we need to scale Mmat here.
+c
+        if (kske) then
+          call dscal(nq*ipol,0.5d0,mmat,1)
+        endif
+c
         Ex = Ex + ddot(nq,dbl_mb(k_f),1,qwght,1)
         if (ldew) then
           call dcopy(nq,dbl_mb(k_f),1,func,1)
@@ -1533,6 +1547,87 @@ c gradients.  ldew2 is for the dVxc*P term in the TDDFT gradients.
 c
       return
       end
+
+cc AJL/Begin/FDE
+c
+      Subroutine xc_eval_fnl_fde(rho, delrho, Amat, Amat2, Cmat, Cmat2,
+     &                       nq, Ex, Ec, qwght, grad, ldew, func,
+     &                       do_2nd, ttau, kske, Mmat, Mmat2,
+     &                       StericEnergy, do_3rd, Amat3, Cmat3, ldew2)
+c
+      implicit none
+c
+#include "cdft.fh"
+c xc-second derivative header file
+c#include "dft2drv.fh"
+c xc-third derivative header file
+c#include "dft3drv.fh"
+c#include "stdio.fh"
+#include "steric.fh"
+c
+      integer nq
+      double precision rho(*)    !< [Input] The electron density
+                                 !< \f$\rho^\alpha\f$ and
+                                 !< \f$\rho^\beta\f$.
+      double precision delrho(*) !< [Input] The electron density gradient
+                                 !< \f$\partial\rho^\alpha/\partial r\f$
+                                 !< and
+                                 !< \f$\partial\rho^\beta/\partial r\f$
+c
+      double precision Amat(*), Cmat(*)
+      double precision Amat2(*),Cmat2(*)
+      double precision Amat3(*),Cmat3(*)
+      double precision ttau(*) !< [Input] The kinetic energy density
+      double precision Mmat(*), Mmat2(*)
+c
+      double precision Ex !< [Output] The exchange energy
+      double precision Ec !< [Output] The correlation energy
+      double precision StericEnergy
+      double precision qwght(nq), func(nq)
+      logical grad, kske
+c
+      logical do_2nd, do_3rd
+      logical ldew, ldew2
+c Local
+      double precision cfac_temp(numfunc), xfac_temp(numfunc)
+      logical lcfac_temp(numfunc), nlcfac_temp(numfunc)
+      logical lxfac_temp(numfunc), nlxfac_temp(numfunc)
+      integer i
+c
+      do i=1,numfunc
+        cfac_temp(i)   = cfac(i)
+        xfac_temp(i)   = xfac(i)
+        lcfac_temp(i)  = lcfac(i)
+        nlcfac_temp(i) = nlcfac(i)
+        lxfac_temp(i)  = lxfac(i)
+        nlxfac_temp(i) = nlxfac(i)
+
+        cfac(i)   = cfac_fde(i)
+        xfac(i)   = xfac_fde(i)
+        lcfac(i)  = lcfac_fde(i)
+        nlcfac(i) = nlcfac_fde(i)
+        lxfac(i)  = lxfac_fde(i)
+        nlxfac(i) = nlxfac_fde(i)
+      enddo
+
+      call xc_eval_fnl(rho, delrho, Amat, Amat2, Cmat, Cmat2,
+     &                       nq, Ex, Ec, qwght, grad, ldew, func,
+     &                       do_2nd, ttau, kske, Mmat, Mmat2,
+     &                       StericEnergy, do_3rd, Amat3, Cmat3, ldew2)
+
+      do i=1,numfunc
+        cfac(i)   = cfac_temp(i)
+        xfac(i)   = xfac_temp(i)
+        lcfac(i)  = lcfac_temp(i)
+        nlcfac(i) = nlcfac_temp(i)
+        lxfac(i)  = lxfac_temp(i)
+        nlxfac(i) = nlxfac_temp(i)
+      enddo
+
+      return
+      end
+c
+cc AJL/End
 
       subroutine calc_rgamma(ipol,nq,delrho,rgamma)
       implicit none

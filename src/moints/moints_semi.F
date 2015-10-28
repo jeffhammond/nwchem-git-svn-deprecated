@@ -1,6 +1,7 @@
 #ifdef SOLARIS
 #define NEW_SPARSE
 #endif
+#define GAADD 1
 c
 c  $Id$
 c
@@ -67,7 +68,7 @@ c
        integer lmemreq, nvir_node
        double precision gmem, gmem_agg
        double precision iotmpptr
-       integer g_kbuf
+       integer g_kbuf,g_kbuf_trans
        logical status
        logical osym
        character*256 fnameK
@@ -149,12 +150,18 @@ c
 c
        nvir_node = int(nvir/numnodes)
        if (mod(nvir,numnodes).ne.0) nvir_node=nvir_node+1
+c     we have g_kbuf and g_kbuf trans plus ga_add duplicates .. /3
+c     we have g_kbuf and g_kbuf trans 
+       gmem=gmem/2
        mxrlen = int(gmem/(nseg*nvir_node))
        mxrlen = min(
      $      mxrlen, 
-     $      min(nbf*nbf,maxbfsh*maxbfsh*numnodes))
+     $      nbf*nbf)
+C     $      min(nbf*nbf,maxbfsh*maxbfsh*numnodes))
+
        if (rtdb_get(rtdb, 'mp2:mxrlen', mt_int, 1, mxrlen_in)) 
      c      mxrlen=max(mxrlen_in*1024,mxrlen)
+ 1964  continue
 c
        if (oprint_mem) then
           write(6,720) mxrlen, nseg, nvir, nbf, maxbfsh, numnodes
@@ -188,11 +195,21 @@ c  Create GA exchange buffer
 c
 c
       itmp = nvir/numnodes + min(mod(nvir,numnodes),1)
+      gmem=0
 *ga:1:0
       if (.not.(ga_create( MT_DBL, mxrlen*nseg, nvir, 'transp Kbuf',
-     $                     (mxrlen*nseg), 0, g_kbuf )))
-     $   call errquit('moints_semi: cannot allocate K buffer',0,
-     &       GA_ERR)
+     $                     (mxrlen*nseg), 0, g_kbuf ))) gmem=-1
+       call ga_dgop(319, gmem, 1, 'min')
+       call ga_sync()
+       if(gmem.lt.0) then
+c     cant alloc ga .. reduce mxrlen
+         mxrlen=mxrlen/2
+         if(ga_nodeid().eq.0) write(6,1962)
+ 1962    format(//,5x,' Halved record length',//)
+         goto 1964
+cold    call errquit('moints_semi: cannot allocate K buffer',0,
+cold     &       GA_ERR)
+         endif
       call ga_distribution(g_kbuf, myid, rlo, rhi, clo, chi )
       if ((clo.eq.0).and.(chi.eq.-1)) then
         pvlo = 0
@@ -201,6 +218,26 @@ c
         pvlo = vlo + clo - 1
         pvhi = vlo + chi - 1
       endif
+#ifdef GAADD
+      gmem=0
+      if (.not.(ga_create( MT_DBL, mxrlen*nseg, nvir, ' Kbuf',
+     $                     0, nvir, g_kbuf_trans ))) gmem=-1
+       call ga_dgop(321, gmem, 1, 'min')
+       call ga_sync()
+       if(gmem.lt.0) then
+c     cant alloc ga .. reduce mxrlen
+         mxrlen=mxrlen/2
+         if (.not. ga_destroy(g_kbuf))
+     $        call errquit('moints_semi: failed to destroy g_kbuf',
+     G        g_kbuf,   GA_ERR)
+         if(ga_nodeid().eq.0) write(6,1962) 
+         goto 1964
+cold     $   call errquit('moints_semi: cannot allocate K buffer',0,
+cold     &       GA_ERR)
+      endif
+#else
+      g_kbuf_trans=g_kbuf
+#endif
 c
 c  Reorder shells by descending shell-length
 c  and group shells by blocksize
@@ -259,6 +296,7 @@ c
        call util_file_name('kh', .true.,.true., fnamek)
 #ifdef NOIO
        eaftype=mp2_eaftype(rtdb,k_file_size)
+       if(ga_nodeid().eq.0) write(6,*) ' mp2_eaf for mointskh  ',eaftype
 #else
        eaftype=EAF_RW
 #endif
@@ -286,7 +324,7 @@ c
      $                   int_mb(k_bfmap), int_mb(k_rbfmap),
      $                   blen, int_mb(k_gloc), 
      $                   nnbf, niofl, int_mb(k_ionext),
-     $                   int_mb(k_rlen), g_movecs, g_kbuf )
+     $                   int_mb(k_rlen), g_movecs, g_kbuf,g_kbuf_trans)
 c
 c  Clean up
 c
@@ -309,6 +347,11 @@ c
        if (.not. ga_destroy(g_kbuf))
      $      call errquit('moints_semi: failed to destroy g_kbuf',g_kbuf,
      &       GA_ERR)
+#ifdef GAADD
+       if (.not. ga_destroy(g_kbuf_trans))
+     $      call errquit('moints_semi: failed to destroy g_kbuf',g_kbuf,
+     &       GA_ERR)
+#endif
 c
        if (eaf_close(kunit).ne.0)
      $   call errquit('moints_semi: failed to close file',kunit,
@@ -341,7 +384,8 @@ c
      $                           pvlo, pvhi, mxrlen, osym, oblk, 
      $                           kunit, shmap, ngrp, glo, ghi, bfmap, 
      $                           rbfmap, blen, gloc, nnbf, 
-     $                           niofl, ionext, rlen, g_movecs, g_kbuf)
+     $                           niofl, ionext, rlen, g_movecs, g_kbuf,
+     G     g_kbuf_trans)
        implicit none
 #include "errquit.fh"
 #include "tcgmsg.fh"
@@ -384,6 +428,7 @@ c
        integer rlen(niofl)                    ! [input] Record lengths for IO writes
        integer g_movecs                       ! [input] MO coefficients
        integer g_kbuf                         ! [scratch] Buffer for half-trans exchange
+       integer g_kbuf_trans                         ! [scratch] Buffer for half-trans exchange
 c
 c   Local variables
 c
@@ -421,6 +466,7 @@ c
        external gr_len, nxtask
 c
        call ga_zero(g_kbuf)
+       call ga_zero(g_kbuf_trans)
        num_nodes = ga_nnodes()
        nmo1 = oseghi - oseglo + 1
        nmo2 = vhi - vlo + 1
@@ -463,7 +509,12 @@ c
      &       MA_ERR)
       endif
 c
+#if 0
        call ga_get(g_movecs, 1, nbf, qlo, qhi, dbl_mb(k_xmo_t), nbf )
+#else
+       call util_mygabcast2(g_movecs,1, nbf, qlo, qhi, 
+     D      dbl_mb(k_xmo_t), nbf )
+#endif
        call row_exch( nbf, nmo, rbfmap, dbl_mb(k_xmo_t), dbl_mb(k_xmo) )
        call moints_xmot(nbf,qhi-qlo+1,dbl_mb(k_xmo),dbl_mb(k_xmo_t))
 
@@ -614,7 +665,7 @@ c
      $                               jbflo, jbfhi, rlen(iiofl), 
      $                               gloc, dbl_mb(k_ssni),
      $                               dbl_mb(k_hlp), dbl_mb(k_hlp2),
-     $                               dbl_mb(k_xmo_t), g_kbuf )
+     $                               dbl_mb(k_xmo_t), g_kbuf_trans)
 
                if (.not. ma_pop_stack(l_hlp)) 
      $                 call errquit('moints_semi: pop failed ',18,
@@ -643,7 +694,7 @@ c
      $              jbflo, jbfhi, rlen(iiofl), gloc, 
      $              dbl_mb(k_ssni),
      $              dbl_mb(k_hlp3), dbl_mb(k_hlp2),
-     $              dbl_mb(k_xmo), g_kbuf )
+     $              dbl_mb(k_xmo), g_kbuf_trans)
 
                if (.not. ma_pop_stack(l_xmo)) 
      $                 call errquit('moints_semi: pop failed ',180,
@@ -682,12 +733,26 @@ c
                mi_nsynchs = mi_nsynchs + 1
                call summaxmin(t1, mi_aggsynch, mi_maxsynch, mi_minsynch)
                t0 = util_cpusec()
+#ifdef GAADD
+#if 1
+               call mp2_copyback(g_kbuf,g_kbuf_trans)
+#else
+               call ga_copy(g_kbuf_trans,g_kbuf)
+#endif
+C               call ga_mask_sync(.true.,.false.)
+               call ga_sync()
+c               call ga_add(1d0,g_kbuf_trans,1d0,g_kbuf,g_kbuf)
+
+#endif
                call moints_wrbuf( kunit, oseglo, oseghi,
      $                            vlo, pvlo, pvhi, nnbf, iocnt,
-     $                            rlen(iiofl), g_kbuf )
+     $                            rlen(iiofl), g_kbuf)
                mi_tio = mi_tio + util_cpusec() - t0
                nwrbytes = nwrbytes + nmo1*(pvhi-pvlo+1)*rlen(iiofl)
+               call ga_mask_sync(.false.,.false.)
                call ga_zero(g_kbuf)
+               call ga_mask_sync(.false.,.true.)
+               call ga_zero(g_kbuf_trans)
                iocnt = iocnt + ma_sizeof(MT_DBL,rlen(iiofl),MT_BYTE)
                iiofl = iiofl + 1
              endif
@@ -759,7 +824,6 @@ c
       glo = gloc(ilo,jlo)
       ghi = gloc(ihi,jhi)
       nvir = vhi - vlo + 1
-
       do o=oseglo,oseghi
         call dgemm('t', 'n', ijlen, nvir, nbf, 1.d0, ssni(1,jlo,ilo,o),
      $              nbf, c(1,vlo), nbf, 0.d0, h(jlo,ilo,vlo), ijlen)

@@ -2418,12 +2418,10 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       !complex*16 A(nxh,n)
       real*8 A(2*nxh,n)
       integer i,indx
-!$omp parallel do default(private) shared(A,n) private(i)
-!$omp& firstprivate(nx,tmpx)
+
       do i=1,n
          call drfftf(nx,A(1,i),tmpx)
       end do
-!$omp end parallel do
       return
       end
 
@@ -2620,14 +2618,11 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       !complex*16 A(ny,n)
       real*8     A(2*ny,n)
       integer i
-!$omp parallel do default(private) shared(A,n) private(i)
-!$omp& firstprivate(ny,tmpy,row2) schedule(dynamic)
       do i=1,n
          if (.not.row2(i)) then
             call dcfftf(ny,A(1,i),tmpy)
          end if
       end do
-!$omp end parallel do
       return
       end
 
@@ -2813,14 +2808,11 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       !complex*16 A(nz,n)
       real*8     A(2*nz,n)
       integer i
-!$omp parallel do default(private) shared(A,n) private(i)
-!$omp& firstprivate(nz,tmpz,row3) schedule(dynamic)
       do i=1,n
          if (.not.row3(i)) then
             call dcfftf(nz,A(1,i),tmpz)
          end if
       end do
-!$omp end parallel do
       return
       end
 
@@ -2936,9 +2928,12 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
 
 *     *** local variables ***
       integer i,k,q,indx,ierr
-      integer nxh,nxhz,indx0,indx1,indx2
+      integer nxh,nxhz,indx0,indx1,indx2,tid,nthr
+      integer  Parallel_threadid,Parallel_nthreads
+      external Parallel_threadid,Parallel_nthreads
 
-
+      tid  = Parallel_threadid()
+      nthr = Parallel_nthreads()
 
        nxh = (nx(1)/2+1)
        nxhz = nxh*nz(1)
@@ -3056,11 +3051,13 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
      >                     dcpl_mb(tmpz(1,1)),tmp1)
 #else
       indx = 1
-      do q=1,nq3(1)
+      do q=1+tid,nq3(1),nthr
+         indx = 1 + (q-1)*nz(1)
          if (.not.log_mb(zero_row3(1,nbb)+q-1)) then
-            call dcfftb(nz(1),tmp1(indx),dcpl_mb(tmpz(1,1)))
+            call dcfftb(nz(1),tmp1(indx),
+     >                  dcpl_mb(tmpz(1,1)+tid*(2*nz(1)+15)))
          end if
-         indx = indx + nz(1)
+         !indx = indx + nz(1)
       end do
 #endif
 #endif
@@ -3084,14 +3081,11 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       !complex*16 A(nz,n)
       real*8     A(2*nz,n)
       integer i
-!$omp parallel do default(private) shared(A,n) private(i)
-!$omp& firstprivate(nz,tmpz,row3) schedule(dynamic)
       do i=1,n
          if (.not.row3(i)) then
             call dcfftb(nz,A(1,i),tmpz)
          end if
       end do
-!$omp end parallel do
       return
       end
 
@@ -3123,9 +3117,13 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
 
 *     *** local variables ***
       integer i,j,q,indx,ierr
-      integer nxh,nxhy,indx0,indx1,indx2
+      integer nxh,nxhy,indx0,indx1,indx2,tid,nthr
+      integer  Parallel_threadid,Parallel_nthreads
+      external Parallel_threadid,Parallel_nthreads
 
       
+       tid  = Parallel_threadid()
+       nthr = Parallel_nthreads()
 
        nxh = (nx(1)/2+1)
        nxhy = nxh*ny(1)
@@ -3250,11 +3248,13 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
      >                     dcpl_mb(tmpy(1,1)),tmp2)
 #else
       indx = 1
-      do q=1,nq2(1)
+      do q=1+tid,nq2(1),nthr
+         indx = 1 + (q-1)*ny(1)
          if (.not.log_mb(zero_row2(1,nbb)+q-1)) then
-            call dcfftb(ny(1),tmp2(indx),dcpl_mb(tmpy(1,1)))
+            call dcfftb(ny(1),tmp2(indx),
+     >                  dcpl_mb(tmpy(1,1)+tid*(2*ny(1)+15)))
          end if
-         indx = indx + ny(1)
+         !indx = indx + ny(1)
       end do
 #endif
 #endif
@@ -3280,14 +3280,11 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       !complex*16 A(ny,n)
       real*8     A(2*ny,n)
       integer i
-!$omp parallel do default(private) shared(A,n) private(i)
-!$omp& firstprivate(ny,tmpy,row2) schedule(dynamic)
       do i=1,n
          if (.not.row2(i)) then
             call dcfftb(ny,A(1,i),tmpy)
          end if
       end do
-!$omp end parallel do
       return
       end
 
@@ -3320,8 +3317,14 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
 
 *     *** local variables ***
       integer j,q,indx,ierr
-      integer nxh
+      integer nxh,tid,nthr
 
+*     **** external functions ****
+      integer  Parallel_threadid,Parallel_nthreads
+      external Parallel_threadid,Parallel_nthreads
+
+      tid  = Parallel_threadid()
+      nthr = Parallel_nthreads()
 
       nxh = (nx(1)/2+1)
       
@@ -3407,13 +3410,17 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       call D3dB_pfftbx_sub(nq1(1),nx(1),nxh,dcpl_mb(tmpx(1,1)),tmp1)
       call zeroend_fftb(nx(1),nq1(1),1,1,tmp1)
 #else
-      call cshift1_fftb(nx(1),nq1(1),1,1,tmp1)
+      !call cshift1_fftb(nx(1),nq1(1),1,1,tmp1)
       indx = 1
-      do q=1,nq1(1)
-         call drfftb(nx(1),tmp1(indx),dcpl_mb(tmpx(1,1)))
-         indx = indx + nxh
+      do q=1+tid,nq1(1),nthr
+         indx = 1+(q-1)*nxh
+         call cshift1_fftb1(nx(1),tmp1(indx))
+         call drfftb(nx(1),tmp1(indx),
+     >               dcpl_mb(tmpx(1,1)+tid*(2*nx(1)+15))) 
+         call zeroend_fftb1(nx(1),tmp1(indx))
+         !indx = indx + nxh
       end do
-      call zeroend_fftb(nx(1),nq1(1),1,1,tmp1)
+      !call zeroend_fftb(nx(1),nq1(1),1,1,tmp1)
 #endif
 #endif
 #endif
@@ -3432,12 +3439,9 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       !complex*16 A(nxh,n)
       real*8     A(2*nxh,n)
       integer i
-!$omp parallel do default(private) shared(A,n) private(i)
-!$omp& firstprivate(nx,tmpx) schedule(static)
       do i=1,n
          call drfftb(nx,A(1,i),tmpx)
       end do
-!$omp end parallel do
 
       return
       end
@@ -3466,6 +3470,10 @@ c     call D3dB_c_transpose_jk(nb,A,dcpl_mb(tmp2(1)),dbl_mb(tmp3(1)))
       integer tmp1z(2),tmp2z(2)
       common / pfft_queuez_common / tmp1z,tmp2z
 
+      integer  Parallel_threadid,tid
+      external Parallel_threadid
+
+      tid = Parallel_threadid()
 
       if (step.eq.1) then
          call nwpw_timing_start(32)
@@ -3551,9 +3559,7 @@ c     **** allocate aqueue ****
      >        BA_alloc_get(mt_int,size,'areqcnt',areqcnt(2),areqcnt(1))
       if (.not. value) call errquit('out of heap memory',0, MA_ERR)
 
-!$OMP SINGLE
       call dcopy(4*nfft3d(1)*aqmax,0.0d0,0,dcpl_mb(atmp(1)),1)
-!$OMP END SINGLE
 
 
 c     **** allocate bqueue ****
@@ -3573,9 +3579,7 @@ c     **** allocate bqueue ****
       value = value.and.
      >        BA_alloc_get(mt_int,size,'breqcnt',breqcnt(2),breqcnt(1))
       if (.not. value) call errquit('out of heap memory',0, MA_ERR)
-!$OMP SINGLE
       call dcopy(4*nfft3d(1)*bqmax,0.0d0,0,dcpl_mb(btmp(1)),1)
-!$OMP END SINGLE
 
 
 
@@ -3899,15 +3903,18 @@ c      call nwpw_timing_end(1)
       !*** local variables ***
       integer shift1,shift2,shift3
       integer q,indx,status,np
+      !integer  Parallel_taskid,tid
+      !external Parallel_taskid
 
 c      call nwpw_timing_start(1)
       call nwpw_timing_start(30)
       call Parallel2d_np_i(np)
 
+      !tid = Parallel_taskid()
       do q=1,qsize
          indx   = int_mb(qindx(1)+q-1)
-         int_mb(qstatus(1)+indx-1) = int_mb(qstatus(1)+indx-1) + 1
-         status = int_mb(qstatus(1)+indx-1)
+         !int_mb(qstatus(1)+indx-1) = int_mb(qstatus(1)+indx-1) + 1
+         status = int_mb(qstatus(1)+indx-1)+1
          shift1=nfft3d(1)*(2*(indx-1))
          shift2=nfft3d(1)*(2*(indx-1)+1)
          shift3=2*np*(indx-1)
@@ -3916,13 +3923,23 @@ c      call nwpw_timing_start(1)
      >                        dcpl_mb(tmp(1)+shift2),
      >                        int_mb(request(1)+shift3),
      >                        int_mb(reqcnt(1)+indx-1))
+      
+        call Parallel_shared_iinc(.true.,1,int_mb(qstatus(1)+indx-1))
       end do
 
-      qsize = qsize + 1
-      last_index = last_index+1
-      if (last_index.gt.qmax) last_index = 1
-      int_mb(qindx(1)+qsize-1)        = last_index
-      int_mb(qstatus(1)+last_index-1) = 1
+c      qsize = qsize + 1
+c      last_index = last_index+1
+c      if (last_index.gt.qmax) last_index = 1
+c      int_mb(qindx(1)+qsize-1)        = last_index
+c      int_mb(qstatus(1)+last_index-1) = 1
+
+      call Parallel_shared_iinc(.true.,1,qsize)
+      call Parallel_shared_irot(.true.,qmax,last_index)
+      call Parallel_shared_icopy(.true.,last_index,
+     >                           int_mb(qindx(1)+qsize-1))
+      call Parallel_shared_icopy(.true.,1,
+     >                           int_mb(qstatus(1)+last_index-1))
+
       status = 1
       shift1=nfft3d(1)*(2*(last_index-1))
       shift2=nfft3d(1)*(2*(last_index-1)+1)
@@ -3971,13 +3988,16 @@ c      call nwpw_timing_end(1)
       !*** local variables ***
       integer shift1,shift2,shift3
       integer q,indx,indx1,status,np
+      integer  Parallel_threadid,tid
+      external Parallel_threadid
+
+
+      tid = Parallel_threadid()
 
       call Parallel2d_np_i(np)
 
 c      call nwpw_timing_start(1)
       call nwpw_timing_start(30)
-
-
 
 c      do q=1,qsize
 c         indx   = int_mb(qindx(1)+q-1)
@@ -3993,12 +4013,13 @@ c     >                        int_mb(request(1)+shift3),
 c     >                        int_mb(reqcnt(1)+indx-1))
 c      end do
 
+
       indx1   = int_mb(qindx(1))
       do while (int_mb(qstatus(1)+indx1-1).lt.6)
          do q=1,qsize
             indx   = int_mb(qindx(1)+q-1)
-            int_mb(qstatus(1)+indx-1) = int_mb(qstatus(1)+indx-1) + 1
-            status = int_mb(qstatus(1)+indx-1)
+            !int_mb(qstatus(1)+indx-1) = int_mb(qstatus(1)+indx-1) + 1
+            status = int_mb(qstatus(1)+indx-1) + 1
             shift1=nfft3d(1)*(2*(indx-1))
             shift2=nfft3d(1)*(2*(indx-1)+1)
             shift3=2*np*(indx-1)
@@ -4007,19 +4028,30 @@ c      end do
      >                        dcpl_mb(tmp(1)+shift2),
      >                        int_mb(request(1)+shift3),
      >                        int_mb(reqcnt(1)+indx-1))
+
+            call Parallel_shared_iinc(.true.,1,
+     >                                int_mb(qstatus(1)+indx-1))
          end do
       end do
 
-      qsize = qsize -1
-      do q=1,qsize
-        int_mb(qindx(1)+q-1) = int_mb(qindx(1)+q)
-      end do
+      !write(*,*) "way before vcopy, tid=",tid
+c      qsize = qsize -1
+c      do q=1,qsize
+c        int_mb(qindx(1)+q-1) = int_mb(qindx(1)+q)
+c      end do
+      call Parallel_shared_iinc(.true.,-1,qsize)
+      call Parallel_shared_lshift(.true.,qsize,int_mb(qindx(1)))
 
       shift1=nfft3d(1)*(2*(indx1-1))
-      call dcopy(2*nfft3d(1),dcpl_mb(tmp(1)+shift1),1,A,1)
+c      call dcopy(2*nfft3d(1),dcpl_mb(tmp(1)+shift1),1,A,1)
+      !write(*,*) "before vcopy, tid=",tid
+      call Parallel_shared_vector_copy(.true.,2*nfft3d(1),
+     >                                 dcpl_mb(tmp(1)+shift1),
+     >                                 A)
 
 c      call nwpw_timing_end(1)
       call nwpw_timing_end(30)
+
       return
       end
 

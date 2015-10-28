@@ -44,7 +44,7 @@
       WRITE(6,*) ' *                                    *'
       WRITE(6,*) ' * Version +0.1, Jeppe Olsen, July. 13*'
       WRITE(6,*) ' **************************************'
-      endif
+      end if
 *
       NTEST = 000
       NTEST = MAX(NTEST,IPRINT)
@@ -63,7 +63,7 @@ cVOG        WRITE(6,*) ' Please make sure ICNFBAT .ge. 2 and ICISTR .ge. 2 '
 cVOG        STOP       ' AKBK calculation does not work with incore options'
       END IF
 *
-      IAKBK_MET = 1 
+      IAKBK_MET = 1
       if (ga_nodeid().eq.0) then
       WRITE(6,*) ' Allowed number of outer iterations ', MAXITM
       WRITE(6,*) ' Allowed number of inner iterations ', MAXIT 
@@ -77,19 +77,20 @@ c     END IF
 *
       WRITE(6,*) 
      &' Convergence threshold for macroiterations: ', THRES_E
-      endif
+      end if
 *
 *. Memory for summarizer of information
 *
       NITEM = 2
       LEN_SUMMARY = NITEM*(MAXITM+1)
-      CALL MEMMAN(KL_SUMMARY,LEN_SUMMARY,'ADDL  ',2,'SUMMRY')
+cVOG  Important for AKBKMCSCF
+cVOG  CALL MEMMAN(KL_SUMMARY,LEN_SUMMARY,'ADDL  ',2,'SUMMRY')
       IPSPC = JCMBSPC - 1
       IQSPC = JCMBSPC
       if (ga_nodeid().eq.0) then
       WRITE(6,*) ' P-space for expansion ', IPSPC
       WRITE(6,*) ' Q-space for expansion ', IQSPC
-      endif
+      end if
 *. Number of CSFs in P and Q
       NPCSF = NCSF_PER_SYM_GN(IREFSM,IPSPC)
       NQCSF = NCSF_PER_SYM_GN(IREFSM,IQSPC)
@@ -182,7 +183,8 @@ C    &           IOCCLS,NGAS,NEXCIT,NRCONNECT,IRCONNECT)
       NBLOCK_Q = NSBLOCK
       NBATCH_Q = NSBATCH
       NSBLK = NSBLOCK
-      if (IPRINT.ge.10.and.ga_nodeid().eq.0) then
+*      if (IPRINT.ge.10.and.ga_nodeid().eq.0) then
+      if (ga_nodeid().eq.0) then
       WRITE(6,'(a,2I9)')  
      & ' Number of blocks and batches in P  ',NBLOCK_P, NBATCH_P
       WRITE(6,'(a,2I9)')  
@@ -218,16 +220,20 @@ C    &           IOCCLS,NGAS,NEXCIT,NRCONNECT,IRCONNECT)
 *       CALL ga_zero(KVEC3)
 *
 *LOCAL
+*
+      CALL GET_3BLKS(KVEC1,KVEC2,KC2)
+      KVEC3 = KC2
+      KVEC1P = KVEC1
+      KVEC2P = KVEC2
 *      CALL MEMMAN(KVEC1P, NSDP,'ADDS  ',2,'VEC1P ')
 *      CALL MEMMAN(KVEC2P, NSDP,'ADDS  ',2,'VEC2P ')
-      CALL MEMMAN(KC2,    NSDQ,'ADDS  ',2,'VEC3  ')
+*      CALL MEMMAN(KC2,    NSDQ,'ADDS  ',2,'VEC3  ') !!!ACHTUNG!!!!
 *
 * Analyze P-space expansion (Do I need it?)
 *
 cVOG   CALL GASANA(dbl_mb(KVEC1P),NBLOCK,NSDP,NSDP,LUC,ICISTR)
 *
 * Allocate Q-space vector
-* VOG: I should fix SplitGAS cases. Now it is working as SplitCAS
 *
 !       IF ( .not. ga_create( mt_dbl, NSDQ, 1, 'VECQ', 0, 0, KVECQ) )
 !     $    CALL ERRQUIT('AKBK: ga_create VECP failed', NSDQ, GA_ERR)
@@ -615,7 +621,7 @@ C?    END IF
       END IF
       IF(NTEST.GE.1000.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' Input vector to AKBKSIGMA '
-!        CALL ga_print(CB)
+        CALL ga_print(CB)
 !        KATI = 0.0d0
 !        KATI(1) = -0.44231
 !        KATI(2) =  0.89488
@@ -664,7 +670,7 @@ cVOG  CALL MV7(CB,HCB,LUC,LU_Q2,XDUM,XDUM)
       CALL MV7(CB,KLU_Q2,0,0,0,0)
       IF(NTEST.GE.1000.and.ga_nodeid().eq.0) 
      &  WRITE(6,*) ' H(QP)P CP accomplished'
-      IF(NTEST.GE.1000) THEN
+      IF(NTEST.GE.1000.and.ga_nodeid().eq.0) THEN
        CALL ga_print(CB)
        CALL ga_print(KLU_Q2)
 cVOG   CALL WRTVCD(CB,LU_Q2,1,LBLK)
@@ -4577,10 +4583,11 @@ C    &   (nobpts_gn(ntrgas+1,igensm),igensm = 1, ngensmob)
          call iwrtma3(itpfso,1,ntoob,1,1)
          write(luout,*)
 *
-        else
+cVOG    else
          write(luout,*) ' Modified Density '
          call wrtmat(densi1,nacob,nacob,nacob,nacob)
          write(luout,*)
+        else
          if (only_dens.eq.1) then
           ! Get reduced dimensions for RHO2
           call getnddens2(ndactorb,nddensi2,only_dens)
@@ -4648,7 +4655,7 @@ C    &   (nobpts_gn(ntrgas+1,igensm),igensm = 1, ngensmob)
 *
 *.
 *
-      ntest = 0
+      ntest = 10 !VOG 0
 *
 *. Modify RHO1
 *
@@ -4907,7 +4914,7 @@ C    &   (nobpts_gn(ntrgas+1,igensm),igensm = 1, ngensmob)
 *. Local
       dimension idactspc(mxpngas)
 *
-      ntest = 0
+      ntest = 10 !VOG 0
 *
       ndactorb = 0
       if (only_dens.eq.1) then
@@ -4952,6 +4959,935 @@ C    &   (nobpts_gn(ntrgas+1,igensm),igensm = 1, ngensmob)
       end if
 *
       ipq = int(x)
+*
+      return
+      end
+*======================================================================*
+*======================================================================*
+      subroutine akbkqspace
+*======================================================================*
+*
+*.  Break the full Q-space into smaller GAS spaces for reducing memory
+*.  requirements in SplitGAS
+*.  
+*.  Konstantinos D. Vogiatzis, September 2015 
+*
+*======================================================================*
+*
+      include 'implicit.inc'
+      include 'mxpdim.inc'
+      include 'orbinp.inc'
+      include 'cgas.inc'
+      include 'crun.inc'
+      include 'clunit.inc'
+      include 'lucinp.inc'
+#include "global.fh"
+#include "mafdecls.fh"
+*
+*. Scratch
+      integer igsoccupd(mxpngas,2,ncispc)
+      integer ngsshupd(nirrep,mxpngas) 
+      integer gasocc(ngas,2), sumocc(2)
+      integer gathermos(nirrep)
+      integer ntotmos(ngas)
+      integer maxocc(ngas)
+      integer totsds, ngastotmo, weyl, get_mo_occ_gas
+      external weyl, get_mo_occ_gas
+*
+      ntest  = 100 !VOG 0
+*
+*. Print Input
+*
+      if(ntest.ge.100.and.ga_nodeid().eq.0) then
+      WRITE(*,*)
+      WRITE(*,*) ' ***********************************'
+      WRITE(*,*) '   Input GAS Spaces for CI batches  '
+      WRITE(*,*) ' ***********************************'
+      WRITE(*,*)
+      WRITE(*,'(A)') ' Orbital subspaces:'
+      WRITE(*,'(A)') ' ================== '
+      WRITE(*,*)
+      WRITE(*,'(1H ,A,10I4,A)')
+     &  '                Irrep ',(I,I = 1,NIRREP)
+      WRITE(*,'(1H ,A,2X,10A,A)')
+     &  '                ===== ',('====',I = 1,NIRREP)
+      WRITE(*,'(A,10I4)')
+     &  '        Inactive       ',
+     &   ( NINASH(IRREP),IRREP = 1, NIRREP)
+
+      DO IGAS = 1, NGAS
+        WRITE(*,'(A,I2,A,10I4,6X,2I6)')
+     &  '        GAS',IGAS,'          ',
+     &  (NGSSH(IRREP,IGAS),IRREP = 1, NIRREP)
+      END DO
+      WRITE(*,'(A,10I4)')
+     &  '        Secondary      ',
+     &   ( NSECSH(IRREP),IRREP = 1, NIRREP)
+      WRITE(6,*)
+      IF(IGSFILL.NE.0) WRITE(6,'(7X,A,I3)')
+     &' Gas space provided by courtesy of LUCIA:',  IGSFILL
+      IF(ISECFILL.NE.0) WRITE(6,'(7X,A,I3)')
+     &' Secondary space provided by courtesy of LUCIA '
+*
+       WRITE(*,'(A,I3)')
+     &  ' Number of Occupation spaces: ',NCISPC
+       WRITE(*,*)
+       DO ICISPC = 1, NCISPC
+        WRITE(*,'(A,I3)')
+     &  ' Bounds on accumulated occupations for space: ',ICISPC
+        WRITE(*,'(A)')
+     &   ' ====================================================== '
+        WRITE(*,'(A)')
+        WRITE(*,'(A)') '         Min. occ    Max. occ '
+        WRITE(*,'(A)') '         ========    ======== '
+        DO IGAS = 1, NGAS
+          WRITE(*,'(A,I2,3X,I3,9X,I3)')
+     &    '   GAS',IGAS,IGSOCCX(IGAS,1,ICISPC),IGSOCCX(IGAS,2,ICISPC)
+        END DO
+       END DO
+       WRITE(*,*)
+      end if
+*
+      ntogas = 100
+      nmoqs  = 0
+*
+*. Identify non-filled GAS spaces
+*
+       ntotmos = 0
+      nntotmos = 0
+      do igas = 1, ngas
+       do igensm = 1, ngensmob
+        ntotmos(igas) = ntotmos(igas) + ngssh(igensm,igas)
+       end do
+       maxocc(igas) = ntotmos(igas) * 2
+       nntotmos = nntotmos + ntotmos(igas)
+      end do
+*
+* Find which GAS spaces belong to P- and Q- spaces of AKBK
+* by using the accumulated occupations of CI space 1
+*
+      lendp    = 0
+      ngasp    = 0
+      ngasq1   = 0
+      ngasq2   = 0
+      nmogasp  = 0
+      nmogasq2 = 0
+*
+      do igas = 1, ngas
+*
+       !
+       ! CASE 1: Fully occupied GAS space belonging to Q-space (Q1)
+       !
+       if ((igsoccx(igas,1,1).eq.maxocc(igas))
+     &  .and.(igsoccx(igas,2,1).eq.maxocc(igas)).and.(lendp.eq.0)) then
+        if ((ntest.ge.10).and.(ga_nodeid().eq.0))
+     &     write(*,'(a,i4,a)') ' GAS', igas, ': Occupied GAS of Q-Space'
+        ngasq1 = ngasq1 + 1
+       !
+       ! CASE 2: GAS space that is treated as part of the active space
+       !         for MCSCF and P-Space for AKBK
+       !
+       else if ((igsoccx(igas,1,1).le.nactel)
+     &     .and.(igsoccx(igas,2,1).le.nactel).and.(lendp.eq.0)) then
+        if ((ntest.ge.10).and.(ga_nodeid().eq.0))
+     &     write(*,'(a,i4,a)') ' GAS', igas, ': GAS of P-Space'
+        ngasp = ngasp + 1
+*
+        do irrep = 1, nirrep
+         nmogasp = nmogasp + ngssh(irrep,igas)
+        end do
+*
+        if ((igsoccx(igas,1,1).eq.nactel).and.
+     &     (igsoccx(igas,2,1).eq.nactel)) lendp = 1
+       !
+       ! CASE 3: Empty GAS space belonging to Q-space (Q2)
+       !
+       else if (lendp.eq.1) then
+        if ((ntest.ge.10).and.(ga_nodeid().eq.0))
+     &     write(*,'(a,i4,a)') ' GAS', igas, ': Empty GAS of Q-Space'
+        ngasq2 = ngasq2 + 1
+*
+        do irrep = 1, nirrep
+         nmogasq2 = nmogasq2 + ngssh(irrep,igas)
+        end do
+*
+       end if
+*
+      end do
+*
+*. Check in how many subspaces I want to split the given GAS spaces
+*. based on a rough estimate of the number of SDs (Weyl's formula)
+*
+      totsds = weyl(nactel,nmogasp,ms2)
+      totsds = totsds / nirrep
+      idigits = int(log10(real(totsds))+1)
+      if ((ntest.ge.10).and.(ga_nodeid().eq.0))
+     &  write(*,*) 'SDs from Weyl (per irrep)', totsds, idigits
+*
+*. Begin the fragmentation of the GAS spaces into smaller GAS
+*
+        ngasupd = 0
+       ngsshupd = 0
+      igsoccupd = 0
+      gathermos = 0
+      ishdirrep = 0
+*
+*. Two different types of calculations are considered:
+*
+*     ============
+*       I. MCSCF
+*     ============
+*
+      if (CSEQCI(1,2).ne.'AKBKCI') then
+*
+       ! In how many GAS spaces shall I split CAS? 
+       if (idigits.le.3) then
+        maxgas = 1
+       else if (idigits.eq.4) then
+        maxgas = 2
+       else if (idigits.eq.5) then
+        maxgas = 4
+       else if (idigits.eq.6) then
+        maxgas = 8
+       else if (idigits.gt.6) then
+        maxgas = mxpngas
+       end if
+!      maxgas = mxpngas
+*
+       if (ngasq1.ne.0.and.ngasq2.ne.0) then
+        ngasq1 = ngasq1 + ngasq2
+        write(*,'(a,i3)') 'MCSCF: I found MOs in Q-Space'
+        CALL ERRQUIT('akbkqspace: wrong number of MOs', ngasq1,667)
+       end if
+*
+*. Start work
+*
+       navailgas = maxgas
+*
+       do igasp = 1, ngasp
+*
+*. Get max MO occupation for the first GAS
+*
+        ngastotmo = get_mo_occ_gas(nmogasp,navailgas)
+*
+        do irrep = 1, nirrep
+*
+         do ish = 1, ngssh(irrep,igasp)
+          gathermos(irrep) = gathermos(irrep) + 1
+          ishdirrep = ishdirrep + 1
+          if (ishdirrep.eq.ngastotmo) then
+           !
+           ! I have reached the max MO occupation of the new GAS
+           !
+           ngasupd = ngasupd + 1
+           do jrrep = 1, irrep
+            ngsshupd(jrrep,ngasupd) = gathermos(jrrep)
+           end do
+           !
+           ! Nullify and redefine MO occupation
+           !
+           gathermos = 0
+           ishdirrep = 0
+*
+           nmogasp = nmogasp - ngastotmo
+           navailgas = navailgas - 1
+           if (navailgas.ne.0)
+     &         ngastotmo = get_mo_occ_gas(nmogasp,navailgas)
+          end if
+         end do
+
+*DISCARD?
+
+*          ! nfrgsh = number of fragments for this GAS shell
+*          nfrgsh = int(ngssh(irrep,igasp) / (moratio + 1))
+*          do ish = 1, nfrgsh
+*           ! Move to the next GAS
+*           ngasupd = ngasupd + 1
+*           ngsshupd(irrep,ngasupd) = moratio + 1
+*           write(*,*) 'KATI'
+*          end do
+**
+*          ! Remaining MOs in separate GAS
+*          nremain = ngssh(irrep,igasp) - (nfrgsh*(moratio + 1))
+*          if (nremain.ne.0) then
+*           ! Move to the next GAS
+*           ngasupd = ngasupd + 1
+*           ngsshupd(irrep,ngasupd) = nremain
+*           write(*,*) 'KATI' 
+*          end if
+**
+*          ! Update remaining MOs to be distributed for next GAS/irrep
+*          nmogasp = nmogasp - ngssh(irrep,igasp)
+*          navailgas = maxgas - ngasupd
+*
+        end do ! End Irrep loop
+       end do ! End GAS P-space loop
+*
+*. Overwrite GAS information with updated values before exiting
+*
+       ngas = ngasupd
+       ngssh = 0
+       do igas = 1, ngas
+        do irrep = 1, nirrep
+         ngssh(irrep,igas) = ngsshupd(irrep,igas)
+        end do
+       end do
+       !
+       ! And minimum/maximum ocupations
+       !
+       igsoccx = 0
+       mxoccgs = 0
+       icispc = 1
+*
+       do igas = 1, ngas
+        ! Min
+        if (igas.eq.ngas) then
+         igsoccx(igas,1,icispc) = nactel
+        else
+         igsoccx(igas,1,icispc) = 0
+        end if
+        ! Max
+        do irrep = 1, nirrep
+         mxoccgs = mxoccgs + 2*ngssh(irrep,igas)
+        end do
+        if (mxoccgs.ge.nactel) then
+         igsoccx(igas,2,icispc) = nactel
+        else
+         igsoccx(igas,2,icispc) = mxoccgs
+        end if
+       end do
+*
+*     ============
+*     II. SplitGAS
+*     ============
+*
+      else
+*
+*. Start work for P-space
+*
+*. In how many GAS spaces shall I split the P-space?
+*
+       if (idigits.le.4) then
+        maxgas = 1
+       else if (idigits.eq.5) then
+        maxgas = 2
+       else if (idigits.eq.6) then
+        maxgas = 4
+       else if (idigits.gt.7) then
+        maxgas = 8
+       end if
+*
+       navailgas = maxgas
+*
+       do igasp = 1, ngasp
+*
+*. Get max MO occupation for the first GAS
+*
+        ngastotmo = get_mo_occ_gas(nmogasp,navailgas)
+*
+        do irrep = 1, nirrep
+*
+         do ish = 1, ngssh(irrep,igasp)
+          gathermos(irrep) = gathermos(irrep) + 1
+          ishdirrep = ishdirrep + 1
+          if (ishdirrep.eq.ngastotmo) then
+           !
+           ! I have reached the max MO occupation of the new GAS
+           !
+           ngasupd = ngasupd + 1
+           do jrrep = 1, irrep
+            ngsshupd(jrrep,ngasupd) = gathermos(jrrep)
+           end do
+           !
+           ! Nullify and redefine MO occupation
+           !
+           gathermos = 0
+           ishdirrep = 0
+*
+           nmogasp = nmogasp - ngastotmo
+           navailgas = navailgas - 1
+           if (navailgas.ne.0)
+     &         ngastotmo = get_mo_occ_gas(nmogasp,navailgas)
+          end if
+         end do
+        end do ! End Irrep loop
+       end do ! End GAS P-space loop
+*
+*. Store number of GAS for P-space
+*
+       ngas = ngasupd
+*
+*. Start work for Q-space
+*
+*. In how many GAS spaces shall I split the Q-space?
+*
+       if (nmogasq2.le.1000) then
+        maxgasq = 8
+       else
+        maxgasq = mxpngas - maxgas
+       end if
+*
+       navailgas = maxgasq
+*
+       gathermos = 0
+       ishdirrep = 0
+*
+       do igasq2 = 1, ngasq2
+*
+*. Get max MO occupation for the first GAS
+*
+        ngastotmo = get_mo_occ_gas(nmogasq2,navailgas)
+*
+        do irrep = 1, nirrep
+*
+         do ish = 1, ngssh(irrep,ngasp+igasq2)
+          gathermos(irrep) = gathermos(irrep) + 1
+          ishdirrep = ishdirrep + 1
+          if (ishdirrep.eq.ngastotmo) then
+           !
+           ! I have reached the max MO occupation of the new GAS
+           !
+           ngasupd = ngasupd + 1
+           do jrrep = 1, irrep
+            ngsshupd(jrrep,ngasupd) = gathermos(jrrep)
+           end do
+           !
+           ! Nullify and redefine MO occupation
+           !
+           gathermos = 0
+           ishdirrep = 0
+*
+           nmogasq2 = nmogasq2 - ngastotmo
+           navailgas = navailgas - 1
+           if (navailgas.ne.0)
+     &         ngastotmo = get_mo_occ_gas(nmogasq2,navailgas)
+          end if
+         end do
+        end do ! End Irrep loop
+       end do ! End GAS Q-space loop
+*
+*. Overwrite GAS information with updated values
+*
+       ngssh = 0
+       do igas =  1, ngas + ngasupd
+        do irrep = 1, nirrep
+         ngssh(irrep,igas) = ngsshupd(irrep,igas)
+        end do
+       end do
+*
+*. Store minimum/maximum ocupations
+*
+       igsoccx = 0
+       mxoccgs = 0
+*
+*. CISPACE 1
+*
+       icispc = 1
+*
+       !
+       ! Occupation numbers for CASCI step
+       ! P-space
+       !
+       do igas = 1, ngas
+        ! Min
+        if (igas.eq.ngas) then
+         igsoccx(igas,1,icispc) = nactel
+        else
+         igsoccx(igas,1,icispc) = 0
+        end if
+        ! Max
+        do irrep = 1, nirrep
+         mxoccgs = mxoccgs + 2*ngssh(irrep,igas)
+        end do
+        if (mxoccgs.ge.nactel) then
+         igsoccx(igas,2,icispc) = nactel
+        else
+         igsoccx(igas,2,icispc) = mxoccgs
+        end if
+       end do
+       !
+       ! Occupation numbers for CASCI step
+       ! Q-space has 0 occupation
+       !
+       do igas = ngas+1, ngasupd
+        ! Min
+        igsoccx(igas,1,icispc) = nactel
+        ! Max
+        igsoccx(igas,2,icispc) = nactel
+       end do
+*
+*. CISPACE 2
+*
+       icispc = 2
+*
+       !
+       ! Occupation numbers for SplitGAS
+       ! P-space
+       !
+       do igas = 1, ngas
+        ! Min
+        if (igas.eq.ngas) then
+         igsoccx(igas,1,icispc) = nactel - 2
+        else
+         igsoccx(igas,1,icispc) = 0
+        end if
+        ! Max
+        do irrep = 1, nirrep
+         mxoccgs = mxoccgs + 2*ngssh(irrep,igas)
+        end do
+        if (mxoccgs.ge.nactel) then
+         igsoccx(igas,2,icispc) = nactel
+        else
+         igsoccx(igas,2,icispc) = mxoccgs
+        end if
+       end do
+       !
+       ! Occupation numbers for SplitGAS
+       ! 2 particles in Q-space
+       !
+       do igas = ngas+1, ngasupd
+        ! Min
+        if (igas.eq.ngasupd) then
+         igsoccx(igas,1,icispc) = nactel
+        else
+         igsoccx(igas,1,icispc) = nactel - 2
+        end if
+        ! Max
+        igsoccx(igas,2,icispc) = nactel
+       end do
+
+*
+*. Add number of GAS spaces in Q-space for the total number of GAS
+*
+       ngas = ngasupd
+*
+      end if
+*
+*. Print Output
+*
+      if(ntest.ge.10.and.ga_nodeid().eq.0) then
+      WRITE(*,*)
+      WRITE(*,*) ' ***********************************'
+      WRITE(*,*) '  Updated GAS Spaces for CI batches '
+      WRITE(*,*) ' ***********************************'
+      WRITE(*,*)
+      WRITE(*,'(A)') ' Orbital subspaces:'
+      WRITE(*,'(A)') ' ================== '
+      WRITE(*,*)
+      WRITE(*,'(1H ,A,10I4,A)')
+     &  '                Irrep ',(I,I = 1,NIRREP)
+      WRITE(*,'(1H ,A,2X,10A,A)')
+     &  '                ===== ',('====',I = 1,NIRREP)
+      WRITE(*,'(A,10I4)')
+     &  '        Inactive       ',
+     &   ( NINASH(IRREP),IRREP = 1, NIRREP)
+
+      DO IGAS = 1, NGAS
+        WRITE(*,'(A,I2,A,10I4,6X,2I6)')
+     &  '        GAS',IGAS,'          ',
+     &  (NGSSH(IRREP,IGAS),IRREP = 1, NIRREP)
+      END DO
+      WRITE(*,'(A,10I4)')
+     &  '        Secondary      ',
+     &   ( NSECSH(IRREP),IRREP = 1, NIRREP)
+      WRITE(6,*)
+      IF(IGSFILL.NE.0) WRITE(6,'(7X,A,I3)')
+     &' Gas space provided by courtesy of LUCIA:',  IGSFILL
+      IF(ISECFILL.NE.0) WRITE(6,'(7X,A,I3)')
+     &' Secondary space provided by courtesy of LUCIA '
+*
+       WRITE(*,'(A,I3)')
+     &  ' Number of Occupation spaces: ',NCISPC
+       WRITE(*,*)
+       DO ICISPC = 1, NCISPC
+        WRITE(*,'(A,I3)')
+     &  ' Bounds on accumulated occupations for space: ',ICISPC
+        WRITE(*,'(A)')
+     &   ' ====================================================== '
+        WRITE(*,'(A)')
+        WRITE(*,'(A)') '         Min. occ    Max. occ '
+        WRITE(*,'(A)') '         ========    ======== '
+        DO IGAS = 1, NGAS
+          WRITE(*,'(A,I2,3X,I3,9X,I3)')
+     &    '   GAS',IGAS,IGSOCCX(IGAS,1,ICISPC),IGSOCCX(IGAS,2,ICISPC)
+        END DO
+       END DO
+       WRITE(*,*)
+      end if
+*
+      return
+      end
+*======================================================================*
+*======================================================================*
+      integer function get_mo_occ_gas(nmogasp,navailgas)
+*======================================================================*
+*
+*.  Find how many MOs each GAS should have (ngastotmo)
+*.  ngastotmo can have MOs from different irreps
+*
+*.  Konstantinos D. Vogiatzis, October 2015
+*
+*======================================================================*
+*
+*. Input
+      integer nmogasp, navailgas
+*
+*. Scratch
+      integer moratio, moremo
+*
+*. Work
+*
+      moratio = int(nmogasp / navailgas)
+      moremo = nmogasp - (moratio * navailgas)
+*
+      if (moremo.eq.0) then
+       get_mo_occ_gas = moratio
+      else
+       get_mo_occ_gas = moratio + 1
+      end if
+*
+      return
+      end
+*======================================================================*
+*======================================================================*
+      integer function weyl(nele,nmo,spin)
+*======================================================================*
+*
+*.  Calculate the number of Slater Determinants with Weyl's formula
+*.  without considering symmetry.
+*.  n = number of electrons
+*.  N = number of MOs in the active space
+*.  S = Spin
+*
+*.  Konstantinos D. Vogiatzis, October 2015
+*
+*======================================================================*
+*
+*. Input
+      integer nele, nmo, spin
+*
+*. Scratch
+      integer inter, inter2, nom, fac1, fac2, denom, vogfactorial
+      double precision one, two, three, rweyl, rnele, rnmo, rspin
+      external vogfactorial
+*
+      ntest = 10
+*
+**. Work
+*
+      ! Transform integers to real
+      rnele = dble(nele)
+      rnmo  = dble(nmo)
+      rspin = dble(spin)
+*
+*     First term = 2S + 1
+*
+      one = 2*rspin + 1.0d0
+*
+*     Second term = N! / ( (n/2 - S)! * (N + 1 - n/2 + S)! )
+*
+      nom = vogfactorial(nmo)
+      inter1 = int(nele / 2 - spin)
+      inter2 = nmo + 1 - inter1
+      fac1 = vogfactorial(inter1)
+      fac2 = vogfactorial(inter2)
+      denom = fac1 * fac2
+      two = dble(nom) / dble(denom)
+*
+*     Third term = (N+1)! / ( (n/2 + S + 1)! * (N - n/2 - S)! )
+*
+      nom = vogfactorial(nmo + 1)
+      inter1 = int(nele / 2 + spin + 1)
+      inter2 = nmo + 1 - inter1
+      fac1 = vogfactorial(inter1)
+      fac2 = vogfactorial(inter2)
+      denom = fac1 * fac2
+      three = dble(nom) / dble(denom)
+*
+*     Multiply the three terms for the number of SDs
+*
+      rweyl = one * two * three
+      weyl = int(rweyl)
+      if ((ntest.ge.10).and.(ga_nodeid().eq.0))
+     &  write(*,*) 'Approximate number of SDs from Weyl:', weyl
+*
+      return
+      end
+*======================================================================*
+*======================================================================*
+      integer function vogfactorial(n)
+*======================================================================*
+*
+*. Input
+      integer n
+*
+*. Scratch
+      integer i
+*
+      vogfactorial = 1
+      do i = 1, n
+       vogfactorial = vogfactorial * i
+      end do 
+*
+      return
+      end
+*======================================================================*
+*======================================================================*
+      subroutine gather_mos_in_cas
+*======================================================================*
+*
+*.  Gather all MOs of the active space distributed in various GAS 
+*.  spaces into one space
+*.
+*.  Konstantinos D. Vogiatzis, October 2015
+*
+*======================================================================*
+*
+      include 'implicit.inc'
+      include 'mxpdim.inc'
+      include 'orbinp.inc'
+      include 'cgas.inc'
+      include 'crun.inc'
+      include 'clunit.inc'
+      include 'lucinp.inc'
+#include "global.fh"
+#include "mafdecls.fh"
+*
+*. Scratch
+      integer ngsshupd(nirrep), ngas_gnsymupd(nirrep,2)
+*
+      ntest = 10
+*
+*. Gather
+*
+      ngsshupd = 0
+      ngas_gnsymupd = 0
+      do irrep = 1, nirrep
+       do igas =  1, ngas
+        ngsshupd(irrep) = ngsshupd(irrep) + ngssh(irrep,igas)
+        ngas_gnsymupd(irrep,1) =
+     &  ngas_gnsymupd(irrep,1) + ngas_gnsym(irrep,igas)
+       end do
+      end do
+      do irrep = 1, nirrep !Secondary MOs
+       ngas_gnsymupd(irrep,2) = ngas_gnsym(irrep,ngas+1)
+      end do
+*
+*. Backup
+*
+      ngas_bu = ngas
+      ngas_gnsym_bu = 0
+      ngssh_bu      = 0
+      do igensm = 1, ngensmob
+       do igas= 1, ngas+2
+        ngas_gnsym_bu(igensm,igas) = ngas_gnsym(igensm,igas-1)
+       end do
+      end do
+      do irrep = 1, nirrep
+       do igas =  1, ngas
+        ngssh_bu(irrep,igas) = ngssh(irrep,igas)
+       end do
+      end do
+*
+      nobpts_gn_bu = 0
+      do igensm = 1, ngensmob
+       nobpts_gn_bu(0,igensm) = nobpts_gn(0,igensm)
+       nobpts_gn_bu(ngas+1,igensm) = nobpts_gn(ngas+1,igensm)
+       do igas = 1, ngas
+        nobpts_gn_bu(igas,igensm) = nobpts_gn(igas,igensm)
+       end do
+      end do
+*
+      itpfso_bu = 0
+      do itoob = 1, ntoob
+       itpfso_bu(itoob) = itpfso(itoob)
+      end do
+*
+      icispc = 1
+      igsoccx_bu = 0
+      do igas =  1, ngas
+       igsoccx_bu(igas,1,icispc) = igsoccx(igas,1,icispc)
+       igsoccx_bu(igas,2,icispc) = igsoccx(igas,2,icispc)
+      end do
+*
+*. Nullify
+*
+      ngssh = 0
+      do irrep = 1, nirrep
+       do igas =  1, ngas+1
+        ngas_gnsym(irrep,ngas) = 0
+        if (igas.le.ngas) nobpts_gn(igas,irrep) = 0
+       end do
+      end do
+*
+*. Copy!
+*
+      ! Change MO pointer of itpfso for Active and Secondary
+      do itoob = 1, ntoob
+       if ((itpfso(itoob).gt.0).and.(itpfso(itoob).ne.ngas+1)) then
+        itpfso(itoob) = 1
+       else if (itpfso(itoob).eq.ngas+1) then
+        itpfso(itoob) = 2
+       end if
+      end do
+*
+      ! And the rest
+      ngas = 1
+      do irrep = 1, nirrep
+       ngssh(irrep,ngas) = ngsshupd(irrep)
+       ngas_gnsym(irrep,ngas)   = ngas_gnsymupd(irrep,1)
+       ngas_gnsym(irrep,ngas+1) = ngas_gnsymupd(irrep,2)
+       nobpts_gn(ngas,irrep) = ngsshupd(irrep)
+       nobpts_gn(ngas+1,irrep) = nobpts_gn(ngas+2,irrep)
+       nobpts_gn(ngas+2,irrep) = 0
+      end do
+*
+      ! ...and do not forget the occupation numbers
+      icispc = 1
+      igsoccx = 0
+      igsoccx(1,1,icispc) = nactel
+      igsoccx(1,2,icispc) = nactel
+*
+*. Print Output
+*
+      if(ntest.ge.10.and.ga_nodeid().eq.0) then
+      WRITE(*,*)
+      WRITE(*,*) ' ***********************************************'
+      WRITE(*,*) '  Gathered MOs in one GAS Space Before MOROT_GS '
+      WRITE(*,*) ' ***********************************************'
+      WRITE(*,*)
+      WRITE(*,'(A)') ' Orbital subspaces:'
+      WRITE(*,'(A)') ' ================== '
+      WRITE(*,*)
+      WRITE(*,'(1H ,A,10I4,A)')
+     &  '                Irrep ',(I,I = 1,NIRREP)
+      WRITE(*,'(1H ,A,2X,10A,A)')
+     &  '                ===== ',('====',I = 1,NIRREP)
+      WRITE(*,'(A,10I4)')
+     &  '        Inactive       ',
+     &   ( NINASH(IRREP),IRREP = 1, NIRREP)
+
+      DO IGAS = 1, NGAS
+        WRITE(*,'(A,I2,A,10I4,6X,2I6)')
+     &  '        GAS',IGAS,'          ',
+     &  (NGSSH(IRREP,IGAS),IRREP = 1, NIRREP)
+      END DO
+      WRITE(*,'(A,10I4)')
+     &  '        Secondary      ',
+     &   ( NSECSH(IRREP),IRREP = 1, NIRREP)
+      IF(ISECFILL.NE.0) WRITE(6,'(7X,A,I3)')
+     &' Secondary space provided by courtesy of LUCIA '
+*
+       WRITE(*,'(A,I3)')
+     &  ' Number of Occupation spaces: ',NCISPC
+       WRITE(*,*)
+       DO ICISPC = 1, NCISPC
+        WRITE(*,'(A,I3)')
+     &  ' Bounds on accumulated occupations for space: ',ICISPC
+        WRITE(*,'(A)')
+     &   ' ====================================================== '
+        WRITE(*,'(A)')
+        WRITE(*,'(A)') '         Min. occ    Max. occ '
+        WRITE(*,'(A)') '         ========    ======== '
+        DO IGAS = 1, NGAS
+          WRITE(*,'(A,I2,3X,I3,9X,I3)')
+     &    '   GAS',IGAS,IGSOCCX(IGAS,1,ICISPC),IGSOCCX(IGAS,2,ICISPC)
+        END DO
+       END DO
+       WRITE(*,*)
+      end if
+*
+      return
+      end
+*======================================================================*
+*======================================================================*
+      subroutine return_values_after_morot
+*======================================================================*
+*
+*.  After the successful transformation of the active MOs in MOROT_GS,
+*.  return pointers and dimensions of variables corresponding to
+*.  multiple GAS spaces
+*.
+*.  Konstantinos D. Vogiatzis, October 2015, after hitting the local
+*.  bookstore with Jeppe
+*
+*======================================================================*
+*
+      include 'implicit.inc'
+      include 'mxpdim.inc'
+      include 'orbinp.inc'
+      include 'cgas.inc'
+      include 'crun.inc'
+      include 'clunit.inc'
+      include 'lucinp.inc'
+#include "global.fh"
+#include "mafdecls.fh"
+*
+      ngas = ngas_bu
+*
+*. Backup
+*
+      ngssh = 0
+      do igensm = 1, ngensmob
+       do igas= 1, ngas+2
+        ngas_gnsym(igensm,igas-1) = ngas_gnsym_bu(igensm,igas)
+       end do
+      end do
+*
+      do irrep = 1, nirrep
+       do igas =  1, ngas
+        ngssh(irrep,igas) = ngssh_bu(irrep,igas)
+       end do
+      end do
+*
+      nobpts_gn = 0
+      do igensm = 1, ngensmob
+       nobpts_gn(0,igensm)      = nobpts_gn_bu(0,igensm)
+       nobpts_gn(ngas+1,igensm) = nobpts_gn_bu(ngas+1,igensm)
+       do igas = 1, ngas
+        nobpts_gn(igas,igensm)  = nobpts_gn_bu(igas,igensm)
+       end do
+      end do
+*
+      itpfso = 0
+      do itoob = 1, ntoob
+       itpfso(itoob) = itpfso_bu(itoob)
+      end do
+*
+      icispc = 1
+      igsoccx = 0
+      do igas =  1, ngas
+       igsoccx(igas,1,icispc) = igsoccx_bu(igas,1,icispc)
+       igsoccx(igas,2,icispc) = igsoccx_bu(igas,2,icispc)
+      end do
+*
+      ntest = 00
+*
+      if(ntest.ge.10.and.ga_nodeid().eq.0) then
+      WRITE(*,'(A)') ' Orbital subspaces:'
+      WRITE(*,'(A)') ' ================== '
+      WRITE(*,*)
+      WRITE(*,'(1H ,A,10I4,A)')
+     &  '                Irrep ',(I,I = 1,NIRREP)
+      WRITE(*,'(1H ,A,2X,10A,A)')
+     &  '                ===== ',('====',I = 1,NIRREP)
+      WRITE(*,'(A,10I4)')
+     &  '        Inactive       ',
+     &   ( NINASH(IRREP),IRREP = 1, NIRREP)
+
+      DO IGAS = 1, NGAS
+        WRITE(*,'(A,I2,A,10I4,6X,2I6)')
+     &  '        GAS',IGAS,'          ',
+     &  (NGSSH(IRREP,IGAS),IRREP = 1, NIRREP)
+      END DO
+      WRITE(*,'(A,10I4)')
+     &  '        Secondary      ',
+     &   ( NSECSH(IRREP),IRREP = 1, NIRREP)
+      WRITE(6,*)
+      IF(IGSFILL.NE.0) WRITE(6,'(7X,A,I3)')
+     &' Gas space provided by courtesy of LUCIA:',  IGSFILL
+      IF(ISECFILL.NE.0) WRITE(6,'(7X,A,I3)')
+      end if
 *
       return
       end

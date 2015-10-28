@@ -10,7 +10,7 @@ c
 #include "mafdecls.fh"
 #include "global.fh"
 #include "qmd_common.fh"
-#include "constants.fh"
+#include "nwmd_constants.fh"
 c
       external task_gradient,esp
       logical task_gradient,esp
@@ -96,7 +96,7 @@ c
 #include "rtdb.fh"
 #include "mafdecls.fh"
 #include "qmd_common.fh"
-#include "constants.fh"
+#include "nwmd_constants.fh"
 c
       integer irtdb,msa,nsa
       integer isag(msa)

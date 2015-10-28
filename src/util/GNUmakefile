@@ -5,7 +5,11 @@ include ../config/makefile.h
 ifdef JOBTIME_PATH
    LIB_DEFINES += -DJOBTIMEPATH=\"$(JOBTIME_PATH)\"
 else
+ifdef XLFMAC
+   LIB_DEFINES += -DJOBTIMEPATH="$(BINDIR)"
+else
    LIB_DEFINES += -DJOBTIMEPATH=\"$(BINDIR)\"
+endif
 endif
 
 ifeq ($(TARGET),MACX)
@@ -114,8 +118,13 @@ ifeq ($(NWCHEM_TARGET),$(findstring $(NWCHEM_TARGET),LINUX64 CATAMOUNT))
   ifeq ($(_CPU),ia64)
     EXTRA_OBJ += win32_cpu.o linux_setfpucw.o 
   endif
+  ifeq ($(GOTMINGW64),1)
+    EXTRA_OBJ += util_mingw.o
+  endif
   ifeq ($(_CPU),x86_64)
+  ifneq ($(GOTMINGW64),1)
     EXTRA_OBJ  += linux_setfpucw.o
+  endif
   endif
   ifeq ($(FC),pathf90)
     EXTRA_OBJ += util_cflush.o
@@ -150,7 +159,7 @@ endif
 
 
 
-       BLAS = dfill.o ifill.o  mabyte_fill.o 
+       BLAS = dfill.o ifill.o  mabyte_fill.o zfill.o
 
    LIB_TARGETS = testsolve testecce
 
@@ -211,9 +220,10 @@ endif
 	      ga_lkain_2cpl3_ext.o  util_dgeev.o util_nwsort.o \
 	      util_mygabcast.o util_getppn.o util_units.o \
               util_intrsc2008.o util_fadvise.o  \
+              ga_conjg.o \
               $(EXTRA_OBJ)
 ifndef USE_MLIB
-              OBJ_OPTIMIZE += icopy.o dsum.o dgefa.o
+              OBJ_OPTIMIZE += icopy.o dsum.o dgefa.o zsum.o
 endif
 #nxtval_ga.o 
 
@@ -225,7 +235,7 @@ endif
 
     USES_BLAS = util.fh ga_it_lsolve.F ga_maxelt.F ga_mix.F ga_iter_diag.F \
                 ga_orthog.F dabsmax.F ga_normf.F corr_mk_ref.F ga_it2.F ga_lkain_ext.F util_file_name.F dgefa.f util_patch_test.F stpr_sjacobi.F util_dgeev.F \
-		util_test_cholesky.F
+		util_test_cholesky.F dfill.F ga_lkain_2cpl3_ext.F ga_it2.F
 
 ifdef SPEECH
    LIB_DEFINES += -DSPEECH
@@ -245,6 +255,7 @@ endif
 ifeq ($(TARGET),$(findstring $(TARGET),BGL BGP BGQ))
 DEFINES += -DNEED_LOC
 LIB_DEFINES += -DNO_UTIL_TESTS
+LIB_DEFINES += -I/bgsys/drivers/ppcfloor/firmware/include -I/bgsys/drivers/ppcfloor/spi/include/kernel
 endif
 
 ifdef SLURM

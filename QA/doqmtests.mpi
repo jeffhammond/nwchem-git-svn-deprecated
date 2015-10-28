@@ -32,6 +32,7 @@ endif
 ./runtests.mpi.unix procs $np cosmo_trichloroethene esp esp_uhf
 ./runtests.mpi.unix procs $np dft_bsse dft_bsse_d3 dft_bsse_d3_opt bsse_dft_trimer bsse_tce_mult
 ./runtests.mpi.unix procs $np c4h4_wfn
+./runtests.mpi.unix procs $np disp_dimer_ch4 disp_dimer_ch4_cgmin h2o-b3lyp-disp
 ./runtests.mpi.unix procs $np cosmo_h2cco2 cosmo_h2cco2mg cosmo_h2cco2mg_ecp
 ./runtests.mpi.unix procs $np cosmo_h3co cosmo_h3co_ecp cosmo_h2cco2na cosmo_h3co_gp
 ./runtests.mpi.unix procs $np dplot dft_meta dft_mpwb1khf dft_m05nh2ch3 prop_uhf_h2o
@@ -181,6 +182,7 @@ echo "qmmm frequency  test  may  fail"
 ./runtests.mpi.unix procs $np o2_hfattn
 ./runtests.mpi.unix procs $np n2_rodft_lrc
 ./runtests.mpi.unix procs $np h2o-hse
+./runtests.mpi.unix procs $np cdft_jarv1
 #
 #--- minnesota functionals
 ./runtests.mpi.unix procs $np m11_ch3
@@ -304,6 +306,12 @@ echo "qmmm frequency  test  may  fail"
 ./runtests.mpi.unix procs $np nwxc_mx_tddft_1kr nwxc_mx_tddft_4as
 ./runtests.mpi.unix procs $np nwxc_mx_tddft_1xe nwxc_mx_tddft_4sb
 #
+##--- spin-polarised ECPs test
+./runtests.mpi.unix procs $np spin_ecps_heh_grad spin_ecps_o_hess
+#
+##--- frozen density embedding and kinetic-energy functionals
+./runtests.mpi.unix procs $np h2o2_fde
+#
 #--- if we only want quick tests get out now!
 if ($what == "xfast") then
   exit
@@ -312,6 +320,7 @@ endif
 #---   long  may not run on workstations
 ./runtests.mpi.unix procs $np aump2 
 ./runtests.mpi.unix procs $np n2_ccsd 
+./runtests.mpi.unix procs $np benzene_ccsd 
 ./runtests.mpi.unix procs $np uoverlap
 ./runtests.mpi.unix procs $np grad_nh3_trimer 
 ./runtests.mpi.unix procs $np hess_nh3

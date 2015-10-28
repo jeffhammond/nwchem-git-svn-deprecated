@@ -2,7 +2,8 @@
 
          LIBRARY = libnwxc.a
 
-    OBJ_OPTIMIZE = nwxc.o nwxcm_eval.o \
+    OBJ_OPTIMIZE = nwxc_print.o nwxc.o nwxc_add.o nwxc_block.o nwxc_query.o \
+		   nwxc_nwchem.o nwxcm_eval.o \
                    nwxc_vdw_main.o nwxc_vdw_e.o nwxc_vdw_der.o nwxc_vdw_hess.o \
                    nwxc_vdw_util.o nwxc_vdw3a.o nwxc_vdw3b.o nwxc_vdw3c.o \
                    nwxcm_heaviside.o
@@ -35,8 +36,12 @@
 
     LIB_INCLUDES = -I./nwad
 
+     LIB_DEFINES += -DNODEBUG
 ifdef NWCHEM_NWXC_QUAD_PREC
-     LIB_DEFINES = -DNWAD_QUAD_PREC -DNWXC_QUAD_PREC
+     LIB_DEFINES += -DNWAD_QUAD_PREC -DNWXC_QUAD_PREC
+endif
+ifdef USE_FORTRAN2008
+     LIB_DEFINES += -DUSE_FORTRAN2008
 endif
 
      LIB_TARGETS = 
@@ -75,7 +80,7 @@ include ../config/makelib.h
 
 nwxc_fnc_print: nwxc_fnc_print.F nwxc_eval_print.F stubs.F ../../lib/$(NWCHEM_TARGET)/$(LIBRARY)
 	@(env | sort)
-	$(FC) $(FFLAGS) $(INCLUDES) -o nwxc_fnc_print nwxc_fnc_print.F nwxc_eval_print.F stubs.F $(LDFLAGS) -lnwctask -lnwxc -lcons -lnwcutil -lga -larmci -lperfm -lcons -lnwcutil -llapack -lblas $(MPI_LIB) $(LIBMPI) 
+	$(FC) $(FFLAGS) $(INCLUDES) $(DEFINES) -o nwxc_fnc_print nwxc_fnc_print.F nwxc_eval_print.F stubs.F $(LDFLAGS) -lnwctask -lnwxc -lcons -lnwcutil -lga -larmci -lperfm -lcons -lnwcutil -llapack -lblas -L$(MPI_LIB) $(LIBMPI) $(COMM_LIBS)
 #	$(LINK.f) -o nwxc_fnc_print nwxc_fnc_print.o -lnwctask -lnwxc -lcons -lnwcutil -lga -larmci -lperfm -lcons -lnwcutil -llapack -lblas $(MPI_LIB) $(LIBMPI) 
 
 #nwad.fh: nwad0.mod nwad1.mod nwad2.mod nwad3.mod
@@ -88,3 +93,4 @@ nwxc_fnc_print: nwxc_fnc_print.F nwxc_eval_print.F stubs.F ../../lib/$(NWCHEM_TA
 #	$(FC) -c $(FFLAGS) ./nwad/nwad.F90
 #	touch nwad.fh
 
+nwxc.o:	nwxc_print.o

@@ -177,8 +177,8 @@ cccc#include "frac_occ.fh"
       logical  control_print
       external control_print
 c#include "Parallel.fh"
-      integer  Parallel_threadid,Parallel_nthreads
-      external Parallel_threadid,Parallel_nthreads
+      integer  Parallel_threadid,Parallel_nthreads,Parallel_maxthreads
+      external Parallel_threadid,Parallel_nthreads,Parallel_maxthreads
       integer tid
 
 *                            |************|
@@ -374,6 +374,8 @@ c#include "Parallel.fh"
 *     *****  read psi2 wavefunctions ****
       call psi_read(ispin,ne,dcpl_mb(psi2(1)),
      >              smearoccupation,dbl_mb(occ2(1)))
+
+
       n1(1) = 1
       n2(1) = ne(1)
       n1(2) = ne(1)+1
@@ -433,6 +435,7 @@ c         end if
      >   call errquit('cpsdv5:out of heap memory',0,MA_ERR)
 
 
+
 *     **** initialize two-electron Gaussian integrals ****
 *     **** initialize paw ncmp*Vloc ****
       if (psp_pawexist()) then
@@ -440,6 +443,7 @@ c         end if
          call nwpw_gintegrals_set(control_move())
          call psp_dE_ncmp_vloc_Qlm(ispin,.false.,hunita)
       end if
+
 
 *     **** initialize SIC and HFX  ****
       call pspw_init_SIC(rtdb,ne)
@@ -486,7 +490,7 @@ c      call frac_occ_init(rtdb,ispin,ne)
          else
            write(luout,1122)
          end if
-         write(luout,1123) Parallel_nthreads()
+         write(luout,1123) Parallel_maxthreads()
 
 
          write(luout,1115)
@@ -1141,7 +1145,7 @@ c      call frac_occ_end()
      &       '( ',I8,' waves ',I8,' per task)')
  1251 FORMAT(5X,' wavefnc cutoff=',F7.3,'  fft=',I3,'x',I3,'x',I3,
      &       '( ',I8,' waves ',I8,' per task)')
- 1260 FORMAT(5X,' ewald summation: cut radius=',F8.2,'  and',I3)
+ 1260 FORMAT(5X,' Ewald summation: cut radius=',F8.2,'  and',I3)
  1261 FORMAT(5X,'                   madelung=',f11.8)
  1270 FORMAT(/' technical parameters:')
  1271 FORMAT(5x, ' translation constrained')

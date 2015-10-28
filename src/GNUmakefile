@@ -1,8 +1,6 @@
 
 # $Id$
 TARGET = $(NWCHEM_TARGET)
-#include ./tools/armci/config/makecoms.h  
-#include ./tools/armci/config/makemp.h  
 include config/makefile.h
 
   SUBDIRS =  $(NWSUBDIRS)
@@ -11,12 +9,11 @@ include config/makefile.h
                  -DCOMPILATION_DIR="'$(TOPDIR)'" \
                  -DNWCHEM_BRANCH="'$(CODE_BRANCH)'"
 ifeq ($(XLFMAC),y)
-  FOPTIONS +=  -WF,-DCOMPILATION_DATE="'`date`'" \
+  FOPTIONS +=  -WF,-DCOMPILATION_DATE="'`date +%a_%b_%d_%H:%M:%S_%Y`'" \
                  -WF,-DCOMPILATION_DIR="'$(TOPDIR)'" \
                  -WF,-DNWCHEM_BRANCH="'$(CODE_BRANCH)'"
   LIB_DEFINES= 
-.F.o:
-	$(FC) -c $(FFLAGS)     $<
+  DEFINES= 
 endif
 
 NWBINNAME = nwchem

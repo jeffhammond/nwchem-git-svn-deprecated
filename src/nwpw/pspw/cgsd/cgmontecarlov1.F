@@ -662,7 +662,7 @@ c         write(luout,1394)
            E26 = E26 + EV*EV
            end do
   100      continue
-#if defined(FUJITSU_SOLARIS) || defined(PSCALE) || defined(__crayx1)
+#if defined(FUJITSU_SOLARIS) || defined(PSCALE) || defined(__crayx1) || defined(GCC46)
            backspace 31
 #endif
          else
@@ -881,6 +881,7 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
            call xyz_write()
            call MOTION_write(dble((icount-1)*it_in+i)
      >                       +emotion_time_shift)
+           call CIF_write(rtdb) !*** write out CIF file ***
 
         end do
 
@@ -984,13 +985,17 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
          write(luout,1211) ion_nconstraints(),ion_ndof()
       end if
 
-      EV = cgsd_noit_energy()
+      call control_reduce_print()
+      EV0 = cgsd_energy(.false.)
+      call control_up_print()
+      EV  = cgsd_noit_energy()
 
       if (oprint) then
 
 
 *       **** write out Temperatures ****
-         cv = (evar)/(kb*ion_Temperature()**2)
+         !cv = (evar)/(kb*ion_Temperature()**2)
+         cv = (evar)/(kb*mc_temperature**2)
          cv = cv/dble(ion_nion())
          write(luout,1492) eave
          write(luout,1493) evar
@@ -1065,7 +1070,6 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
 
 *     **** calculate Mulliken Populations ***
       if (control_Mulliken()) call psi_Mulliken(rtdb)
-
 
 
 *     **** deallocate memory and data structures ****
@@ -1206,7 +1210,7 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
  1251 FORMAT(5X,' wavefnc cutoff=',F7.3,'  fft=',I3,'x',I3,'x',I3,
      &       '( ',I8,' waves ',I8,' per task)')
   
- 1260 FORMAT(5X,' ewald summation: cut radius=',F8.2,'  and',I3)
+ 1260 FORMAT(5X,' Ewald summation: cut radius=',F8.2,'  and',I3)
  1261 FORMAT(5X,'                   madelung=',f11.8)
  1270 FORMAT(/' technical parameters for minimizer:')
  1271 FORMAT(5x, ' translation constrained')
@@ -1232,7 +1236,7 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
      >       /5X,' iterations=',I10,
      >           ' ( ',I4,' inner ',I6,' outer )')
  1322 FORMAT(5X, ' temperature='F10.3,5x,' beta=',E10.3,' seed=',I10)
- 1323 FORMAT(5X, ' targeted accept.=',F10.3,5X,
+ 1323 FORMAT(5X, ' targeted accept.=',F10.3,9X,
      >           ' ddx=',F10.3,' c0=',F10.3,' c1=',F10.3,' c2=',F10.3)
  1324 FORMAT(5X, ' number atom changes = 'I10,
      >           ' change vector = <',3F10.3'>')

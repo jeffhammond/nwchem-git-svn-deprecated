@@ -4,7 +4,7 @@
 !
 ! There is currently no difference between the OpenMP and non-OpenMP versions
 ! except for the directives, but preprocessing at fine granularity leads to ugly
-! code because Fortran does not have anything like C99/C++11 _Pragma.
+! code because Fortran does not have anything like C99/C++11 Pragma.
 !
 #ifdef USE_OPENMP
       subroutine tce_sort_4(u,s,a,b,c,d,i,j,k,l,f)
@@ -21,7 +21,8 @@
       jd(3) = c
       jd(4) = d
       if (l.eq.4) then
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j1 = 1,a
         do j2 = 1,b
@@ -44,7 +45,8 @@
        enddo
 !$omp end parallel do
       else if (l.eq.3) then
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j1 = 1,a
         do j2 = 1,b
@@ -67,7 +69,8 @@
        enddo
 !$omp end parallel do
       else if (l.eq.2) then
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j1 = 1,a
         do j3 = 1,c
@@ -90,7 +93,8 @@
        enddo
 !$omp end parallel do
       else ! l.eq.1
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j2 = 1,b
         do j3 = 1,c
@@ -129,7 +133,8 @@
       jd(3) = c
       jd(4) = d
       if (l.eq.4) then
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j1 = 1,a
         do j2 = 1,b
@@ -152,7 +157,8 @@
        enddo
 !$omp end parallel do
       else if (l.eq.3) then
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j1 = 1,a
         do j2 = 1,b
@@ -175,7 +181,8 @@
        enddo
 !$omp end parallel do
       else if (l.eq.2) then
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j1 = 1,a
         do j3 = 1,c
@@ -198,7 +205,8 @@
        enddo
 !$omp end parallel do
       else ! l.eq.1
-!$omp  parallel do private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
+!$omp  parallel do collapse(3)
+!$omp& private(j1,j2,j3,j4,iax,ibx,ia,ib,id) shared(s,u)
 !$omp& firstprivate(a,b,c,d,i,j,k,l,f,jd)
        do j2 = 1,b
         do j3 = 1,c

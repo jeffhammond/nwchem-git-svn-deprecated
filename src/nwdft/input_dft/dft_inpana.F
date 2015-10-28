@@ -21,7 +21,6 @@ c
 #include "bas.fh"
 #include "cdft.fh"
 #include "util.fh"
-#include "nwxc.fh"
 c
       double precision AUTOANG, ANGTOAU
       Parameter (AUTOANG = 0.529177249d0, ANGTOAU = 1.d0/AUTOANG)
@@ -59,7 +58,7 @@ c
 c
       logical status  ! FA
       logical use_nwxc 
-      logical dftmp2
+      logical dftmp2,out1
       double precision mp2fac
 c     
       me=ga_nodeid()
@@ -208,6 +207,42 @@ c     write noc (consistent with definition in ddscf) to rtdb
 c     
       if (.not. rtdb_put(rtdb, 'dft:noc', mt_int, 2, noc))
      &   call errquit('inpana: rtdb_put of noc failed', 0, RTDB_ERR)
+cHvD
+      use_nwxc = util_module_avail("nwxc")
+      if (use_nwxc) then
+        call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+      endif
+      if (use_nwxc) then
+         call nwxc_getvals("nwxc_has_hfx",out1)
+        if (out1) then
+           call nwxc_getwght("nwxc_wght_hfx",xfac(1))
+        endif
+         call nwxc_getvals("nwxc_has_mp2c",dftmp2)
+        if (dftmp2) then
+           call nwxc_getwght("nwxc_wght_mp2c",mp2fac)
+          if (.not.rtdb_put(rtdb,'dft:mp2fac', mt_dbl, 1, mp2fac))
+     &      call errquit('dft_inpana: rtdb_put failed', 2902, RTDB_ERR)
+        endif
+        call nwxc_getvals("nwxc_has_cam",cam_exch)
+        if (cam_exch) then
+          call nwxc_get_cam(cam_alpha,cam_beta,cam_omega,cam_srhf)
+       else
+          cam_alpha = 0.0d0
+          cam_beta  = 0.0d0
+          cam_omega = 0.0d0
+        endif
+        call nwxc_print()
+        if (cam_exch.and.(ga_nodeid().eq.0)) then
+            write(LuOut,*)
+            write(LuOut,8202) 
+     &         'Range-Separation Parameters        '
+            write(LuOut,8203) 
+            write(LuOut,8201)cam_alpha,cam_beta,cam_omega,cam_srhf
+        end if ! cam_exch
+        call xc_setcamparam(rtdb,cam_exch,cam_srhf,cam_omega,cam_alpha,
+     &       cam_beta)
+      endif
+cHvD
 c     
 c     Write new data to checkpoint file.
 c     
@@ -242,6 +277,74 @@ c
          if (.not. rtdb_put(rtdb, 'dft:lxfac', mt_log, numfunc, lxfac ))
      $        call errquit('dft_input: rtdb_put failed', 11, RTDB_ERR)
       endif
+c
+cc AJL/Begin/FDE
+c Repeat for FDE XC. Is this a safe way to check we are using FDE?
+      if (frozemb_fde) then
+c    
+c     Analyze any user specified XC functionals ... set if none
+c     
+        cksetd = .true.
+c     
+c     Check if user has specified some type of functional,
+c     if so, do not set defaults.
+c     
+        do n = 1, numfunc
+           if (lcfac_fde(n).or.nlcfac_fde(n).or.
+     &         lxfac_fde(n).or.nlxfac_fde(n))
+     &          cksetd = .false.
+        enddo
+        if (cksetd)then
+c     
+c        Set functional defaults.
+c     
+           cfac_fde(1) = 1.0d0
+           lcfac_fde(1) = .true.
+           xfac_fde(2) = 1.0d0
+           lxfac_fde(2) = .true.
+c     
+c        Update rtdb.
+c     
+           if (.not. rtdb_put(rtdb, 
+     &             'dft:frozemb:cfac', mt_dbl, numfunc, cfac_fde))
+     $        call errquit('dft_input: rtdb_put failed', 210, RTDB_ERR)
+           if (.not. rtdb_put(rtdb, 
+     &             'dft:frozemb:xfac', mt_dbl, numfunc, xfac_fde))
+     $        call errquit('dft_input: rtdb_put failed', 211, RTDB_ERR)
+           if (.not. rtdb_put(rtdb, 
+     &             'dft:frozemb:lcfac', mt_log, numfunc, lcfac_fde))
+     $        call errquit('dft_input: rtdb_put failed', 9, RTDB_ERR)
+           if (.not. rtdb_put(rtdb,
+     &             'dft:frozemb:lxfac', mt_log, numfunc, lxfac_fde))
+     $        call errquit('dft_input: rtdb_put failed', 11, RTDB_ERR)
+        endif
+c
+c Repeat something similar for KE functionals.
+c I'm going to set this up so it can be expanded.        
+c
+        cksetd = .true.
+c     
+c     Check if user has specified some type of functional,
+c     if so, do not set defaults.
+c     
+        do n = 1, numfunc_fde
+           if (tsfac(n).gt.1.d-8) cksetd = .false.
+        enddo
+        if (cksetd)then
+c     
+c        Set functional defaults.
+c 
+          tsfac(1) = 1.d0
+c     
+c        Update rtdb.
+c
+          if (.not. rtdb_put(rtdb,
+     &              'dft:frozemb:ts', mt_dbl, numfunc_fde, tsfac))
+     $        call errquit('dft_input: rtdb_put failed', 210, RTDB_ERR)
+        end if ! tsfac default
+c
+      endif ! frozemb_fde
+c AJL/End
 c
 c     Check/set defaults for convergence schemes
 c     
@@ -534,6 +637,102 @@ c           Print range-separation parameters
               write(LuOut,8201)cam_alpha,cam_beta,cam_omega,cam_srhf
             end if ! cam_exch
 c
+cc AJL/Begin/FDE
+            if (frozemb_fde) then
+              write(LuOut,*)
+              call util_print_centered
+     &           (LuOut,'XC Information (FDE)',23,.true.)
+c     
+c           Write out XC info. Combo info first, than X components,
+c           than C components.
+c     
+              do n = 1, numfunc
+                 if (xccomb_fde(n))write(LuOut,9223) xcname(n)
+              enddo
+c     
+c           Do exact exchange differently.
+c AJL: Hybrids will give you linear dependencies in the fde/qm combined 
+c wavefunction. Therefore, we should never have non-local contributions
+c from exact exchange. I have left the functionality here, as it is
+c lifted from L510 above, but it should never be used.
+c
+c An error message is implemented in dft_rdinput.F
+c If someone thinks it is sensible to re-enable this they can do so themselves.
+c
+              if (lxfac_fde(1).or.nlxfac_fde(1))
+     &            write(LuOut,9224) xname(1), xfac_fde(1), nineb_c
+c
+              do n = 2, numfunc
+                 if (lxfac_fde(n).and.nlxfac_fde(n))then
+                    write(LuOut,9224) xname(n), xfac_fde(n), nineb_c
+                 elseif (lxfac_fde(n).and.(.not.nlxfac_fde(n)))then
+                    write(LuOut,9224) xname(n), xfac_fde(n), local_c
+                 elseif ((.not.lxfac_fde(n)).and.nlxfac_fde(n))then
+                    write(LuOut,9224) xname(n), xfac_fde(n), nonlocal_c
+                 endif
+              enddo
+              do n = 1, numfunc
+                 if (lcfac_fde(n).and.nlcfac_fde(n))then
+                    write(LuOut,9224) cname(n), cfac_fde(n), nineb_c
+                 elseif (lcfac_fde(n).and.(.not.nlcfac_fde(n)))then
+                    write(LuOut,9224) cname(n), cfac_fde(n), local_c
+                 elseif ((.not.lcfac_fde(n)).and.nlcfac_fde(n))then
+                    write(LuOut,9224) cname(n), cfac_fde(n), nonlocal_c
+                 endif
+              enddo
+c
+c The most sensible thing is again to do the error checks for
+c range-separated and self-interaction corrected setups. Due to the
+c complexity of implementation I'm just going to disable this for FDE, but
+c they could in theory be checked and implemented.
+c The error check is in frozemb_fde_init, which is called from dft_scf.
+c
+ccc DISABLED ccc 
+c
+cc Lifted from above:
+cc           Check if asymptotic correction will be added to potential
+cc           If both LB94 and CS00 are .true., it is assumed that the 
+cc           user meant to use CS00 (since CS00 uses LB94)
+cc
+c              if (cs00) then
+c                 if (delta_ac.gt.1.0d90) then
+c                 write(LuOut,*)
+c                 write(LuOut,9226)
+c     &           '  CS with a Zhan-Nichols-Dixon shift        '
+c                 else
+c                 write(LuOut,*)
+c                 write(LuOut,9227)
+c     &           '  Casida-Salahub correction with a shift    ',
+c     &           delta_ac,'au'
+c                 endif
+c              else if (lb94) then
+c                 write(LuOut,*)
+c                 write(LuOut,9226)
+c     &           '         van Leeuwen-Baerends correction    '
+c              endif
+c
+c           Print range-separation parameters
+c              if (cam_exch) then
+c                write(LuOut,*)
+c                 write(LuOut,8202)
+c     &           'Range-Separation Parameters        '
+c                 write(LuOut,8203)
+c                write(LuOut,8201)cam_alpha,cam_beta,cam_omega,cam_srhf
+c              end if ! cam_exch
+ccc END DISABLED ccc
+c
+c Kinetic Energy Functional
+c
+              write(LuOut,*)
+              call util_print_centered
+     &           (LuOut,'KE Information (FDE)',23,.true.)
+              do n = 1, numfunc_fde
+                 if (tsfac(n).gt.0)
+     &             write(LuOut,9224) tsname(n), tsfac(n), local_c
+              enddo
+            endif ! frozemb_fde 
+cc AJL/End
+c
             call util_flush(LuOut)
 c
          endif ! oprint_xc
@@ -682,42 +881,6 @@ c     &                    r1
             call util_flush(LuOut)
          endif
       endif
-cHvD
-      use_nwxc = util_module_avail("nwxc")
-      if (use_nwxc) then
-        use_nwxc = nwxc_rtdb_load(rtdb,"dft")
-      endif
-      if (use_nwxc) then
-        if (nwxc_has_hfx()) then
-          xfac(1) = nwxc_wght_hfx()
-        endif
-        dftmp2 = nwxc_has_mp2c()
-        mp2fac = nwxc_wght_mp2c()
-        if (dftmp2) then
-          if (.not.rtdb_put(rtdb,'dft:mp2fac', mt_dbl, 1, mp2fac))
-     &      call errquit('dft_inpana: rtdb_put failed', 2902, RTDB_ERR)
-        endif
-        if (nwxc_has_cam()) then
-          cam_exch = .true.
-          call nwxc_get_cam(cam_alpha,cam_beta,cam_omega,cam_srhf)
-        else 
-          cam_exch  = .false.
-          cam_alpha = 0.0d0
-          cam_beta  = 0.0d0
-          cam_omega = 0.0d0
-        endif
-        call nwxc_print()
-        if (cam_exch.and.(ga_nodeid().eq.0)) then
-            write(LuOut,*)
-            write(LuOut,8202) 
-     &         'Range-Separation Parameters        '
-            write(LuOut,8203) 
-            write(LuOut,8201)cam_alpha,cam_beta,cam_omega,cam_srhf
-        end if ! cam_exch
-        call xc_setcamparam(rtdb,cam_exch,cam_srhf,cam_omega,cam_alpha,
-     &       cam_beta)
-      endif
-cHvD
 c
       return
  3231 format(10x,'Convergence aids based upon iterative change in ',/,
@@ -856,6 +1019,8 @@ c
      &      mt_int, 1, iAOacc))
      &      call errquit('dft_inpanae: rtdb_put failed', 124, RTDB_ERR)
       tol2e = 10.d0**(-itol2e)
+      if (.not. rtdb_put(rtdb, 'dft:tol2e', MT_DBL, 1, tol2e)) 
+     .     call errquit('dftinpanae:rtdbput failed',0, RTDB_ERR)
       if (.not. rtdb_put(rtdb, 'scf:tol2e', MT_DBL, 1, tol2e)) 
      .     call errquit('dftinpanae:rtdbput failed',0, RTDB_ERR)
       if(oprint_tolgr.and.ga_nodeid().eq.0) then

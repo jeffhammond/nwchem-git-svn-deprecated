@@ -66,9 +66,12 @@ c     **** external functions ****
             end if
          end do
       end if
+      !call nwpw_gaunt2_init(.false.,mult_l_max)
+      !call nwpw_gaunt3_init(.false.,mult_l_max)
       
 *     ***paw_xc energies ***
       ok = BA_alloc_get(mt_dbl,nion,"paw_xc_e",paw_xc_e(2),paw_xc_e(1))
+      call dcopy(nion,0.0d0,0,dbl_mb(paw_xc_e(1)),1)
 
       
 *     *** xc matrix arrays - nbasis_max**2 * (mult_l_max+1)**2 ***
@@ -784,6 +787,10 @@ c
       integer ms,i
       
       call nwpw_timing_start(4)
+
+      !call nwpw_gaunt2_end()
+      !call nwpw_gaunt3_end()
+
       ok = .true.
       ok = ok.and.BA_free_heap(coeff_rholm(2))
       ok = ok.and.BA_free_heap(coeff_rholm2(2))
@@ -1452,57 +1459,6 @@ c        **** compute |grad nup| and |grad ndn| ****
       return
       end  
 
-*     *****************************************************
-*     *                                                   *
-*     *          nwpw_gauss_weights                       *
-*     *                                                   *
-*     *****************************************************
-      subroutine nwpw_gauss_weights(x1, x2, x, w, n)
-      implicit none
-      integer n
-      double precision x1, x2
-      double precision x(*), w(*)
-
-!    *** local variables ***
-      integer i, j, m, niter
-      double precision eps
-      parameter (eps = 3.0d-14)
-      double precision p1, p2, p3, pp, xl, xm, z, z1,pi
-
-      pi = 4.0d0*datan(1.0d0)
-      m = (n + 1)/2  
-      xm = 0.5d0*(x2 + x1)
-      xl = 0.5d0*(x2 - x1)
-
-      do i = 1, m
-         z = cos(pi*(i - 0.25d0)/(n + 0.5d0))
-         niter = 0
-    1    continue
-
-         niter = niter + 1
-         if (niter .ge. 1000000)
-     >     call errquit('cannot converge in gauss_weights',0,1)
-
-         p1 = 1.0d0
-         p2 = 0.0d0
-         do j = 1, n
-            p3 = p2
-            p2 = p1
-            p1 = ((2.0d0*j - 1.0d0)*z*p2 - (j - 1.0d0)*p3)/j
-         end do
-
-         pp = n*(z*p1 - p2)/(z*z - 1.0d0)
-         z1 = z
-         z = z1 - p1/pp
-
-         if (abs(z - z1) .gt. eps) go to 1
-         x(i) = xm - xl*z
-         x(n+1-i) = xm + xl*z
-         w(i) = 2.0d0*xl/((1.0d0 - z*z)*pp*pp)
-         w(n+1-i) = w(i)
-      end do
-      return
-      end
 
 
 c     *********************************************
@@ -1566,6 +1522,7 @@ c   overlap coefficients.
                do n=n1(ms),n2(ms)
                   w = w + sw1(n,iprj)*sw1(n,jprj)
                end do
+               call D1dB_SumAll(w)
                tmp_ms = w*coeff
                call nwpw_xc_density_gen_rho(n1dgrid,tmp_ms,
      >                  rgrid,phi_ae(1,bi),phi_ae(1,bj),
@@ -1665,6 +1622,7 @@ c   overlap coefficients.
                do n=n1(ms),n2(ms)
                   w = w + sw1(n,iprj)*sw1(n,jprj)
                end do
+               call D1dB_SumAll(w)
                tmp_ms = w*coeff
                call nwpw_xc_density_gen_drho(n1dgrid,tmp_ms,
      >                  rgrid,

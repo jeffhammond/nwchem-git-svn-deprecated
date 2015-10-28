@@ -1,0 +1,87 @@
+#!/bin/bash
+
+ARMCI_MPI_TARBALL=$1
+
+export NWCHEM_TOP=${NWCHEM_TOP:-"`pwd`/../"}
+if test "x$NWCHEM_TOP" = x
+then
+    echo You must set NWCHEM_TOP to use this script.
+    exit 1
+fi
+
+ARMCI_MPI_DIR=${NWCHEM_TOP}/src/tools/armci-mpi
+
+if [ -d ${ARMCI_MPI_DIR} ] ; then
+  # Assume that it is the right one, created previously by this script.
+  echo "Existing ARMCI-MPI source directory found!"
+  echo "Step 1 of 4 succeeded."
+elif [ -x "$(command -v git)" ]; then
+  git clone -b mpi3rma http://git.mpich.org/armci-mpi.git ${ARMCI_MPI_DIR} >& git.log
+  stat=$?
+  if [ $stat -ne 0 ] ; then
+    echo "git clone failed"
+    exit 1
+  else
+    echo "Step 1 of 4 succeeded."
+  fi
+else
+  if test "x${ARMCI_MPI_TARBALL}" = x ; then
+    echo "You have not provided a download location for the ARMCI-MPI tarball!"
+    exit 1
+  else
+    wget ${ARMCI_MPI_TARBALL}
+    if [ $stat -ne 0 ] ; then
+      echo "wget failed"
+      exit 1
+    else
+      echo "Step 1 of 4 succeeded."
+    fi
+  fi
+fi
+
+cd ${ARMCI_MPI_DIR}
+
+if ! [ -f ${ARMCI_MPI_DIR}/configure ] ; then
+  ./autogen.sh >& autogen.log
+  stat=$?
+  if [ $stat -ne 0 ] ; then
+    echo "Autotools failed, likely because the versions your system has are too old."
+    echo "See https://github.com/jeffhammond/HPCInfo/wiki/Autotools."
+    exit 1
+  else
+    echo "Step 2 of 4 succeeded."
+  fi
+else
+  echo "Step 2 of 4 succeeded."
+fi
+
+if ! [ -d ${ARMCI_MPI_DIR}/build ] ; then
+  mkdir ${ARMCI_MPI_DIR}/build
+fi
+cd ${ARMCI_MPI_DIR}/build
+
+${ARMCI_MPI_DIR}/configure CC=mpicc --prefix=${NWCHEM_TOP}/external-armci >& c.log
+stat=$?
+if [ $stat -ne 0 ] ; then
+  echo "configure failed."
+  echo "Please email config.log and system details to armci-discuss@lists.mpich.org."
+  exit 1
+else
+  echo "Step 3 of 4 succeeded."
+fi
+
+make install >& m.log
+stat=$?
+if [ $stat -ne 0 ] ; then
+  echo "configure failed."
+  echo "Please email config.log and system details to armci-discuss@lists.mpich.org."
+  exit 1
+else
+  echo "Step 4 of 4 succeeded."
+fi
+
+echo "Congratulations! ARMCI-MPI was built successfully."
+echo "Please set the following environment variables when you build NWChem:"
+echo "ARMCI_NETWORK=ARMCI"
+echo "EXTERNAL_ARMCI_PATH=${NWCHEM_TOP}/external-armci"
+

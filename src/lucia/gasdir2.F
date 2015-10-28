@@ -197,7 +197,7 @@ C?        write(6,*) ' Updated x', X
       INTEGER I1BATCH(*)
       INTEGER IBATCH(8,*)
 *
-      NTEST = 0000
+      NTEST = 0100
       IF(NTEST.GE.100) THEN
         WRITE(6,*)
         WRITE(6,*) ' =================='
@@ -289,6 +289,7 @@ C?      WRITE(6,*) ' IA IB LBLOCK_AS', IA,IB, LBLOCK_AS
         NSTA = NSSOA(ISM,IA)
         NSTB = NSSOB(IBSM,IB)
         LBLOCK= NSTA*NSTB
+        if (lblock.eq.0) goto 1000
         IF(IDC.EQ.1.OR.IA.GT.IB.OR.(IA.EQ.IB.AND.IASM.GT.IBSM)) THEN
           LBLOCKP = NSTA*NSTB
         ELSE IF(IDC.EQ.2.AND.IA.EQ.IB.AND.IASM.EQ.IBSM) THEN
@@ -4723,7 +4724,7 @@ C TRIPK3(AUTPAK,APAK,IWAY,MATDIM,NDIM,SIGN)
       END
       SUBROUTINE SBLOCK(NBLOCK,IBLOCK,IBOFF,CB,HCB,LUC,IRESTRICT,
      &                  LUCBLK,ICBAT_RES,ICBAT_INI,ICBAT_END,CV,
-     &                  ECORE,ITASK,ILEN) 
+     &                  ECORE,ITASK,ILEN,SCLFAC) 
 *
 * Generate a set of sigma blocks, 
 * The NBLOCK specified in IBLOCK starting from IBOFF,
@@ -4787,7 +4788,7 @@ CNW   DIMENSION CV(*)
       CALL MEMMAN(IDUM,IDUM,'MARK  ',IDUM,'SBLOCK')
 *
       CALL LUCIAQENTER('SBLOK')
-      NTEST = 000
+      NTEST = 1000
       NTEST = MAX(NTEST,IPRCIX)
       IF(NTEST.GE.10) THEN
         WRITE(6,*) ' Output from SBLOCK '
@@ -4984,7 +4985,8 @@ C  I assume memory was allocated for blocks, so
       NOOS = NOCTPA*NOCTPB*NSMCI 
       NTTS = MXNTTS
 *. For scaling for each TTS block
-      CALL MEMMAN(KLSCLFAC ,NTTS,'ADDL  ',2,'SCLFAC')  !done
+*. Moved to RASSG3
+C     CALL MEMMAN(KLSCLFAC ,NTTS,'ADDL  ',2,'SCLFAC')  !done
 
 *. Space for four blocks of string occupations and arrays of 
 *. reordering arrays
@@ -5074,7 +5076,7 @@ C     IF(ISIMSYM.EQ.0) THEN
      &     int_mb(KI4),dbl_mb(KXI4S),MXSXST,MXSXBL,
      &     MOCAA,MOCAB,IAPR,
      &     int_mb(KCLBT),int_mb(KCLEBT),int_mb(KCI1BT),int_mb(KCIBT),
-     &     IRESTRICT,int_mb(KCONSPA),int_mb(KCONSPB),dbl_mb(KLSCLFAC),
+     &     IRESTRICT,int_mb(KCONSPA),int_mb(KCONSPB),SCLFAC,
      &     LUCBLK,IPERTOP,IH0INSPC,dbl_mb(KLH0SPC),
      &     ICBAT_RES,ICBAT_INI,ICBAT_END,IUSE_PH,IPHGAS,I_RES_AB,
      &     IUSE_PA,int_mb(KCJPA),int_mb(KSIPA),ISIMSYM,dbl_mb(KINSCR2),
@@ -5262,7 +5264,7 @@ C?    WRITE(6,*) ' IPERTOP in SBLOCKS = ', IPERTOP
       IF(IH_OCC_CONS.EQ.1.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' Occupation conserving part of Hamiltonian '
       END IF
-      NTEST = 0000
+      NTEST = 1000
       NTEST = MAX(NTEST,IPRNT)
       IF(NTEST.GE.20.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' ================='
@@ -5334,32 +5336,41 @@ CNW       CALL WRTMAT(CV,1,1,1,1)
 * 1 : Arrays for accessing C 
 * ============================
 *. Find the active blocks on LUC, store info in SCLFAC
-      IF(ICISTR.NE.1) THEN
+C     IF(ICISTR.NE.1) THEN
 *. Active blocks on LUC
-        CALL FIND_ACTIVE_BLOCKS(LUC,-1,SCLFAC(ICBLK_INI),CB)
-      ELSE
+C       CALL FIND_ACTIVE_BLOCKS(LUC,-1,SCLFAC(ICBLK_INI),CB)
+C     ELSE
 *. Active blocks in vectors CV 
 cVOG Old bug fixed
-        CALL FIND_ACTIVE_BLOCKS_IN_VECTOR(CV,SCLFAC(ICBLK_INI),
-     &       NCBLOCK_T,ICBLOCK(1,ICBLK_INI))
+C BERT NEW NEED TO SERIALIZE FIND_ACTIVE_BLOCKS_IN_VECTOR
+C ONLY NEED TO DO MY OWN BLOCK, ISSUE = FIRST ITERATION ONLY ONE BLOCK ACTIVE
+C INSTEAD OF ASSUME C LOCAL ASSUME SIGMA LOCAL, REQUIRES GETS INSTEAD OF ACC
+C WHICH IS MORE EFFICIENT, IN THAT CASE ROUTINE BELOW IS FINE MOSTLY
+C
+C PULL OUTSIDE BEFORE RASSG3 OVER BATCHES OF SIGMA, SO WE DO IT ONLY ONCE
+C
+C       CALL FIND_ACTIVE_BLOCKS_IN_VECTOR(CV,SCLFAC(ICBLK_INI),
+C    &       NCBLOCK_T,ICBLOCK(1,ICBLK_INI))
 cVOG &       NCBLOCK_T,ICBLOCK)
-      END IF
-      IF(NTEST.GE.1000) THEN
-        WRITE(6,*) ' Array giving active blocks '
-        CALL WRTMAT(SCLFAC(ICBLK_INI),1,NCBLOCK_T,1,NCBLOCK_T)
-      END IF
+C     END IF
+C     IF(NTEST.GE.1000) THEN
+C       WRITE(6,*) ' Array giving active blocks '
+C       CALL WRTMAT(SCLFAC(ICBLK_INI),1,NCBLOCK_T,1,NCBLOCK_T)
+C     END IF
 *
 *. If ISIMSYM is active, enforce the same activity of all blocks 
 *. belonging to a TT block
 *. Number of BLOCKS in  C
-        NBLOCK_C =  I1CBLOCK(NCBATCH)-1+ LCBLOCK(NCBATCH)
+C       NBLOCK_C =  I1CBLOCK(NCBATCH)-1+ LCBLOCK(NCBATCH)
 C       WRITE(6,*) ' Number of blocks in C', NBLOCK_C
 *
-       CALL ENFORCE_SIMSYM_ACT_BLK(NBLOCK_C,ICBLOCK,SCLFAC)
+C      CALL ENFORCE_SIMSYM_ACT_BLK(NBLOCK_C,ICBLOCK,SCLFAC)
 C           ENFORCE_SIMSYM_ACT_BLK(NBLK,IBLK,XSCA)
 *
 * Initialize sigma blocks
 C?     CALL MEMCHK2('CHECAD')
+C BERT NEW: CHECK IF IOFF_S - IOFF_S + LEN - 1 RANGE IS LOCAL OTHERWISE
+C I.E. WE NEED TO IGNORE NON-LOCAL BLOCKS OF SIGMA AS ANOTHER NODE WILL COMPUTE THESE
       DO JSBLOCK = 1, NSBLOCK
         IATP = ISBLOCK(1,JSBLOCK)
         IBTP = ISBLOCK(2,JSBLOCK)
@@ -5497,6 +5508,8 @@ CNW         CALL GSTTBL(CV(IOFF_C_BLOCK),CB(JOFF),JATP,JASM,JBTP,JBSM,
 CNW  &                  ICOCOC,
 CNW  &                  NOCTPA,NOCTPB,NSSOA,NSSOB,PS,ICOOSC,IDC,
 CNW  &                  PL,LUC,C2,NSMST,ISCALE,SCLFAC(JBLOCK))
+C
+C BERT NEW GSTTBL NEEDS TO BE SERIALIZED. LOCAL COPY ONLY
             CALL GSTTBL(CV,IOFF_C_BLOCK,CB(JOFF),JATP,JASM,JBTP,JBSM,
      &                  ICOCOC,
      &                  NOCTPA,NOCTPB,NSSOA,NSSOB,PS,ICOOSC,IDC,
@@ -5663,6 +5676,7 @@ C    &          IOCTPA,IOCTPB,I_DO_EXACT_BLOCK)
                 END IF
 C
                 IF(INTERACT.EQ.0.OR.I_DO_EXACT_BLK.EQ.0) GOTO 10000
+C BERT NEW IDENTIFY SIGMA BLOCK AS BEING UPDATED in ISBLOCK(9,..)
 
                 IF(NTEST.GE.1000) THEN
                   WRITE(6,*) ' Next s block in batch : '
@@ -5802,6 +5816,7 @@ C    &                       JPERT)
         ISOFFP = ISBLOCK(6,ISBLK)
         NIA = NSSOA(IASM,IATP)
         NIB = NSSOB(IBSM,IBTP)
+C BERT NEW ONLY DO IF UPDATED!!!!
         IF(ICJKAIB.NE.0) THEN
 *. Tranpose sigma block was obtained, transpose to obtain correct block
            CALL TRPMT3(SB(ISOFF),NSSOB(IBSM,IBTP),

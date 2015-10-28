@@ -1,4 +1,3 @@
-
 *
 * $Id$
 *
@@ -129,21 +128,15 @@ c     real*8     fion(3,natmx)
       external psp_ncmp_vloc,psp_vloc_atom,psp_ion_core
       external psp_hartree_atom,psp_hartree_cmp_cmp,psp_hartree_cmp_pw
 
-      integer tid, Parallel_threadid
-      external Parallel_threadid
+      integer tid,nthreads
+      integer  Parallel_threadid,Parallel_nthreads
+      external Parallel_threadid,Parallel_nthreads
 
 
-#ifdef USE_OPENMP
-      logical is_par
-      common    / Debug_openmp / is_par
-#endif
 
 
       call nwpw_timing_start(42)
 
-#ifdef USE_OPENMP
-      is_par = .true.
-#endif
 
       call Pack_npack(0,npack0)
       n2ft3d = 2*nfft3d
@@ -202,12 +195,12 @@ c     real*8     fion(3,natmx)
       value = value.and.
      >        BA_push_get(mt_dbl,(nemax),'sumi',sumi(2),sumi(1))
       if (.not. value) call errquit('out of stack memory',0, MA_ERR)
-      !call dcopy(4*nfft3d,0.0d0,0,dbl_mb(dnall(1)),1)
-      !call dcopy(4*nfft3d,0.0d0,0,dbl_mb(xcp(1)),1)
-      !call dcopy(4*nfft3d,0.0d0,0,dbl_mb(xce(1)),1)
-      call D3dB_r_nZero(1,2,dbl_mb(dnall(1)))
-      call D3dB_r_nZero(1,2,dbl_mb(xcp(1)))
-      call D3dB_r_nZero(1,2,dbl_mb(xce(1)))
+      call dcopy(4*nfft3d,0.0d0,0,dbl_mb(dnall(1)),1)
+      call dcopy(4*nfft3d,0.0d0,0,dbl_mb(xcp(1)),1)
+      call dcopy(4*nfft3d,0.0d0,0,dbl_mb(xce(1)),1)
+      !call D3dB_r_nZero(1,2,dbl_mb(dnall(1)))
+      !call D3dB_r_nZero(1,2,dbl_mb(xcp(1)))
+      !call D3dB_r_nZero(1,2,dbl_mb(xce(1)))
 
       call nwpw_timing_end(12)
      
@@ -238,19 +231,14 @@ c     real*8     fion(3,natmx)
 *     ******************************************
       do it=1,it_in
 
-#ifdef USE_OPENMP
-!$OMP PARALLEL private(tid)  
-      tid = Parallel_threadid()
-#endif
 
-
-
-!$OMP SINGLE
         !call dcopy(2*npack1*nemax,psi2,1,psi1,1)
         call Pack_c_nCopy(1,nemax,psi2,psi1)
 
-        if (move) call ion_shift()
-!$OMP END SINGLE
+        if (move) then
+           call ion_shift()
+           if (psp_pawexist()) call nwpw_gintegrals_set(.true.)
+        end if
 
 *       ********************************
 *       **** generate phaze factors ****
@@ -274,27 +262,23 @@ c           call Pack_c_unpack(1,psi_r(1,n))
 c           call D3dB_cr_fft3b(1,psi_r(1,n))
 c           call D3dB_r_Zero_Ends(1,psi_r(1,n))
 c        end do
-#ifdef USE_OPENMP 
-!$OMP END PARALLEL
-#endif
 
         call nwpw_timing_start(44)
-!$OMP SINGLE
+
+
         do n=n1(1),n2(ispin)
            call Pack_c_Copy(1,psi1(1,n),psi_r(1,n))
         end do
-!$OMP END SINGLE
 
-!$OMP MASTER
         call Grsm_gh_fftb(nfft3d,n2(ispin),psi_r)
-!$OMP END MASTER
-!$OMP BARRIER
-!$OMP SINGLE
+
+
+        call nwpw_timing_end(44)
+
+
         do n=n1(1),n2(ispin)
            call D3dB_r_Zero_Ends(1,psi_r(1,n))
         end do
-!$OMP END SINGLE
-        call nwpw_timing_end(44)
 
 c       this function calls non pipelined 3d fft
         call nwpw_meta_gga_gen_tau(ispin,ne,psi1)
@@ -303,8 +287,8 @@ c       this function calls non pipelined 3d fft
 *       *********************
 *       **** generate dn ****
 *       *********************
-        !call dcopy(ispin*n2ft3d,0.0d0,0,dn,1)
-        call D3dB_r_nZero(1,ispin,dn)
+        call dcopy(ispin*n2ft3d,0.0d0,0,dn,1)
+        !call D3dB_r_nZero(1,ispin,dn)
         if (fractional) then
           do ms=1,ispin
              do n=n1(ms),n2(ms)
@@ -329,12 +313,18 @@ c       this function calls non pipelined 3d fft
           end do
         end if
 
+        !exc = 0.0d0
+        !do i=1,n2ft3d
+        !  exc = exc + dn(i,2)
+        !end do
+        !call D3dB_SumAll(exc)
+        !write(*,*) "dnall=",exc*dv
+
 *       **********************
 *       **** generate dng ****
 *       **********************
         call D3dB_rr_Sum(1,dn(1,1),dn(1,ispin),dbl_mb(rho(1)))
         call D3dB_r_SMul(1,scal1,dbl_mb(rho(1)),dcpl_mb(tmp1(1)))
-!MATHIAS This one is done in parallel because is_par is true
         call D3dB_rc_fft3f(1,dcpl_mb(tmp1(1)))
 c        call mask_C(0,dcpl_mb(dng(1)))
         call Pack_c_pack(0,dcpl_mb(tmp1(1)))
@@ -523,6 +513,7 @@ c          call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
 *       *****************************************        
         if (psp_pawexist()) then
            call psp_overlap_S(ispin,ne,psi1,psi_r)
+           if (move) call phafac2()
            call psi_lmbda_paw(ispin,ne,nemax,npack1,psi_r,psi2,
      >                     dte,
      >                     lmd,dbl_mb(tmp_L(1)),ierr)
@@ -549,6 +540,7 @@ c          call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
       call Parallel_np(np)
       call Parallel2d_np_i(np_i)
       call Parallel2d_np_j(np_j)
+      if ((move).and.(psp_pawexist())) call phafac() !*** reset phase factors to r1 ***
 
 *     *** get orbital energies ****
       call Dneall_ffm_sym_Multiply(0,psi1,Hpsi,npack1,hml)
@@ -653,6 +645,7 @@ c      if (ispin.eq.1) enlocal = 2.0d0*enlocal
       E(9) = 2.0d0*ehartr
       E(10) = pxc
 
+*     **** QM/MM terms ****
       if (pspw_qmmm_found()) then
          e_lj     = pspw_qmmm_LJ_E()
          e_q      = pspw_qmmm_Q_E()
@@ -812,7 +805,6 @@ c     end do
       call nwpw_timing_end(12)
 
 #ifdef USE_OPENMP
-        is_par = .false.
 #endif
 
       call nwpw_timing_end(42)
@@ -820,3 +812,94 @@ c     end do
       return
       end
  
+
+c      subroutine nwpw_baddn_dum(tag,ispin,ne,npack1,nfft3d,psi1)
+c      implicit none
+c      character*(*) tag
+c      integer ispin,ne(2),npack1,nfft3d
+c      complex*16 psi1(npack1,*)
+c
+c      integer MASTER,taskid
+c      parameter (MASTER=0)
+c      logical value,oprint
+c      integer psi_r(2),dn(2)
+c      integer ms,n,i,n1(2),n2(2),nx,ny,nz,n2ft3d
+c      real*8   exc(2),scal1,dv,scal2
+c
+c      real*8   lattice_omega
+c      external lattice_omega
+c
+c#include "bafdecls.fh"
+c#include "errquit.fh"
+c
+c      call Parallel_taskid(taskid)
+c      oprint = (taskid.eq.MASTER)
+c
+c      call D3dB_n2ft3d(1,n2ft3d)
+c
+c      n1(1) = 1
+c      n2(1) = ne(1)
+c      n1(2) = ne(1) + 1
+c      n2(2) = ne(1) + ne(2)
+c
+c
+c      call D3dB_nx(1,nx)
+c      call D3dB_ny(1,ny)
+c      call D3dB_nz(1,nz)
+c
+c      scal1 = 1.0d0/dble(nx*ny*nz)
+c      scal2 = 1.0d0/lattice_omega()
+c      dv    = scal1*lattice_omega()
+c
+c      value = BA_push_get(mt_dbl,(ne(1)+ne(2))*n2ft3d,'psi_rrr',
+c     >                    psi_r(2),psi_r(1))
+c      value = BA_push_get(mt_dbl,2*n2ft3d,'dnnn',dn(2),dn(1))
+c      if (.not.value) write(*,*) "Crap"
+c
+c      call dcopy((ne(1)+ne(2))*n2ft3d,0.0d0,0,dbl_mb(psi_r(1)),1)
+c      call dcopy(2*n2ft3d,0.0d0,0,dbl_mb(dn(1)),1)
+c
+c
+c        do n=n1(1),n2(ispin)
+c           call Pack_c_Copy(1,psi1(1,n),dbl_mb(psi_r(1)+(n-1)*n2ft3d))
+c        end do
+c
+c        call Grsm_gh_fftb(nfft3d,n2(ispin),dbl_mb(psi_r(1)))
+c
+c        do n=n1(1),n2(ispin)
+c           call D3dB_r_Zero_Ends(1,dbl_mb(psi_r(1)+(n-1)*n2ft3d))
+c        end do
+c
+c         call dcopy(2*n2ft3d,0.0d0,0,dbl_mb(dn(1)),1)
+c         !call D3dB_r_nZero(1,ispin,dbl_mb(dn(1)))
+c         do ms=1,ispin
+c             do n=n1(ms),n2(ms)
+c                do i=1,n2ft3d
+c                   dbl_mb(dn(1)+i-1+(ms-1)*n2ft3d) 
+c     >           = dbl_mb(dn(1)+i-1+(ms-1)*n2ft3d)
+c     >              + scal2*((dbl_mb(psi_r(1)+i-1+(n-1)*n2ft3d))**2)
+c                end do
+c             end do
+c             call D3dB_r_Zero_Ends(1,dbl_mb(dn(1)+(ms-1)*n2ft3d))
+c             call D1dB_Vector_SumAll(n2ft3d,dbl_mb(dn(1)+(ms-1)*n2ft3d))
+c          end do
+c
+c        exc(1) = 0.0d0
+c        exc(2) = 0.0d0
+c        do ms=1,ispin
+c           do i=1,n2ft3d
+c             exc(ms) = exc(ms) + dbl_mb(dn(1)+i-1+(ms-1)*n2ft3d)
+c           end do
+c           call D3dB_SumAll(exc(ms))
+c        end do
+c        if (oprint) write(*,*) tag//" DNALL=",
+c     >              exc(1)*dv,exc(2)*dv,exc,dv,
+c     >              ispin,ne,n2ft3d,npack1
+c
+c      value = BA_pop_stack(dn(2))
+c      value = BA_pop_stack(psi_r(2))
+c
+c
+c      return
+c      end
+

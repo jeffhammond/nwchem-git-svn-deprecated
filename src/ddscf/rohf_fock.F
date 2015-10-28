@@ -64,6 +64,10 @@ c
       logical odebug
       integer itype_wfn
       character*255 cosmo_file
+c     JEM DIM/QM
+      integer g_vdim
+      logical ldimqm
+
 c
 c     Initialise
 c     
@@ -173,6 +177,15 @@ c     add in frozen embedding
 c
       if (frozemb) then
         call ga_dadd(1.d0,g_hcore,1.d0,g_frozemb,g_hcore)
+      end if
+c
+c     DIM/QM JEM
+c     Add DIM potential
+      if (.not.rtdb_get(rtdb, 'dimqm:ldimqm', mt_log, 1, ldimqm))
+     $  ldimqm = .false.
+      if (ldimqm) then
+        call dimqm_rohf_wrap(rtdb, geom, basis, nbf, g_cdens, g_vdim)
+        call ga_dadd(one, g_hcore, one, g_vdim, g_hcore)
       end if
 c
       call ga_sync()
@@ -339,6 +352,11 @@ c
       call rohf_dumpfock(nopen,g_oexch,g_cfock)
       if (.not. ga_destroy(g_cfock)) call errquit
      $     ('rohf_fock: ga_destroy failed',0, GA_ERR)
+c     DIM/QM JEM
+      if (ldimqm) then
+        if(.not. ga_destroy(g_vdim))
+     $    call errquit('rohf_fock: destroy vdim failed',0,GA_ERR)
+      end if
       if (nopen .gt. 0) then
          if (.not. ga_destroy(g_ocoul)) call errquit
      $        ('rohf_fock: ga_destroy failed',0, GA_ERR)

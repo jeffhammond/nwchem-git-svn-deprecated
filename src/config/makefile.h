@@ -19,7 +19,7 @@
 # For development tree 
 RELEASE := 
 # For current release tree
-#RELEASE := 6.5
+#RELEASE := 6.6
 
 #
 
@@ -316,7 +316,7 @@ endif
      CORE_LIBS +=  -SSL2
   else
     LDOPTIONS = -xildoff
-    CORE_LIBS +=  -llapack $(BLASOPT) -lblas  -lmvec
+    CORE_LIBS +=  -lnwclapack $(BLASOPT) -lnwcblas  -lmvec
   endif
 
 
@@ -395,13 +395,13 @@ ifeq ($(TARGET),SOLARIS64)
   LINK.f = $(FC) $(LDFLAGS) $(FOPTIONS)
   ifeq ($(FC),frt)
     LDOPTIONS = -SSL2
-    CORE_LIBS +=  -llapack -lblas
+    CORE_LIBS +=  -lnwclapack -lnwcblas
   else
     LDOPTIONS = -xs -xildoff
 ifdef BLASOPT
     CORE_LIBS +=   $(BLASOPT)   -lmvec
 else
-    CORE_LIBS +=  -llapack -lblas  -lmvec
+    CORE_LIBS +=  -lnwclapack -lnwcblas  -lmvec
 endif
     CORE_LIBS += -lsocket -lrpcsvc -lnsl
     EXTRA_LIBS =  -ldl -lfsu
@@ -466,7 +466,7 @@ ifeq ($(TARGET),HPUX)
   LDOPTIONS +=  +DA2.0 +DS2.0 +O2
   LDOPTIONS +=   +O2
   LINK.f = f90   $(LDFLAGS) 
-  CORE_LIBS +=  $(BLASOPT) -llapack -lblas   -lm
+  CORE_LIBS +=  $(BLASOPT) -lnwclapack -lnwcblas   -lm
   FDEBUG = -g
   FOPTIONS =  +ppu -Wl,-a,archive
   COPTIONS = -Aa -D_HPUX_SOURCE +e 
@@ -497,7 +497,7 @@ ifeq ($(TARGET),HPUX64)
   CC = cc
   FC = f90
   LDOPTIONS = -Wl,+vallcompatwarnings  +U77   
-  CORE_LIBS +=  -llapack $(BLASOPT) -lblas  -lm
+  CORE_LIBS +=  -lnwclapack $(BLASOPT) -lnwcblas  -lm
   CDEBUG =
   FDEBUG = -g
   FOPTIONS =  +ppu  #+U77  
@@ -578,7 +578,7 @@ endif
        LIBPATH += -L/usr/lib 
 
   LDOPTIONS += -bmaxstack:0x60000000 -bmaxdata:0x60000000 -bloadmap:nwchem.lapi_map
-       CORE_LIBS +=  -llapack $(BLASOPT) -lblas \
+       CORE_LIBS +=  -lnwclapack $(BLASOPT) -lnwcblas \
 	      -brename:.daxpy_,.daxpy \
 	      -brename:.dcopy_,.dcopy \
 	      -brename:.ddot_,.ddot \
@@ -703,11 +703,11 @@ endif
   LDOPTIONS += -bloadmap:nwchem.ibm64map -bbigtoc # bigtoc requires bmaxdata
   LDOPTIONS += -bmaxstack:0x80000000 -bmaxdata:0x200000000 # this limits MA to 8GB
   ifeq ($(LAPACK_LIB),)
-     CORE_LIBS += -llapack
+     CORE_LIBS += -lnwclapack
   endif
   CORE_LIBS += $(BLASOPT)
   ifeq ($(BLAS_LIB),)
-     CORE_LIBS += -lblas
+     CORE_LIBS += -lnwcblas
   endif
   XLFBREN = y
 
@@ -769,7 +769,7 @@ endif
 # Need ESSL before our own BLAS library but still need our
 # own stuff for misc. missing routines
 
-CORE_LIBS +=  -llapack -lblas
+CORE_LIBS +=  -lnwclapack -lnwcblas
 
   LDOPTIONS += -bloadmap:nwchem.lapimap -bbigtoc
   LDOPTIONS += -bmaxstack:0x60000000 -bmaxdata:0x60000000 # needed because of bigtoc
@@ -823,7 +823,7 @@ else
    FOPTIONS += -qintsize=8
 endif
   DEFINES += -DEXT_INT
-  CORE_LIBS +=  $(BLASOPT) -llapack -lblas
+  CORE_LIBS +=  $(BLASOPT) -lnwclapack -lnwcblas
   LDOPTIONS += -bloadmap:nwchem.lapi64map -bbigtoc
   LDOPTIONS += -bmaxstack:0x80000000 -bmaxdata:0x80000000 # needed because of bigtoc
 #  LDOPTIONS += -bmaxstack:0xe0000000 -bmaxdata:0xe0000000 # this for large memory
@@ -986,9 +986,9 @@ endif
       COPTIONS += -g
     endif
 ifdef USE_VECLIB
-             CORE_LIBS += $(BLASOPT)  -Wl,-framework -Wl,vecLib -lblas
+             CORE_LIBS += $(BLASOPT)  -Wl,-framework -Wl,vecLib -lnwcblas
 else
-             CORE_LIBS +=   -llapack $(BLASOPT)  -lblas
+             CORE_LIBS +=   -lnwclapack $(BLASOPT)  -lnwcblas
 endif
   ifeq ($(FC),xlf) 
      LDOPTIONS = -Wl,-multiply_defined -Wl,warning
@@ -1015,6 +1015,9 @@ ifeq ($(TARGET),MACX64)
      FC = gfortran
      _FC = gfortran
    endif
+   ifeq ($(FC),$(findstring $(FC),gfortran gfortran-4 gfortran-5))
+     _FC = gfortran
+   endif
 #
 # MacOSX 64bit
 #
@@ -1038,17 +1041,20 @@ endif
                _CPU = $(shell machine  )
                INSTALL = @echo nwchem is built
                RANLIB = ranlib
-             MAKEFLAGS = -j 1 --no-print-directory
+#             MAKEFLAGS = -j 1 --no-print-directory
              DEFINES   = -DMACX
              DEFINES  += -DEXT_INT
 
-      ifeq ($(FC),gfortran)
+      ifeq ($(_FC),gfortran)
 #gcc version 
-        LINK.f = gfortran  $(LDFLAGS) 
-        FOPTIONS   = #-Wextra #-Wunused #-ffast-math
+        LINK.f    = $(FC) $(LDFLAGS) 
+        FOPTIONS  = -cpp #-Wextra #-Wunused #-ffast-math
+        ifdef USE_I4FLAGS
+        else
         FOPTIONS += -fdefault-integer-8
-        FOPTIMIZE  = -O2 -ffast-math -Wuninitialized 
-       DEFINES  += -DGFORTRAN -DGCC4
+        endif
+        FOPTIMIZE = -O2 -ffast-math -Wuninitialized 
+       DEFINES   += -DGFORTRAN -DGCC4
 #
          FOPTIMIZE+= -funroll-all-loops -mtune=native 
          FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -ftree-vectorizer-verbose=1   -fprefetch-loop-arrays  -funroll-all-loops 
@@ -1088,14 +1094,14 @@ endif
       COPTIONS += -g
     endif
 ifdef USE_VECLIB
-             CORE_LIBS += $(BLASOPT)  -Wl,-framework -Wl,vecLib -lblas
+             CORE_LIBS += $(BLASOPT)  -Wl,-framework -Wl,vecLib -lnwcblas
 else
    ifeq ($(LAPACK_LIB),)
-      CORE_LIBS += -llapack
+      CORE_LIBS += -lnwclapack
    endif
    CORE_LIBS +=    $(BLASOPT)
    ifeq ($(BLAS_LIB),)
-      CORE_LIBS += -lblas
+      CORE_LIBS += -lnwcblas
    endif
 endif
       ifeq ($(FC),ifort)
@@ -1104,14 +1110,23 @@ endif
        _IFCV14= $(shell ifort -logo  2>&1|egrep "Version "|head -n 1|sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 14) {print "Y";exit}}')
        _IFCV15ORNEWER=$(shell ifort -logo  2>&1|egrep "Version "|head -n 1 | sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 15) {print "Y";exit}}')
         DEFINES  += -DIFCV8 -DIFCLINUX
-        FOPTIONS += -i8 -fpp
-        FOPTIONS +=  -g -no-save-temps
+        ifdef USE_I4FLAGS
+        else
+        FOPTIONS += -i8 
+        endif
+        FOPTIONS += -fpp -g -no-save-temps
         FDEBUG    = -O2 -g
         FOPTIMIZE = -O3 -xHost
         ifdef USE_OPENMP
            FOPTIONS  += -openmp
            LDOPTIONS += -openmp
            DEFINES   += -DUSE_OPENMP
+        endif
+       ifdef  USE_FPE
+         FOPTIONS += -fpe0 -traceback #-fp-model  precise
+       endif
+        ifdef USE_NOSIMD
+          FOPTIONS  += -no-simd
         endif
         ifeq ($(_IFCV11),Y) 
             # The MKL option is available since Intel 11.1.
@@ -1179,7 +1194,7 @@ ifeq ($(BUILDING_PYTHON),python)
 #   EXTRA_LIBS += -L/home/edo/tcltk/lib/LINUX -ltk8.3 -ltcl8.3 -L/usr/X11R6/lib -lX11 -ldl
 # needed if python was built with pthread support
   ifneq ($(GOTMINGW32),1)
-   EXTRA_LIBS += $(shell $(PYTHONHOME)/bin/python-config --libs) -lz -lnwcutil
+   EXTRA_LIBS += $(shell $(PYTHONHOME)/bin/python-config --libs)  -lnwcutil
   endif
 endif
 
@@ -1200,6 +1215,9 @@ endif
           GNU_GE_4_6 = $(shell [ $(GNUMAJOR) -gt 4 -o \( $(GNUMAJOR) -eq 4 -a $(GNUMINOR) -ge 6 \) ] && echo true)
           GNU_GE_4_8 = $(shell [ $(GNUMAJOR) -gt 4 -o \( $(GNUMAJOR) -eq 4 -a $(GNUMINOR) -ge 8 \) ] && echo true)
           ifeq ($(GNU_GE_4_6),true)
+       ifdef  USE_FPE
+         FOPTIONS += -ffpe-trap=invalid,zero,overflow  -fbacktrace
+       endif
             DEFINES  += -DGCC46
           endif
           ifeq ($(GNU_GE_4_8),true)
@@ -1458,14 +1476,20 @@ ifeq ($(LINUXCPU),x86)
 endif
 #EXTRA_LIBS +=-lefence # link against Electricfence
 
-CORE_LIBS += -llapack $(BLASOPT) -lblas
+CORE_LIBS += -lnwclapack $(BLASOPT) -lnwcblas
 
 # end of Linux, Cygnus
 endif
 
 ifneq ($(TARGET),LINUX)
 ifeq ($(TARGET),$(findstring $(TARGET),LINUX64 CYGWIN64 CATAMOUNT))
+     GOTMINGW64=$(shell $(CC) -dM -E - </dev/null 2> /dev/null |grep MINGW64|cut -c21)
+ifeq ($(GOTMINGW64),1)
+     _CPU = x86_64
+else
      _CPU = $(shell uname -m  )
+     _GOT3DNOW= $(shell cat /proc/cpuinfo | egrep 3dnowext | tail -n 1 | awk ' /3dnowext/  {print "Y"}')
+endif
 #ifeq ($(NWCHEM_TARGET),LINUX64)
    ifeq ($(FC),g77)
       g7764:
@@ -1520,6 +1544,12 @@ ifeq ($(TARGET),$(findstring $(TARGET),LINUX64 CYGWIN64 CATAMOUNT))
       ifeq ($(FC),gfortran)
        _FC=gfortran
       endif
+         ifeq ($(FC),xlf_r)
+           _FC=xlf
+         endif
+         ifeq ($(FC),xlf)
+           _FC=xlf
+         endif
       ifndef _FC
       FC=gfortran
       _FC=gfortran
@@ -1585,7 +1615,7 @@ ifeq ($(TARGET),$(findstring $(TARGET),LINUX64 CYGWIN64 CATAMOUNT))
         endif
       endif
       DEFINES  += -DEXT_INT
-      MAKEFLAGS = -j 1 --no-print-directory
+#      MAKEFLAGS = -j 1 --no-print-directory
      ifeq ($(BLAS_LIB),)
        CORE_SUBDIRS_EXTRA += blas
      endif
@@ -1672,11 +1702,11 @@ ifeq ($(TARGET),$(findstring $(TARGET),LINUX64 CYGWIN64 CATAMOUNT))
         COPTIONS += -fPIC
       endif
 
-#     CORE_LIBS +=  $(BLASOPT) -llapack -lblas
+#     CORE_LIBS +=  $(BLASOPT) -lnwclapack -lnwcblas
 endif # end of ia32 bit
     ifeq ($(_CPU),x86_64)
 #
-      MAKEFLAGS = -j 2 --no-print-directory
+#edo      MAKEFLAGS = -j 2 --no-print-directory
       COPTIMIZE = -O1
       ifeq ($(NWCHEM_TARGET),CYGWIN64)
         DEFINES += -DCYGWIN -DCYGNUS
@@ -1694,6 +1724,7 @@ endif
        _IFCV12= $(shell ifort -logo  2>&1|egrep "Version "|head -n 1|sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 12) {print "Y";exit}}')
        _IFCV14= $(shell ifort -logo  2>&1|egrep "Version "|head -n 1|sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 14) {print "Y";exit}}')
        _IFCV15ORNEWER=$(shell ifort -logo  2>&1|egrep "Version "|head -n 1 | sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 15) {print "Y";exit}}')
+       _IFCV16=$(shell ifort -logo  2>&1|egrep "Version "|head -n 1 | sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 16) {print "Y";exit}}')
 # Intel EM64T is required
       ifneq ($(_IFCE),Y)
         defineFCE: 
@@ -1724,11 +1755,21 @@ endif
           ifdef USE_OPTREPORT
 	  FOPTIONS += -qopt-report=1 -qopt-report-phase=vec 
           endif
+#to avoid compiler crashes on simd directive. e.g .Version 15.0.2.164 Build 20150121
+        ifdef USE_NOSIMD
+          FOPTIONS  += -no-simd
+        endif
          ifdef USE_OPENMP
            FOPTIONS += -qopenmp
            FOPTIONS += -qopt-report-phase=openmp
            COPTIONS += -qopenmp
            DEFINES+= -DUSE_OPENMP 
+         else
+	   ifeq ($(_IFCV15ORNEWER), Y)
+           else
+           FOPTIONS += -qno-openmp
+           COPTIONS += -qno-openmp
+           endif
          endif		   
 	   else
          FOPTIONS += -vec-report6
@@ -1777,13 +1818,13 @@ $(error )
          endif
        else
           ifdef USE_OPENMP
-          ifeq ($(_IFCV15ORNEWER), Y)
-             FOPTIONS += -qno-openmp-offload
-          else
-          ifeq ($(_IFCV14), Y)
-             FOPTIONS += -no-openmp-offload
-          endif
-          endif
+            ifeq ($(_IFCV15ORNEWER), Y)
+              FOPTIONS += -qno-openmp-offload
+            else
+              ifeq ($(_IFCV14), Y)
+                FOPTIONS += -no-openmp-offload
+              endif
+            endif
           endif
        endif
        DEFINES+= -DIFCV8 -DIFCLINUX
@@ -1800,6 +1841,7 @@ $(error )
         FOPTIONS += -fimf-arch-consistency=true
         endif
         FOPTIMIZE += -xHost
+        FOPTIONS += -finline-limit=250
        else
         ifeq ($(_GOTSSE3),Y) 
          FOPTIMIZE += -xP -no-prec-div
@@ -1874,7 +1916,7 @@ $(error )
       ifdef USE_GCC34
         COPTIONS  +=   -march=k8 -mtune=k8
       endif
-#     CORE_LIBS +=  $(BLASOPT) -llapack -lblas
+#     CORE_LIBS +=  $(BLASOPT) -lnwclapack -lnwcblas
      ifdef  USE_GPROF
         ifeq ($(NWCHEM_TARGET),CATAMOUNT)
           FOPTIONS   += -Mprof=func#,lines
@@ -1895,7 +1937,6 @@ $(error )
      endif
 
       ifeq ($(_FC),gfortran)
-     _GOT3DNOW= $(shell cat /proc/cpuinfo | egrep 3dnowext | tail -n 1 | awk ' /3dnowext/  {print "Y"}')
 #gcc version 4.1.0 20050525 (experimental)
        ifdef  USE_GPROF
           FOPTIONS += -pg
@@ -1936,6 +1977,13 @@ $(error )
         endif
         endif
 #        FVECTORIZE  += -ftree-vectorize -ftree-vectorizer-verbose=1
+       ifdef  USE_FPE
+         FOPTIONS += -ffpe-trap=invalid,zero,overflow  -fbacktrace
+       endif
+        ifeq ($(GOTMINGW64),1)
+          EXTRA_LIBS += -lwsock32
+        endif
+  else
       endif
       ifeq ($(_FC),crayftn)
 	# Jeff: Cray Fortran supports preprocessing as of version 8.2.2 (at least)
@@ -1954,7 +2002,7 @@ $(error )
       endif
 endif
 
-    ifeq ($(_CPU),ppc64)
+ifeq ($(_CPU),$(findstring $(_CPU), ppc64 ppc64le))
 # Tested on Red Hat Enterprise Linux AS release 3 (Taroon Update 3)
 # Tested on SLES 9
 # Feb 5th 2005
@@ -1963,10 +2011,7 @@ endif
 # gcc-3.2.3-42 
 
 #gfortran become default      FC=xlf
-         ifeq ($(FC),xlf)
-           _FC=xlf
-         endif
-      CC=gcc
+#      CC=gcc
       ifeq ($(CC),xlc)
         COPTIONS  +=  -q64 -qlanglvl=extended
       else
@@ -1985,24 +2030,25 @@ endif
           FOPTIONS += -g
           LDOPTIONS += -g
         endif
-        FOPTIMIZE= -O3 -qstrict -qarch=auto -qtune=auto -qcache=auto -qfloat=fltint 
+        FOPTIMIZE= -O3 -qstrict -qcache=auto  
+#qarch and qtune break trobsa.F with xlf 15.1.2
+#        FOPTIMIZE+= -qarch=auto -qtune=auto 
         FDEBUG= -O2 -g
-        EXPLICITF = TRUE
+        XLFMAC=y
         DEFINES  +=   -DXLFLINUX -DCHKUNDFLW
-        CPP=/usr/bin/cpp  -P -C -traditional
         ifdef USE_I4FLAGS
           FOPTIONS += -qintsize=4
         else
           FOPTIONS += -qintsize=8
         endif
       endif
-#     CORE_LIBS +=  $(BLASOPT) -llapack -lblas
+#     CORE_LIBS +=  $(BLASOPT) -lnwclapack -lnwcblas
 #     EXTRA_LIBS +=  -dynamic-linker /lib64/ld64.so.1 -melf64ppc -lxlf90_r -lxlopt -lxlomp_ser -lxl -lxlfmath -ldl -lm -lc -lgcc -lm
     endif
 
      ifeq ($(BUILDING_PYTHON),python)
 #   EXTRA_LIBS += -ltk -ltcl -L/usr/X11R6/lib -lX11 -ldl
-   EXTRA_LIBS += -lnwcutil $(shell $(PYTHONHOME)/bin/python-config --libs) -lz
+   EXTRA_LIBS += -lnwcutil $(shell $(PYTHONHOME)/bin/python-config --libs) #-lz
   LDOPTIONS += -Wl,--export-dynamic 
      endif
 ifeq ($(NWCHEM_TARGET),CATAMOUNT)
@@ -2084,7 +2130,7 @@ ifndef USE_I4FLAGS
 endif
 
         # linking ESSL is painful with gfortran
-        CORE_LIBS +=  -llapack $(BLASOPT) -lblas
+        CORE_LIBS +=  -lnwclapack $(BLASOPT) -lnwcblas
 
         # Here is an example for ALCF:
         # IBMCMP_ROOT=${IBM_MAIN_DIR}
@@ -2094,7 +2140,7 @@ endif
         # XLF_LIB=${IBMCMP_ROOT}/xlf/bg/14.1/bglib64
         # XLSMP_LIB=${IBMCMP_ROOT}/xlsmp/bg/3.1/bglib64
         # XLMASS_LIB=${IBMCMP_ROOT}/xlmass/bg/7.3/bglib64
-        # MATH_LIBS="-L${XLMASS_LIB} -lmass -L${LAPACK_LIB} -llapack \
+        # MATH_LIBS="-L${XLMASS_LIB} -lmass -L${LAPACK_LIB} -lnwclapack \
                      -L${ESSL_LIB} -lesslsmpbg -L${XLF_LIB} -lxlf90_r \
                      -L${XLSMP_LIB} -lxlsmp -lxlopt -lxlfmath -lxl \
                      -Wl,--allow-multiple-definition"
@@ -2138,7 +2184,7 @@ endif
         FOPTIMIZE += -qreport -qsource -qlistopt -qlist # verbose compiler output
 
         # ESSL dependencies should be provided by XLF linker
-        CORE_LIBS +=  -llapack $(BLASOPT) -lblas
+        CORE_LIBS +=  -lnwclapack $(BLASOPT) -lnwcblas
     endif
 
    endif # end BGQ
@@ -2171,6 +2217,9 @@ errorpython2:
 	@exit 1
 endif
 #
+ifdef USE_PYTHONCONFIG
+EXTRA_LIBS += $(shell $(PYTHONHOME)/bin/python-config --ldflags)
+else
 ifndef PYTHONLIBTYPE
 	PYTHONLIBTYPE=a
 endif
@@ -2185,6 +2234,7 @@ else
   else
   CORE_LIBS += $(PYTHONHOME)/lib/python$(PYTHONVERSION)/$(PYTHONCONFIGDIR)/libpython$(PYTHONVERSION).$(PYTHONLIBTYPE)
   endif
+endif
 endif
 endif
 #
@@ -2220,7 +2270,11 @@ ifdef USE_FDIST
   DEFINES += -DFDIST
 endif
 
+_TOOLS_BUILD= $(shell [ -e ${NWCHEM_TOP}/src/tools/build/config.h ] && cat ${NWCHEM_TOP}/src/tools/build/config.h | awk ' /HAVE_SQRT/ {print "Y"}')
+
+ifeq ($(_TOOLS_BUILD),Y)
 _USE_SCALAPACK = $(shell cat ${NWCHEM_TOP}/src/tools/build/config.h | awk ' /HAVE_SCALAPACK\ 1/ {print "Y"}')
+endif
 
 ifeq ($(_USE_SCALAPACK),Y)
   DEFINES += -DSCALAPACK
@@ -2256,19 +2310,21 @@ ifdef BLASOPT
        CORE_LIBS +=  $(BLASOPT) 
 endif
 ifeq ($(LAPACK_LIB),)
-      CORE_LIBS +=  -llapack 
+      CORE_LIBS +=  -lnwclapack 
 endif
 ifeq ($(BLAS_LIB),)
-      CORE_LIBS +=  -lblas 
+      CORE_LIBS +=  -lnwcblas 
 endif
 
 ifndef BLASOPT
+ifndef USE_INTERNALBLAS
 errordgemm:
-	@echo "You did not define BLASOPT.  Performance may suffer greatly."
+	@echo "NWChem's Performance is degraded by not setting BLASOPT"
 	@echo "Please consider using ATLAS, GotoBLAS2, OpenBLAS, Intel MKL,"
 	@echo "IBM ESSL, AMD ACML, etc. to improve performance."
-	@echo "If you insist on not using a fast implementation of BLAS/LAPACK,"
-	@echo "define BLASOPT=\"-llapack -lblas\" and the internal Netlib will be used."
+	@echo "If you decide to not use a fast implementation of BLAS/LAPACK,"
+	@echo "please define USE_INTERNALBLAS=y and the internal Netlib will be used."
+endif
 endif
 
 ifdef USE_NOIO
@@ -2304,7 +2360,8 @@ endif
 # MPI version requires tcgmsg-mpi library
 
 ifdef USE_MPI 
-ifeq ($(FC),$(findstring $(FC),mpifrt mpfort mpif77 mpxlf mpif90 ftn))
+#ifeq ($(FC),$(findstring $(FC),mpifrt mpfort mpif77 mpxlf mpif90 ftn))
+ifeq ($(FC),$(findstring $(FC), ftn))
   LIBMPI =
   MPI_INCLUDE =
   MPI_LIB =
@@ -2378,19 +2435,32 @@ endif
 
 # CUDA
 #ckbn gpu
+ifndef CUDA
+ CUDA = nvcc
+endif
 ifdef TCE_CUDA
  CORE_LIBS += $(CUDA_LIBS)
+ ifeq ($(_CC),pgcc)
+  COPTIONS += -acc
+ endif
 endif
 
 ifdef USE_F90_ALLOCATABLE
  DEFINES += -DUSE_F90_ALLOCATABLE
 endif
 
+ifeq ($(_TOOLS_BUILD),Y)
 # lower level libs used by communication libraries 
- 
 COMM_LIBS=  $(shell grep ARMCI_NETWORK_LIBS\ = ${NWCHEM_TOP}/src/tools/build/Makefile | cut -b 22-)
 COMM_LIBS +=  $(shell grep ARMCI_NETWORK_LDFLAGS\ = ${NWCHEM_TOP}/src/tools/build/Makefile | cut -b 24-)
-
+#comex bit
+HAVE_COMEX = $(shell [ -e ${NWCHEM_TOP}/src/tools/build/comex/config.h ] && cat ${NWCHEM_TOP}/src/tools/build/comex/config.h| grep COMEX_NETWORK| awk ' / 1/ {print "Y"}')
+ifeq ($(HAVE_COMEX),Y)
+COMM_LIBS +=  $(shell grep LIBS\ = ${NWCHEM_TOP}/src/tools/build/comex/Makefile|grep -v _LIBS| cut -b 8-)
+#we often need pthread, let's add it
+COMM_LIBS += -lpthread
+endif
+endif
 ifdef COMM_LIBS 
  CORE_LIBS += $(COMM_LIBS) 
 endif 
@@ -2470,9 +2540,9 @@ ifndef NWCHEM_KEEPF
 endif
 else
 ifeq ($(XLFMAC),y)
-	$(FC) -c $(FFLAGS)     $<
+	$(FC)  -c $(FFLAGS) $(INCLUDES) -WF,"$(DEFINES)" $(shell echo $(LIB_DEFINES) | sed -e "s/-D/-WF,-D/g" | sed -e 's/\"/\\"/g')  $<
 else
-	$(FC) -c $(FFLAGS) $(CPPFLAGS)  $<
+	$(FC)  -c $(FFLAGS) $(CPPFLAGS)  $<
 endif
 endif
 

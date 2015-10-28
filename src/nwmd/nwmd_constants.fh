@@ -1,0 +1,11 @@
+c
+c $Id: constants.fh 19708 2010-10-29 18:04:21Z d3y133 $
+c
+      real*8 cnm2au,cau2kj,cau2nm,cau2N
+c
+      parameter(cau2kj=2.625499962d+03)
+      parameter(cau2nm=5.29177249d-02)
+      parameter(cau2N=4.961475508d+04)
+      parameter(cnm2au=1.88972598786d+01)
+c
+

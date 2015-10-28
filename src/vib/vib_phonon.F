@@ -36,7 +36,7 @@ c      COMMON /cvib_SETCON/ AMS(36),wave,numans      ! setup parameters
       character*255 full_filename
 
       integer efn_dos(2),eigs_dos(2),dmat(2),wp(2),hessadjust(2)
-      integer ierr,lwork,work(2),rwork(2),w2(1),kvs(2)
+      integer ierr,lwork,work(2),rwork(2),w2(2),kvs(2)
 
 
       oprint = util_print('phonon',print_medium)
@@ -168,7 +168,7 @@ c      COMMON /cvib_SETCON/ AMS(36),wave,numans      ! setup parameters
           ks(3) = i3*zzz
           kq(1) = unitg(1,1)*ks(1)+unitg(1,2)*ks(2)+unitg(1,3)*ks(3)
           kq(2) = unitg(2,1)*ks(1)+unitg(2,2)*ks(2)+unitg(2,3)*ks(3)
-          kq(3) = unitg(2,1)*ks(1)+unitg(2,2)*ks(2)+unitg(2,3)*ks(3)
+          kq(3) = unitg(3,1)*ks(1)+unitg(3,2)*ks(2)+unitg(3,3)*ks(3)
 
           call vib_gendynamicmatrix(unita,kq,nion,rion,
      >                          nion3,dbl_mb(hessadjust(1)),
@@ -261,7 +261,7 @@ c      COMMON /cvib_SETCON/ AMS(36),wave,numans      ! setup parameters
            ks(3) = dbl_mb(kvs(1)+4*(i-1)+2)
            kq(1) = unitg(1,1)*ks(1)+unitg(1,2)*ks(2)+unitg(1,3)*ks(3)
            kq(2) = unitg(2,1)*ks(1)+unitg(2,2)*ks(2)+unitg(2,3)*ks(3)
-           kq(3) = unitg(2,1)*ks(1)+unitg(2,2)*ks(2)+unitg(2,3)*ks(3)
+           kq(3) = unitg(3,1)*ks(1)+unitg(3,2)*ks(2)+unitg(3,3)*ks(3)
 
            call vib_gendynamicmatrix(unita,kq,nion,rion,
      >                          nion3,dbl_mb(hessadjust(1)),
@@ -761,8 +761,8 @@ c      COMMON /cvib_SETCON/ AMS(36),wave,numans      ! setup parameters
 
          do ii=jj+1,nion
             dx = rion(1,jj)-rion(1,ii)
-            dy = rion(1,jj)-rion(1,ii)
-            dz = rion(1,jj)-rion(1,ii)
+            dy = rion(2,jj)-rion(2,ii)
+            dz = rion(3,jj)-rion(3,ii)
 
             d2min=9.99d12
             do i3=-1,1
@@ -911,8 +911,8 @@ c      end do
 
          do ii=jj+1,nion
             dx = rion(1,jj)-rion(1,ii)
-            dy = rion(1,jj)-rion(1,ii)
-            dz = rion(1,jj)-rion(1,ii)
+            dy = rion(2,jj)-rion(2,ii)
+            dz = rion(3,jj)-rion(3,ii)
 
             d2min=9.99d12
             do i3=-1,1

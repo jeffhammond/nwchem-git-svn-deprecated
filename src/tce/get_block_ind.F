@@ -7,7 +7,6 @@
 !                                   - Jeff Hammond, 2015
 !
       subroutine get_block_ind(d_file,array,size,key_ix,indexc)
-c      subroutine get_block_ind(d_file,array,size,offset,indexc)
 c
 c $Id$
 c
@@ -22,14 +21,19 @@ c
 #include "tce.fh"
 #include "tce_main.fh"
 #include "sym.fh"
-#include "memmacro.fh"
 c      integer dummy
       integer d_file
 cccx      integer d_f
       integer size
 cccx      integer offset
       double precision array(size)
-      DECLMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+      double precision, allocatable :: f_a(:)
+      !dec$ attributes fastmem :: f_a
+      integer alloc_error
+#else
+      integer l_a,k_a
+#endif
       integer i,j,k,l
       integer ispin
       integer indexc
@@ -257,18 +261,23 @@ ccx     1   call errquit('get_block_ind:check_key1',0,UNKNOWN_ERR)
 c
 c
 c
-         ALLOMEM(a,size)
-! Jeff: FIX THIS w/ DCOPY
 #ifdef USE_F90_ALLOCATABLE
+         allocate( f_a(1:size), stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind1',2,MA_ERR)
+         endif
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
 #else
+         IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
+     1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
 #endif
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,REF2MEM(a),1)
          do i = 1, size
            array(i) = 0.0d0
          enddo
@@ -294,8 +303,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3142
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,4,2,3,1,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,4,2,3,1,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g3 g1 | g2 g4 )
@@ -313,8 +327,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3124
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size4,size2,size1,size3,4,1,3,2,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size4,size2,size1,size3,4,1,3,2,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g1 g3 | g4 g2 )
@@ -332,8 +351,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1342
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size4,size3,size1,3,2,4,1,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size4,size3,size1,3,2,4,1,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g1 g3 | g2 g4 )
@@ -351,8 +375,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1324
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size4,size2,size3,size1,3,1,4,2,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size4,size2,size3,size1,3,1,4,2,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g4 g2 | g3 g1 )
@@ -370,8 +399,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4231
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size3,size2,size4,2,4,1,3,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size3,size2,size4,2,4,1,3,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g4 g2 | g1 g3 )
@@ -389,8 +423,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4213
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size1,size2,size4,1,4,2,3,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size1,size2,size4,1,4,2,3,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g2 g4 | g3 g1 )
@@ -408,8 +447,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2431
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size3,size4,size2,2,3,1,4,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size3,size4,size2,2,3,1,4,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g2 g4 | g1 g3 )
@@ -427,14 +471,27 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2413
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size1,size4,size2,1,3,2,4,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size1,size4,size2,1,3,2,4,1.0d0)
+#endif
          go to 200
         end if
 c
  200     continue
 c
-         FREEMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+         deallocate( f_a, stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind2',3,MA_ERR)
+         endif
+#else
+         IF(.not.MA_POP_STACK(l_a))
+     1            CALL ERRQUIT('get-block-ind2',3,MA_ERR)
+#endif
          end if !spin cases
 c
 c
@@ -498,17 +555,23 @@ c check_key test
 ccx         if(check_key.ne.key_alpha)
 ccx     1   call errquit('get_block_ind:check_key2',0,UNKNOWN_ERR)
 c -------------
-         ALLOMEM(a,size)
 #ifdef USE_F90_ALLOCATABLE
+         allocate( f_a(1:size), stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind1',2,MA_ERR)
+         endif
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
 #else
+         IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
+     1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
 #endif
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,REF2MEM(a),1)
 c
 c
          size3 = int_mb(k_range+g3b-1)
@@ -532,8 +595,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3241
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size2,size3,4,2,1,3,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size2,size3,4,2,1,3,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g3 g2 | g1 g4 )
@@ -551,8 +619,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3214
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,4,1,2,3,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,4,1,2,3,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g2 g3 | g4 g1 )
@@ -570,8 +643,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2341
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size3,size2,3,2,1,4,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size3,size2,3,2,1,4,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g2 g3 | g1 g4 )
@@ -589,8 +667,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2314
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size3,size2,3,1,2,4,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size3,size2,3,1,2,4,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g4 g1 | g3 g2 )
@@ -608,8 +691,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4132
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size3,size1,size4,2,4,3,1,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size3,size1,size4,2,4,3,1,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g4 g1 | g2 g3 )
@@ -627,8 +715,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4123
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size2,size1,size4,1,4,3,2,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size2,size1,size4,1,4,3,2,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g1 g4 | g3 g2 )
@@ -646,8 +739,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1432
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,2,3,4,1,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,2,3,4,1,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g1 g4 | g2 g3 )
@@ -665,8 +763,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1423
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size2,size1,size4,1,3,4,2,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size2,size1,size4,1,3,4,2,-1.0d0)
+#endif
          go to 300
         end if
 c
@@ -674,7 +777,15 @@ c
 c
  300    continue
 c
-         FREEMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+         deallocate( f_a, stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind2',3,MA_ERR)
+         endif
+#else
+         IF(.not.MA_POP_STACK(l_a))
+     1            CALL ERRQUIT('get-block-ind2',3,MA_ERR)
+#endif
          end if !spin cases
 c
 c
@@ -704,7 +815,6 @@ c
 c
       subroutine get_block_ind_i(d_file,array,size,key_ix,indexc,
      &                         w2b,w1b,w4b,w3b)
-c      subroutine get_block_ind(d_file,array,size,offset,indexc)
 c
 c $Id$
 c
@@ -719,7 +829,6 @@ c
 #include "tce.fh"
 #include "tce_main.fh"
 #include "sym.fh"
-#include "memmacro.fh"
 c      integer dummy
       integer d_file
 cccx      integer d_f
@@ -729,7 +838,13 @@ cccx      integer offset
 c#ifdef TCESORT
 c      double precision array2(size)
 c#endif
-      DECLMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+      double precision, allocatable :: f_a(:)
+      !dec$ attributes fastmem :: f_a
+      integer alloc_error
+#else
+      integer l_a,k_a
+#endif
       integer i,j,k,l
       integer ispin
       integer indexc
@@ -906,17 +1021,25 @@ cc     1   call errquit('get_block_ind:check_key1',0,UNKNOWN_ERR)
 c
 c
 c
-         ALLOMEM(a,size)
 #ifdef USE_F90_ALLOCATABLE
+         allocate( f_a(1:size), stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind1',2,MA_ERR)
+         endif
          do i = 1, size
            array(i) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
 #else
+         IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
+     1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
+c --- ACHTUNG ATTENTION UWAGA BHUMAHE
+ccx           dbl_mb(k_a+i-1) = 0.0d0
            array(i) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
 #endif
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,REF2MEM(a),1)
 c
          size1 = int_mb(k_range+g1b-1)
          size2 = int_mb(k_range+g2b-1)
@@ -939,8 +1062,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3142000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,4,2,3,1,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,4,2,3,1,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g3 g1 | g2 g4 )
@@ -958,8 +1086,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3124000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size4,size2,size1,size3,4,1,3,2,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size4,size2,size1,size3,4,1,3,2,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g1 g3 | g4 g2 )
@@ -977,8 +1110,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1342000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size4,size3,size1,3,2,4,1,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size4,size3,size1,3,2,4,1,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g1 g3 | g2 g4 )
@@ -996,8 +1134,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1324000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size4,size2,size3,size1,3,1,4,2,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size4,size2,size3,size1,3,1,4,2,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g4 g2 | g3 g1 )
@@ -1015,8 +1158,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4231000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size3,size2,size4,2,4,1,3,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size3,size2,size4,2,4,1,3,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g4 g2 | g1 g3 )
@@ -1034,8 +1182,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4213000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size1,size2,size4,1,4,2,3,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size1,size2,size4,1,4,2,3,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g2 g4 | g3 g1 )
@@ -1053,8 +1206,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2431000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size3,size4,size2,2,3,1,4,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size3,size4,size2,2,3,1,4,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g2 g4 | g1 g3 )
@@ -1072,14 +1230,27 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2413000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size1,size4,size2,1,3,2,4,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size1,size4,size2,1,3,2,4,1.0d0)
+#endif
          go to 200
         end if
 c
  200     continue
 c
-         FREEMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+         deallocate( f_a, stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind2',3,MA_ERR)
+         endif
+#else
+         IF(.not.MA_POP_STACK(l_a))
+     1            CALL ERRQUIT('get-block-ind2',3,MA_ERR)
+#endif
          end if !spin cases
 c
 c
@@ -1132,8 +1303,21 @@ c - exascale ---
          call tce_hash_v2(int_mb(k_v2_alpha_offset),key_alpha,off_a)
        end if
 c ---
-         ALLOMEM(a,size)
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,REF2MEM(a),1)
+#ifdef USE_F90_ALLOCATABLE
+         allocate( f_a(1:size), stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind1',2,MA_ERR)
+         endif
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
+#else
+         IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
+     1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
+c --- ACHTUNG ATTENTION UWAGA BHUMAHE
+c         do i = 1, size
+c           dbl_mb(k_a+i-1) = 0.0d0
+c         enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
+#endif
 c
 c
          size3 = int_mb(k_range+g3b-1)
@@ -1157,8 +1341,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3241001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size2,size3,4,2,1,3,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size2,size3,4,2,1,3,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g3 g2 | g1 g4 )
@@ -1176,8 +1365,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3214001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,4,1,2,3,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,4,1,2,3,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g2 g3 | g4 g1 )
@@ -1195,8 +1389,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2341001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size3,size2,3,2,1,4,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size3,size2,3,2,1,4,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g2 g3 | g1 g4 )
@@ -1214,8 +1413,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2314001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size3,size2,3,1,2,4,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size3,size2,3,1,2,4,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g4 g1 | g3 g2 )
@@ -1233,8 +1437,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4132001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size3,size1,size4,2,4,3,1,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size3,size1,size4,2,4,3,1,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g4 g1 | g2 g3 )
@@ -1252,8 +1461,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4123001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size2,size1,size4,1,4,3,2,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size2,size1,size4,1,4,3,2,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g1 g4 | g3 g2 )
@@ -1271,8 +1485,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1432001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,2,3,4,1,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,2,3,4,1,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g1 g4 | g2 g3 )
@@ -1290,8 +1509,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1423001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size2,size1,size4,1,3,4,2,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size2,size1,size4,1,3,4,2,-1.0d0)
+#endif
          go to 300
         end if
 c
@@ -1299,7 +1523,15 @@ c
 c
  300    continue
 c
-         FREEMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+         deallocate( f_a, stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind2',3,MA_ERR)
+         endif
+#else
+         IF(.not.MA_POP_STACK(l_a))
+     1            CALL ERRQUIT('get-block-ind2',3,MA_ERR)
+#endif
          end if !spin cases
 c
 c
@@ -1347,7 +1579,6 @@ c
 #include "tce.fh"
 #include "tce_main.fh"
 #include "sym.fh"
-#include "memmacro.fh"
 c      integer dummy
       integer d_file
 cccx      integer d_f
@@ -1357,7 +1588,13 @@ cccx      integer offset
 c#ifdef TCESORT
 c      double precision array2(size)
 c#endif
-      DECLMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+      double precision, allocatable :: f_a(:)
+      !dec$ attributes fastmem :: f_a
+      integer alloc_error
+#else
+      integer l_a,k_a
+#endif
       integer i,j,k,l
       integer ispin
       integer indexc
@@ -1555,17 +1792,23 @@ ccx     1   call errquit('get_block_ind:check_key1',0,UNKNOWN_ERR)
 c
 c
 c
-         ALLOMEM(a,size)
 #ifdef USE_F90_ALLOCATABLE
+         allocate( f_a(1:size), stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind1',2,MA_ERR)
+         endif
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
 #else
+         IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
+     1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
 #endif
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,REF2MEM(a),1)
          do i = 1, size
            array(i) = 0.0d0
          enddo
@@ -1591,8 +1834,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3142000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,4,2,3,1,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,4,2,3,1,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g3 g1 | g2 g4 )
@@ -1610,8 +1858,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3124000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size4,size2,size1,size3,4,1,3,2,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size4,size2,size1,size3,4,1,3,2,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g1 g3 | g4 g2 )
@@ -1629,8 +1882,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1342000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size4,size3,size1,3,2,4,1,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size4,size3,size1,3,2,4,1,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g1 g3 | g2 g4 )
@@ -1648,8 +1906,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1324000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size4,size2,size3,size1,3,1,4,2,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size4,size2,size3,size1,3,1,4,2,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g4 g2 | g3 g1 )
@@ -1667,8 +1930,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4231000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size3,size2,size4,2,4,1,3,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size3,size2,size4,2,4,1,3,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g4 g2 | g1 g3 )
@@ -1686,8 +1954,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4213000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size1,size2,size4,1,4,2,3,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size1,size2,size4,1,4,2,3,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g2 g4 | g3 g1 )
@@ -1705,8 +1978,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2431000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size3,size4,size2,2,3,1,4,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size3,size4,size2,2,3,1,4,1.0d0)
+#endif
          go to 200
         end if
 c --- ( g2 g4 | g1 g3 )
@@ -1724,14 +2002,27 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2413000
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size1,size4,size2,1,3,2,4,1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size1,size4,size2,1,3,2,4,1.0d0)
+#endif
          go to 200
         end if
 c
  200     continue
 c
-         FREEMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+         deallocate( f_a, stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind2',3,MA_ERR)
+         endif
+#else
+         IF(.not.MA_POP_STACK(l_a))
+     1            CALL ERRQUIT('get-block-ind2',3,MA_ERR)
+#endif
          end if !spin cases
 c
 c
@@ -1793,17 +2084,23 @@ c check_key test
 ccx         if(check_key.ne.key_alpha)
 ccx     1   call errquit('get_block_ind:check_key2',0,UNKNOWN_ERR)
 c -------------
-         ALLOMEM(a,size)
 #ifdef USE_F90_ALLOCATABLE
+         allocate( f_a(1:size), stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind1',2,MA_ERR)
+         endif
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
 #else
+         IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
+     1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
 #endif
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,REF2MEM(a),1)
 c
 c
          size3 = int_mb(k_range+g3b-1)
@@ -1827,8 +2124,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3241001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size2,size3,4,2,1,3,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size2,size3,4,2,1,3,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g3 g2 | g1 g4 )
@@ -1846,8 +2148,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 3214001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,4,1,2,3,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,4,1,2,3,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g2 g3 | g4 g1 )
@@ -1865,8 +2172,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2341001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size3,size2,3,2,1,4,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size3,size2,3,2,1,4,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g2 g3 | g1 g4 )
@@ -1884,8 +2196,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 2314001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size1,size4,size3,size2,3,1,2,4,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size1,size4,size3,size2,3,1,2,4,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g4 g1 | g3 g2 )
@@ -1903,8 +2220,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4132001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size3,size1,size4,2,4,3,1,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size3,size1,size4,2,4,3,1,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g4 g1 | g2 g3 )
@@ -1922,8 +2244,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 4123001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size2,size1,size4,1,4,3,2,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size2,size1,size4,1,4,3,2,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g1 g4 | g3 g2 )
@@ -1941,8 +2268,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1432001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size2,size1,size4,size3,2,3,4,1,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size2,size1,size4,size3,2,3,4,1,-1.0d0)
+#endif
          go to 300
         end if
 c --- ( g1 g4 | g2 g3 )
@@ -1960,8 +2292,13 @@ c         enddo
 c         enddo
 c         enddo
 c         dummy = 1423001
-         call tce_sortacc_4(REF2MEM(a),array,
+#ifdef USE_F90_ALLOCATABLE
+         call tce_sortacc_4(f_a,array,
      &                      size3,size2,size1,size4,1,3,4,2,-1.0d0)
+#else
+         call tce_sortacc_4(dbl_mb(k_a),array,
+     &                      size3,size2,size1,size4,1,3,4,2,-1.0d0)
+#endif
          go to 300
         end if
 c
@@ -1969,7 +2306,15 @@ c
 c
  300    continue
 c
-         FREEMEM(a)
+#ifdef USE_F90_ALLOCATABLE
+         deallocate( f_a, stat=alloc_error)
+         if (alloc_error.ne.0) then
+           call errquit('get-block-ind2',3,MA_ERR)
+         endif
+#else
+         IF(.not.MA_POP_STACK(l_a))
+     1            CALL ERRQUIT('get-block-ind2',3,MA_ERR)
+#endif
          end if !spin cases
 c
 c

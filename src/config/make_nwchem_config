@@ -20,7 +20,7 @@ KNOWN_MODULE_SUBDIRS = NWints atomscf ddscf develop gradients moints nwdft \
         esp hessian selci dplot mp2_grad qhop \
         property solvation nwpw fft rimp2_grad python argos analyz diana nwmd cafe space \
         drdy vscf uccsdt qmmm rism qmd etrans tce geninterface bq mm cons\
-        perfm dntmc smd nbo dangchang leps ccca lucia
+        perfm dntmc smd nbo dangchang leps ccca lucia dimqm
 
 # These are the libraries for the high-level modules.  They should be
 # specified in an order that will link correctly, but that shouldn't
@@ -35,7 +35,7 @@ KNOWN_MODULE_LIBS = -ltest -lccsd -lmcscf -lselci -lmp2 -lmoints \
                     -lcafe -lspace -lanalyze -ldiana -lqhop \
                     -lpfft -ldplot -lnwpython -ldrdy -lvscf -lqmmm -lrism -lqmd -letrans\
                     -lpspw -ltce  -lgeninterface -lbq -lmm  -lcons -lperfm -lnbo -ldntmc -lccca\
-                    -llucia
+                    -llucia -ldimqm
 
 # This include file handles configuration of the NW_MODULE_SUBDIRS and
 # NW_MODULE_LIBS macros for what we actually want to build.  It
@@ -73,18 +73,18 @@ EXP_pnnl = $(EXP_all) python dntmc
 EXP_alldev = develop $(EXP_all)
 EXP_pnnldev = develop $(EXP_pnnl)
 EXP_qm  = NWints atomscf ddscf gradients moints nwdft rimp2 hessian bq cons \
-          optim stepper driver ccsd vib mcscf property solvation selci dplot mp2_grad esp etrans tce vscf 
+          optim stepper driver ccsd vib mcscf property solvation selci dplot mp2_grad esp etrans tce vscf dimqm
 EXP_smallqm  = NWints atomscf ddscf gradients moints nwdft rimp2 hessian bq cons \
           optim stepper driver vib qmd mcscf property solvation selci dplot \
-           mp2_grad esp etrans vscf nwmd
+           mp2_grad esp etrans vscf nwmd dimqm 
 EXP_smallqmmm  = NWints atomscf ddscf gradients moints nwdft rimp2 hessian bq cons \
           optim stepper driver vib qmd mcscf property solvation selci dplot \
-           mp2_grad esp etrans vscf nwmd qmmm prepar analyz
+           mp2_grad esp etrans vscf nwmd qmmm prepar analyz dimqm
 EXP_ver2 = prepar gradients mp2_grad stepper vib mcscf \
            optim driver analyz diana
 #plane_wave ... broken? RJH
 EXP_qmandpw = nwpw NWints atomscf ddscf gradients moints nwdft rimp2 hessian bq cons \
-          optim stepper driver ccsd vib mcscf property nwxc solvation selci dplot mp2_grad esp etrans vscf 
+          optim stepper driver ccsd vib mcscf property solvation selci dplot mp2_grad esp etrans vscf dimqm nwxc
 EXP_tps = prepar nwmd analyz diana
 EXP_md  = prepar nwmd analyz ddscf nwdft gradients esp
 EXP_classical  = prepar nwmd analyz
@@ -130,7 +130,7 @@ endif
 # will be hard to generate automatically.
 
 MODULES := $(patsubst geninterface,geninterface,$(MODULES) )
-
+MODULES := $(patsubst dimqm,dimqm ddscf atomscf nwdft property,$(MODULES) )
 MODULES := $(patsubst property,property ddscf solvation,$(MODULES) )
 
 #MODULES := $(patsubst plane_wave,plane_wave nwdft,$(MODULES) )
@@ -153,7 +153,8 @@ MODULES := $(patsubst moints,moints ddscf NWints,$(MODULES) )
 MODULES := $(patsubst cphf,cphf ddscf,$(MODULES) )
 MODULES := $(patsubst scfaux,scfaux ddscf,$(MODULES) )
 
-MODULES := $(patsubst nwdft,nwdft ddscf gradients NWints property cphf hessian nwxc,$(MODULES) )
+#MODULES := $(patsubst nwdft,nwdft ddscf gradients NWints property cphf hessian nwxc,$(MODULES) )
+MODULES := $(patsubst nwdft,nwdft ddscf gradients NWints property cphf hessian,$(MODULES) )
 
 MODULES := $(patsubst esp,esp NWints,$(MODULES) )
 
@@ -248,6 +249,7 @@ MOD_LIBS := $(patsubst ccca,-lccca,$(MOD_LIBS) )
 MOD_LIBS := $(patsubst lucia,-llucia,$(MOD_LIBS) )
 MOD_LIBS := $(patsubst solvation,-lsolvation,$(MOD_LIBS) )
 MOD_LIBS := $(patsubst nwxc,-lnwxc,$(MOD_LIBS) )
+MOD_LIBS := $(patsubst dimqm,-ldimqm,$(MOD_LIBS) )
 MOD_LIBS := $(strip $(MOD_LIBS))
 
 #-----------------------------------------------------------------------------
@@ -268,7 +270,7 @@ STUBROUTINES := $(patsubst ccsd,ccsd ccsd_input,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst mcscf,mcscf mcscf_input,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst moints,atwtest direct_mp2 moints_full,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst nwdft,nwdft occup_input xc_chktau dft_fitcd grid_cleanup dft_fitvc grid_quadv0_gen dft_input xc_quadv0_gen dft_energy dft_energy_gradient sodft_energy tddft_input tddft_energy sodft_energy sodft_energy_gradient rt_dft_input xc_vdw_to_hessian,$(STUBROUTINES) )
-STUBROUTINES := $(patsubst nwxc,nwxc_eval_df nwxc_eval_df2 nwxc_eval_df3 nwxc_get_cam nwxc_get_disp nwxc_has_cam nwxc_has_2nd nwxc_has_xc nwxc_has_disp nwxc_has_hfx nwxc_has_mp2c nwxc_init nwxc_input nwxc_is_gga nwxc_is_lda nwxc_is_mgga nwxc_is_on nwxc_print nwxc_print_nwpw nwxc_reset_rho_tolerance nwxc_rtdb_delete nwxc_rtdb_load nwxc_rtdb_store nwxc_vdw3_dftd3 nwxc_wght_hfx nwxc_wght_mp2c,$(STUBROUTINES) )
+STUBROUTINES := $(patsubst nwxc,nwxc_getwght nwxc_getvals nwxc_eval_df nwxc_eval_df2 nwxc_eval_df3 nwxc_get_cam nwxc_get_disp nwxc_has_cam nwxc_has_2nd nwxc_has_xc nwxc_has_disp nwxc_has_hfx nwxc_has_mp2c nwxc_init nwxc_input nwxc_is_gga nwxc_is_lda nwxc_is_mgga nwxc_is_on nwxc_print nwxc_print_nwpw nwxc_reset_rho_tolerance nwxc_rtdb_delete nwxc_rtdb_load nwxc_rtdb_store nwxc_vdw3_dftd3 nwxc_wght_hfx nwxc_wght_mp2c,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst rimp2,rimp2,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst rimp2_grad,rimp2g,$(STUBROUTINES) )
 #STUBROUTINES := $(patsubst oimp2,oimp2,$(STUBROUTINES) )
@@ -276,7 +278,7 @@ STUBROUTINES := $(patsubst stepper,stpr_walk stpr_walk_task stpr_walk_reset step
 STUBROUTINES := $(patsubst symmetry,,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst cphf,cphf cphf_poliz mjdtest cphf2,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst scfaux,,$(STUBROUTINES) )
-STUBROUTINES := $(patsubst vib,vib_vib freq_vib_input vib_dsquar,$(STUBROUTINES) )
+STUBROUTINES := $(patsubst vib,vib_cross vib_vib freq_vib_input vib_dsquar,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst driver,driver oniom_energy oniom_gradient oniom_input drv_lst drv_opt driver_input lbfgsb_driver deloc_driver,$(STUBROUTINES) )
 #STUBROUTINES := $(patsubst plane_wave,plnwv plnwv_input,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst prepar,prepar pre_input,$(STUBROUTINES) )
@@ -306,6 +308,7 @@ STUBROUTINES := $(patsubst ccca,task_ccca task_ccca_energy ccca_input,$(STUBROUT
 STUBROUTINES := $(patsubst optim,tropt neb neb_input task_mepgs mepgs_input task_string string_input tropt_input,$(STUBROUTINES) )
 STUBROUTINES := $(patsubst lucia, lucia,$(STUBROUTINES))
 STUBROUTINES := $(patsubst solvation, solvation,$(STUBROUTINES))
+STUBROUTINES := $(patsubst dimqm,dimqm_addop dimqm_tidy dimqm_input dimpar_input dimqm_main fock_dim dimqm_prep dim_grid_quadv0 dimqm_lclfld dimqm_polarizability dimqm_broadcast dimqm_Dens2Dipoles dimqm_rohf_calcDIM dimqm_rohf_wrap,$(STUBROUTINES) )
 #STUBROUTINES := $(patsubst cons, cons_end cons_input cons_add_egrad cons_add_energy cons_init cons_print_summary cons_active,$(STUBROUTINES) )
 STUBROUTINES := $(strip $(STUBROUTINES))
 STUBROUTINES := $(sort $(STUBROUTINES))

@@ -46,6 +46,7 @@
       integer i,l,np
 !      integer ind ! unused
 
+      logical use_nwxc
       integer  control_num_kvectors
       external control_num_kvectors
       logical  control_allow_translation
@@ -169,6 +170,13 @@
          smooth_cutoff_values(2) = 4.0d0
       end if
 
+*     **** get hess_model mapping ****
+      if (.not.btdb_get(rtdb,'nwpw:hess_model',mt_log,
+     >                  1,hess_model)) then
+         hess_model = .false.
+      end if
+
+
 
 *     *********************************
 *     **** cpsd and band_sd: stuff ****
@@ -203,7 +211,8 @@
 
       if (util_module_avail("nwxc")) then
 !$OMP single
-        if (nwxc_rtdb_load(rtdb,"dft")) then
+         call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+         if (use_nwxc)  then
 c         call nwxc_print()
           has_disp = nwxc_has_disp()
         endif
@@ -311,7 +320,8 @@ c         call nwxc_print()
 
       if (util_module_avail("nwxc")) then
 !$OMP single
-        if (nwxc_rtdb_load(rtdb,"dft")) then
+        call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+        if (use_nwxc)  then
 c         call nwxc_print()
           has_disp = nwxc_has_disp()
         endif
@@ -460,7 +470,8 @@ c
 
       if (util_module_avail("nwxc")) then
 !$OMP single
-        if (nwxc_rtdb_load(rtdb,"dft")) then
+        call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+        if (use_nwxc)  then
 c         call nwxc_print()
           has_disp = nwxc_has_disp()
         endif
@@ -666,10 +677,11 @@ c
 
       if (util_module_avail("nwxc")) then
 !$OMP single
-        if (nwxc_rtdb_load(rtdb,"dft")) then
+        call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+        if (use_nwxc)  then
 c         call nwxc_print()
           has_disp = nwxc_has_disp()
-        endif
+        endif   
 !$OMP end single
       endif
 
@@ -775,10 +787,11 @@ c         call nwxc_print()
 
       if (util_module_avail("nwxc")) then
 !$OMP single
-        if (nwxc_rtdb_load(rtdb,"dft")) then
+        call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+        if (use_nwxc)  then
 c         call nwxc_print()
           has_disp = nwxc_has_disp()
-        endif
+        endif   
 !$OMP end single
       endif
 
@@ -864,10 +877,11 @@ c         call nwxc_print()
 
       if (util_module_avail("nwxc")) then
 !$OMP single
-        if (nwxc_rtdb_load(rtdb,"dft")) then
+        call nwxc_rtdb_load(rtdb,"dft",use_nwxc)
+        if (use_nwxc)  then
 c         call nwxc_print()
           has_disp = nwxc_has_disp()
-        endif
+        endif   
 !$OMP end single
       endif
 
@@ -1588,6 +1602,8 @@ c         mtensor(3,3) = z
            if ((frac(3)-delta).lt.(-0.5*L1)) L1 = 2.0d0*(frac(3)+delta)
         end if
       end do
+      !*** put threshold on smallest box ***
+      if (L1.lt.24.0d0) L1=24.0d0
 
 *     **** define unit cell ****
       unita(1,1) = L1*mtensor(1,1)
@@ -5885,4 +5901,47 @@ ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
       return
       end
+
+
+*     ************************************
+*     *                                  *
+*     *         control_hess_model       *
+*     *                                  *
+*     ************************************
+      logical function control_hess_model()
+      implicit none
+
+#include "control.fh"
+
+      control_hess_model = hess_model
+      return
+      end
+
+*     ************************************
+*     *                                  *
+*     *      control_hess_filename       *
+*     *                                  *
+*     ************************************
+      subroutine control_hess_filename(filehess)
+      implicit none
+      character*(*) filehess
+
+#include "control.fh"
+#include "bafdecls.fh"
+#include "btdb.fh"
+#include "util.fh"
+
+*     **** control_rtdb common block ****
+      integer rtdb
+      common / control_rtdb1 / rtdb
+
+      if (.not.btdb_cget(rtdb,'nwpw:hess_model:filename',
+     >                   1,filehess)) then
+         call util_file_name('hess',.false.,.false.,filehess)
+      end if
+      return
+      end
+      
+
+
 

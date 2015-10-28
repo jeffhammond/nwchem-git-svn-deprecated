@@ -291,7 +291,12 @@ c     &   write(*,*) 'FA BEF get_precond_rmax'
 
 c        if (ga_nodeid().eq.0)
 c     &   write(*,*) 'FA AFT get_precond_rmax'
-    
+
+c       JEM: Putting rmax into rtdb
+        if (.not. rtdb_put(rtdb, 'lkain:rmax', mt_dbl, 1, rmax))
+     $    call errquit('ga_lkain_2cpl3_ext: rmax put failed', 1,
+     $                 RTDB_ERR) 
+
         if (oprint .and. ga_nodeid().eq.0) then
           write(6,3) iter, nsub+nvec, rmax, util_wallsec()
           call util_flush(6)
@@ -376,8 +381,7 @@ c
       if (.not. converged) then
         if (ga_nodeid().eq.0) then
           write (luout,*) 'WARNING: CPKS procedure is NOT converged'
-          write (luout,*) '  I will proceed, but check your results '//
-     &                       'carefully!!!'
+          write (luout,*) '  I will proceed, but check your results!'
         endif
       endif    
       end
@@ -679,7 +683,7 @@ c     the dimension is up to 4*n
 
       if (ga_nodeid().eq.0) then
        write(*,14) n,ncomp,maxiter,mmaxsub,lifetime
- 14    format('(n,ncomp,maxiter,mmaxsub,lifetime)=(',
+   14  format('(n,ncomp,maxiter,mmaxsub,lifetime)=(',
      &          i3,',',i3,',',i5,',',i5,',',L1,')')
       endif
       n1=ncomp*n
@@ -875,12 +879,12 @@ c       even if only one of them is used
             do ipm=1,ncomp
              if (ga_nodeid().eq.0) then
               write(*,112) iter,ipm
- 112          format('------ prod-g_x-1(',i3,',',i3,')------ START')
+  112         format('------ prod-g_x-1(',i3,',',i3,')------ START')
              endif
              call ga_print(g_x(ipm))
              if (ga_nodeid().eq.0) then
               write(*,113) iter,ipm
- 113          format('------ prod-g_x-1(',i3,',',i3,')------ END')
+  113         format('------ prod-g_x-1(',i3,',',i3,')------ END')
              endif
             enddo ! end-loop-ipm
          endif ! end-if-debug
@@ -901,21 +905,21 @@ c       even if only one of them is used
             do ipm=1,ncomp
              if (ga_nodeid().eq.0) then
               write(*,116) iter,ipm
- 116          format('------ prod-g_x-2(',i3,',',i3,')------ START')
+  116         format('------ prod-g_x-2(',i3,',',i3,')------ START')
              endif
              call ga_print(g_x(ipm))
              if (ga_nodeid().eq.0) then
               write(*,117) iter,ipm
- 117          format('------ prod-g_x-2(',i3,',',i3,')------ END')
+  117         format('------ prod-g_x-2(',i3,',',i3,')------ END')
              endif
              if (ga_nodeid().eq.0) then
               write(*,118) iter,ipm
- 118          format('------ prod-g_Ax-2(',i3,',',i3,')------ START')
+  118         format('------ prod-g_Ax-2(',i3,',',i3,')------ START')
              endif
              call ga_print(g_Ax(ipm))
              if (ga_nodeid().eq.0) then
               write(*,119) iter,ipm
- 119          format('------ prod-g_Ax-2(',i3,',',i3,')------ END')
+  119         format('------ prod-g_Ax-2(',i3,',',i3,')------ END')
              endif
              enddo ! end-loop-ipm
            endif ! end-if-debug  
@@ -959,21 +963,21 @@ c         and assigned real and imaginary parts accordingly)
           if (debug) then
              if (ga_nodeid().eq.0) then
               write(*,120) iter,ipm
- 120          format('------ prod-g_b(',i3,',',i3,')------ START')
+  120         format('------ prod-g_b(',i3,',',i3,')------ START')
              endif
              call ga_print(g_b(ipm))
              if (ga_nodeid().eq.0) then
               write(*,121) iter,ipm
- 121          format('------ prod-g_b(',i3,',',i3,')------ END')
+  121         format('------ prod-g_b(',i3,',',i3,')------ END')
              endif
              if (ga_nodeid().eq.0) then
               write(*,122) iter,ipm
- 122          format('------ prod-g_r(',i3,',',i3,')------ START')
+  122         format('------ prod-g_r(',i3,',',i3,')------ START')
              endif
              call ga_print(g_r(ipm))
              if (ga_nodeid().eq.0) then
               write(*,123) iter,ipm
- 123          format('------ prod-g_r(',i3,',',i3,')------ END')
+  123         format('------ prod-g_r(',i3,',',i3,')------ END')
              endif
           endif ! end-if-debug      
         enddo                   ! ipm = 1,ncomp
@@ -1228,8 +1232,7 @@ c
       if (.not. converged) then
         if (ga_nodeid().eq.0) then
           write (luout,*) 'WARNING: CPKS procedure is NOT converged'
-          write (luout,*) '  I will proceed, but check your results '//
-     &                       'carefully!!!'
+          write (luout,*) '  I will proceed, but check your results!'
         endif
       endif
 c     
@@ -1761,6 +1764,13 @@ c ========= get new (r,r_im) ======== END
           nsub_file=nsub_file+nvec
         endif ! end-if-write-block
 
+c       JEM: Putting rmax into rtdb
+        if (.not. rtdb_put(rtdb, 'lkain:rmax', mt_dbl, 1, rmax))
+     $    call errquit(
+     $           'ga_lkain_2cpl3_damp_cmplx_redmem: rmax put failed',
+     $                 1, RTDB_ERR) 
+
+
 c -------- printout per iteration -------------- START
         if (oprint .and. ga_nodeid().eq.0) then
 
@@ -1775,6 +1785,7 @@ c -------- printout per iteration -------------- START
     3     format(' ', i5, i7, 3x,1p,d9.2,0p,f10.1,5x,i3)
         end if
 c -------- printout per iteration -------------- END
+
 c       stop iterations if residual is smaller than criterion
         if (rmax .lt. tol) then
           converged = .true.
@@ -1927,8 +1938,7 @@ c +++++++++++++++++++++++++++++++++++++++++++++++++ END
       if (.not. converged) then
         if (ga_nodeid().eq.0) then
           write (luout,*) 'WARNING: CPKS procedure is NOT converged'
-          write (luout,*) '  I will proceed, but check your results '//
-     &                       'carefully!!!'
+          write (luout,*) '  I will proceed, but check your results!'
         endif
 c ======= Still write non-converge (g_z1,g_Az1) ==== START
          if (cphf3write.eq.2) then
@@ -3110,8 +3120,7 @@ c +++++++++++++++++++++++++++++++++++++++++++++++++ END
       if (.not. converged) then
         if (ga_nodeid().eq.0) then
           write (luout,*) 'WARNING: CPKS procedure is NOT converged'
-          write (luout,*) '  I will proceed, but check your results '//
-     &                       'carefully!!!'
+          write (luout,*) '  I will proceed, but check your results!'
         endif
 c ======= Still write non-converge (g_z1,g_Az1) ==== START
          if (cphf3write.eq.2) then
@@ -4994,12 +5003,12 @@ c       screening with a realistic threshold is important.
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,10) iter
- 10         format('---------g_xr1-1(',i3,')-----START')
+   10       format('---------g_xr1-1(',i3,')-----START')
           endif
           call ga_print(g_xr1)
           if (ga_nodeid().eq.0) then
            write(*,6) iter
- 6         format('---------g_xr1-1(',i3,')-----END')
+    6      format('---------g_xr1-1(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5012,12 +5021,12 @@ c       screening with a realistic threshold is important.
          do ipm=1,ncomp
           if (ga_nodeid().eq.0) then
            write(*,2) ipm,iter
- 2         format('---------g_x-1(',i3,',',i3,')-----START')
+    2      format('---------g_x-1(',i3,',',i3,')-----START')
           endif
           call ga_print(g_x(ipm))
           if (ga_nodeid().eq.0) then
            write(*,3) ipm,iter
- 3         format('---------g_x-1(',i3,',',i3,')-----END')
+    3      format('---------g_x-1(',i3,',',i3,')-----END')
           endif
          enddo ! end-loop-ipm
         endif ! end-if-debug1
@@ -5028,12 +5037,12 @@ c       screening with a realistic threshold is important.
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,7) iter
- 7         format('---------g_xr1-2(',i3,')-----START')
+    7      format('---------g_xr1-2(',i3,')-----START')
           endif
           call ga_print(g_xr1)
           if (ga_nodeid().eq.0) then
            write(*,9) iter
- 9         format('---------g_xr1-2(',i3,')-----END')
+    9      format('---------g_xr1-2(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5047,12 +5056,12 @@ c       screening with a realistic threshold is important.
         do ipm=1,ncomp
           if (ga_nodeid().eq.0) then
            write(*,4) ipm,iter
- 4         format('---------g_x-2(',i3,',',i3,')-----START')
+    4      format('---------g_x-2(',i3,',',i3,')-----START')
           endif
           call ga_print(g_x(ipm))
           if (ga_nodeid().eq.0) then
            write(*,5) ipm,iter
- 5         format('---------g_x-2(',i3,',',i3,')-----END')
+    5      format('---------g_x-2(',i3,',',i3,')-----END')
           endif
         enddo ! end-loop-ipm
         endif ! end-if-debug1
@@ -5163,12 +5172,12 @@ c
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,10) iter
- 10         format('---------g_zr1-1(',i3,')-----START')
+   10       format('---------g_zr1-1(',i3,')-----START')
           endif
           call ga_print(g_zr1)
           if (ga_nodeid().eq.0) then
            write(*,6) iter
- 6         format('---------g_zr1-1(',i3,')-----END')
+    6      format('---------g_zr1-1(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5181,12 +5190,12 @@ c
         do ipm=1,ncomp
           if (ga_nodeid().eq.0) then
            write(*,2) ipm,iter
- 2         format('---------g_z-1(',i3,',',i3,')-----START')
+    2      format('---------g_z-1(',i3,',',i3,')-----START')
           endif
           call ga_print(g_z(ipm))
           if (ga_nodeid().eq.0) then
            write(*,3) ipm,iter
- 3         format('---------g_z-1(',i3,',',i3,')-----END')
+    3      format('---------g_z-1(',i3,',',i3,')-----END')
           endif
         enddo ! end-loop-ipm
         endif ! end-if-debug1
@@ -5198,12 +5207,12 @@ c
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,7) iter
- 7         format('---------g_zr1-2(',i3,')-----START')
+    7      format('---------g_zr1-2(',i3,')-----START')
           endif
           call ga_print(g_zr1)
           if (ga_nodeid().eq.0) then
            write(*,9) iter
- 9         format('---------g_zr1-2(',i3,')-----END')
+    9      format('---------g_zr1-2(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5217,12 +5226,12 @@ c
         do ipm=1,ncomp
           if (ga_nodeid().eq.0) then
            write(*,4) ipm,iter
- 4         format('---------g_z-2(',i3,',',i3,')-----START')
+    4      format('---------g_z-2(',i3,',',i3,')-----START')
           endif
           call ga_print(g_z(ipm))
           if (ga_nodeid().eq.0) then
            write(*,5) ipm,iter
- 5         format('---------g_z-2(',i3,',',i3,')-----END')
+    5      format('---------g_z-2(',i3,',',i3,')-----END')
           endif
         enddo ! end-loop-ipm
         endif ! end-if-debug1
@@ -5391,18 +5400,18 @@ c
         if (debug1) then
         if (ga_nodeid().eq.0)
      &   write(*,10) iter
- 10      format('-------g_a(',i4,')--------START')
+   10    format('-------g_a(',i4,')--------START')
         call ga_print(g_a)
         if (ga_nodeid().eq.0)
      &   write(*,*) iter
- 11      format('-------g_a(',i4,')--------END')
+   11    format('-------g_a(',i4,')--------END')
         if (ga_nodeid().eq.0)
      &   write(*,12) iter
- 12      format('-------g_b(',i4,')--------START')
+   12    format('-------g_b(',i4,')--------START')
         call ga_print(g_b)
         if (ga_nodeid().eq.0)
      &   write(*,13) iter
- 13      format('-------g_b(',i4,')--------END')
+   13    format('-------g_b(',i4,')--------END')
         endif ! end-if-debug
 
         call ga_svd_solve_seq_cmplx(g_a,g_b,g_c,1d-14)
@@ -5410,11 +5419,11 @@ c
         if (debug1) then
         if (ga_nodeid().eq.0)
      &   write(*,14) iter
- 14      format('-------g_c(',i4,')--------START')
+   14    format('-------g_c(',i4,')--------START')
         call ga_print(g_c)
         if (ga_nodeid().eq.0)
      &   write(*,15) iter
- 15      format('-------g_c(',i4,')--------END')
+   15    format('-------g_c(',i4,')--------END')
         endif ! end-if-debug1
 
         call ga_zgemm('n','n',n1,nvec,nsub1,
@@ -5428,12 +5437,12 @@ c 000000000000 check-orthonogality-1 000000000000 END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,20) iter
- 20         format('---------g_zr1-1(',i3,')-----START')
+   20      format('---------g_zr1-1(',i3,')-----START')
           endif
           call ga_print(g_zr1)
           if (ga_nodeid().eq.0) then
            write(*,6) iter
- 6         format('---------g_zr1-1(',i3,')-----END')
+    6      format('---------g_zr1-1(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5451,12 +5460,12 @@ c --- construct new (n1,nvec) block-in g_z1------ END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,2) iter
- 2         format('---------g_z1-1(',i3,')-----START')
+    2      format('---------g_z1-1(',i3,')-----START')
           endif
           call ga_print(g_z1)
           if (ga_nodeid().eq.0) then
            write(*,3) iter
- 3         format('---------g_z1-1(',i3,')-----END')
+    3      format('---------g_z1-1(',i3,')-----END')
           endif
         endif ! end-if-debug1
         call ga_zero(g_zr1)
@@ -5489,12 +5498,12 @@ c 000000000000 check-orthonogality-2 000000000000 END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,7) iter
- 7         format('---------g_zr1-2(',i3,')-----START')
+    7      format('---------g_zr1-2(',i3,')-----START')
           endif
           call ga_print(g_zr1)
           if (ga_nodeid().eq.0) then
            write(*,9) iter
- 9         format('---------g_zr1-2(',i3,')-----END')
+    9      format('---------g_zr1-2(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5520,12 +5529,12 @@ c --- update new (n1,nvec) block-in g_z1------ END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,4) iter
- 4         format('---------g_z1-2(',i3,')-----START')
+    4      format('---------g_z1-2(',i3,')-----START')
           endif
           call ga_print(g_z1)
           if (ga_nodeid().eq.0) then
            write(*,5) iter
- 5         format('---------g_z1-2(',i3,')-----END')
+    5      format('---------g_z1-2(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5623,18 +5632,18 @@ c
         if (debug1) then
         if (ga_nodeid().eq.0)
      &   write(*,10) iter
- 10      format('-------g_a(',i4,')--------START')
+   10    format('-------g_a(',i4,')--------START')
         call ga_print(g_a)
         if (ga_nodeid().eq.0)
      &   write(*,*) iter
- 11      format('-------g_a(',i4,')--------END')
+   11    format('-------g_a(',i4,')--------END')
         if (ga_nodeid().eq.0)
      &   write(*,12) iter
- 12      format('-------g_b(',i4,')--------START')
+   12    format('-------g_b(',i4,')--------START')
         call ga_print(g_b)
         if (ga_nodeid().eq.0)
      &   write(*,13) iter
- 13      format('-------g_b(',i4,')--------END')
+   13    format('-------g_b(',i4,')--------END')
         endif ! end-if-debug
 
         call ga_svd_solve_seq_cmplx(g_a,g_b,g_c,1d-14)
@@ -5642,11 +5651,11 @@ c
         if (debug1) then
         if (ga_nodeid().eq.0)
      &   write(*,14) iter
- 14      format('-------g_c(',i4,')--------START')
+   14    format('-------g_c(',i4,')--------START')
         call ga_print(g_c)
         if (ga_nodeid().eq.0)
      &   write(*,15) iter
- 15      format('-------g_c(',i4,')--------END')
+   15    format('-------g_c(',i4,')--------END')
         endif ! end-if-debug1
 
         call ga_zgemm('n','n',n1,nvec,nsub,mone_cmplx,
@@ -5659,12 +5668,12 @@ c 000000000000 check-orthonogality-1 000000000000 END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,20) iter
- 20         format('---------g_zr1-1(',i3,')-----START')
+   20       format('---------g_zr1-1(',i3,')-----START')
           endif
           call ga_print(g_zr1)
           if (ga_nodeid().eq.0) then
            write(*,6) iter
- 6         format('---------g_zr1-1(',i3,')-----END')
+    6      format('---------g_zr1-1(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5682,12 +5691,12 @@ c --- construct new (n1,nvec) block-in g_z1------ END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,2) iter
- 2         format('---------g_z1-1(',i3,')-----START')
+    2      format('---------g_z1-1(',i3,')-----START')
           endif
           call ga_print(g_z1)
           if (ga_nodeid().eq.0) then
            write(*,3) iter
- 3         format('---------g_z1-1(',i3,')-----END')
+    3      format('---------g_z1-1(',i3,')-----END')
           endif
         endif ! end-if-debug1
         call ga_zero(g_zr1)
@@ -5720,12 +5729,12 @@ c 000000000000 check-orthonogality-2 000000000000 END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,7) iter
- 7         format('---------g_zr1-2(',i3,')-----START')
+    7      format('---------g_zr1-2(',i3,')-----START')
           endif
           call ga_print(g_zr1)
           if (ga_nodeid().eq.0) then
            write(*,9) iter
- 9         format('---------g_zr1-2(',i3,')-----END')
+    9      format('---------g_zr1-2(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5741,12 +5750,12 @@ c --- update new (n1,nvec) block-in g_z1------ END
         if (debug1) then
           if (ga_nodeid().eq.0) then
            write(*,4) iter
- 4         format('---------g_z1-2(',i3,')-----START')
+    4      format('---------g_z1-2(',i3,')-----START')
           endif
           call ga_print(g_z1)
           if (ga_nodeid().eq.0) then
            write(*,5) iter
- 5         format('---------g_z1-2(',i3,')-----END')
+    5      format('---------g_z1-2(',i3,')-----END')
           endif
         endif ! end-if-debug1
 
@@ -5787,7 +5796,7 @@ c              as the iteration increases
      &                  nvec, MA_ERR)    
         if (ga_nodeid().eq.0)
      &   write(*,1) iter
- 1       format('-------z1^t*(z1c)(',i4,')--------START')
+    1    format('-------z1^t*(z1c)(',i4,')--------START')
         do i=1,nsub
          call ga_get(g_b,i,i,1,nvec,dcpl_mb(k_z),1)
          if (ga_nodeid().eq.0) then
@@ -5797,7 +5806,7 @@ c              as the iteration increases
         enddo ! end-loop-idata  
         if (ga_nodeid().eq.0)
      &   write(*,2) iter
- 2       format('-------z1^t*(z1c)(',i4,')--------END')
+    2    format('-------z1^t*(z1c)(',i4,')--------END')
       if (.not.ma_pop_stack(l_z))
      $  call errquit('toview_orthz1c: pop problem with l_zim',
      &               555,MA_ERR)
@@ -5832,7 +5841,7 @@ c              as the iteration increases
      &                  nvec, MA_ERR)    
           if (ga_nodeid().eq.0) then
            write(*,16) iter
- 16        format('---------z1^t*(z1c)(',i3,')-----START')
+   16      format('---------z1^t*(z1c)(',i3,')-----START')
           endif
         do i=1,nblocks
          call ga_get(g_b,i,i,1,nvec,dcpl_mb(k_z),1)
@@ -5843,7 +5852,7 @@ c              as the iteration increases
         enddo ! end-loop-idata  
           if (ga_nodeid().eq.0) then
            write(*,17) iter
- 17        format('---------z1^t*(z1c)(',i3,')-----END')
+   17      format('---------z1^t*(z1c)(',i3,')-----END')
           endif
       if (.not.ma_pop_stack(l_z))
      $  call errquit('toview_orthz1c: pop problem with l_zim',
@@ -6450,7 +6459,7 @@ c --> Experimental (not published yet)
           write(*,1) iter,rmax,
      &               dbl_mb(k_dat  ),dbl_mb(k_dat+1),
      &               dbl_mb(k_dat+2),dbl_mb(k_dat+3)
-  1       format('(iter,rmax,rmax_arr)=(',
+    1     format('(iter,rmax,rmax_arr)=(',
      &           i3,',',f15.8,',[',f15.8,',',f15.8,',',
      &           f15.8,',',f15.8,'])')
          endif
@@ -6606,7 +6615,7 @@ c ----- obtain rmax ------- START
           write(*,1) iter,rmax,
      &               dbl_mb(k_max  ),dbl_mb(k_max+1),
      &               dbl_mb(k_max+2),dbl_mb(k_max+3)
-  1       format('(iter,rmax,rmax_arr)=(',
+    1     format('(iter,rmax,rmax_arr)=(',
      &           i3,',',f15.8,',[',f15.8,',',f15.8,',',
      &           f15.8,',',f15.8,'])')
          endif
