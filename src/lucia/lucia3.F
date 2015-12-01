@@ -1408,97 +1408,41 @@ C.. NOTE : COLUMN WISE STORAGE SCHEME IS USED FOR PACKED BLOCKS
 *. To get rid of annoying and incorrect compiler warnings
       IOFF = 0
       JOFF = 0
-      icast = 94568
+      CALL MEMMAN(IDUM,IDUM,'MARK  ',IDUM,'TRIPK3')
+      CALL MEMMAN(KLMAT1,NDIM*(NDIM+1)/2,'ADDL  ',2,'ITEMP ')
 *
 *. Packing : No problem with cache misses    
 *
       IF( IWAY .EQ. 1 ) THEN
-      call luciaqenter('tr3g1')
-        IJ = ICOFF
+        call luciaqenter('tr3g1')
+        IJ = 0
         DO J = 1,NDIM
-CNW       DO I = J , NDIM
-CNW         APAK(IJ+I) = AUTPAK(I,J)
-CNW       END DO
-          call ga_put(APAK,IJ+J,IJ+NDIM,1,1,AUTPAK(J,J),1)
-          IJ = IJ +NDIM-J
+          DO I = J , NDIM
+            dbl_mb(ITEMP+IJ) = AUTPAK(I,J)
+            IJ = IJ + 1
+          END DO
         END DO   
-      call luciaqexit('tr3g1')
+        call ga_put(APAK,ICOFF,ICOFF+NDIM*(NDIM+1)/2-1,1,1,
+     &              dbl_mb(ITEMP),1)
+        call luciaqexit('tr3g1')
       END IF
 *
 * Unpacking : cache misses can occur so two routes
 *
       IF( IWAY .EQ. 2 ) THEN
-*. Blocking led to lots of small gets, now one row at a time
-       call luciaqenter('tr3g2')
-       LBLK = MATDIM
-       NBLK = MATDIM/LBLK
-       JOFF = 1     
-       JEND = MATDIM
-       IOFF = JOFF
-       IEND = MATDIM
-       mybyte = MA_sizeof(MT_DBL,1,MT_BYTE)*MATDIM
-*
-* Node zero gets all blocks and packs it for broadcast
-*
-* First complete row
-*
-       if (ga_nodeid().eq.0) 
-     &  call ga_get(APAK,ICOFF,ICOFF+MATDIM-1,1,1,
-     &             AUTPAK(1,1),1)
-       if (ga_nnodes().gt.1) 
-     &  call ga_brdcst(2367,AUTPAK(1,1),mybyte,0)
-*
-* Next row and it's complement from the end packed in front
-*
-       MDIM = MATDIM/2
-       IF (2*MDIM.LT.MATDIM) MDIM = MDIM + 1
-       DO J = 2,MDIM
-        IJOFF = ICOFF + (J-1)*MATDIM-J*(J-1)/2 + J - 1
-        if (ga_nodeid().eq.0)
-     &    call ga_get(APAK,IJOFF,IJOFF+MATDIM-J,1,1,
-     &                  AUTPAK(J,J),1)
-        K = MATDIM - J + 2
-        IJOFF = ICOFF + (K-1)*MATDIM-K*(K-1)/2 + K - 1
-        if (ga_nodeid().eq.0)
-     &    call ga_get(APAK,IJOFF,IJOFF+MATDIM-K,1,1,
-     &                AUTPAK(1,J),1)
-        if (ga_nnodes().gt.1) 
-     &     call ga_brdcst(2367+J,AUTPAK(1,J),mybyte,0)
-       ENDDO
-*
-* All nodes unpack 
-*
-       DO J = 2,MDIM
-          DO I = 1,J-1
-             AUTPAK(MATDIM-J+1+I,MATDIM-J+2) = AUTPAK(I,J)
-          ENDDO
-       ENDDO
-*
-* Even matrix, need the MATDIM/2+1 row
-*
-       MDIM = MATDIM/2
-       if (MDIM*2.eq.MATDIM) then
-        J = MDIM + 1
-        IJOFF = ICOFF + (J-1)*MATDIM-J*(J-1)/2 + J - 1
-        if (ga_nodeid().eq.0)
-     &    call ga_get(APAK,IJOFF,IJOFF+MATDIM-J,1,1,
-     &                AUTPAK(J,J),1)
-        mybyte = MA_sizeof(MT_DBL,1,MT_BYTE)*MDIM 
-        if (ga_nnodes().gt.1) 
-     &     call ga_brdcst(2367+J,AUTPAK(J,J),mybyte,0)
-       endif
-*
-* All nodes do their sign and flip thing
-*
-       DO J = 1,MATDIM
-          DO I = J+1,MATDIM
-             AUTPAK(J,I) = SIGN*AUTPAK(I,J)
-CNW              AUTPAK(J,I) = SIGN*APAK(IJOFF+I)
-CNW              AUTPAK(I,J) = APAK(IJOFF+I)
+*. No blocking
+        call luciaqenter('tr3g2')
+        call ga_get(APAK,ICOFF,ICOFF+NDIM*(NDIM+1)/2-1,1,1,
+     &             dbl_mb(ITEMP),1)
+        IJ = 0
+        DO J = 1,NDIM
+          DO I = J,NDIM
+           AUTPAK(J,I) = SIGN*dbl_mb(ITEMP+IJ)
+           AUTPAK(I,J) = dbl_mb(ITEMP+IJ)
+           IJ = IJ + 1
           END DO
-       END DO
-*. End of loop over I and J
-       call luciaqexit('tr3g2')
+        END DO
+        call luciaqexit('tr3g2')
       END IF
 *
       NTEST = 0
@@ -1508,6 +1452,7 @@ CNW              AUTPAK(I,J) = APAK(IJOFF+I)
 CNW     CALL PRSM2(APAK,NDIM)
       END IF
 *
+      CALL MEMMAN(IDUM,IDUM,'FLUSM ',IDUM,'TRIPK3')
       RETURN
       END
       SUBROUTINE GATRMT(MATIN,NROWIN,NCOLIN,MATUT,NROWUT,NCOLUT,
@@ -4104,7 +4049,7 @@ C            SYMCOM(ITASK,IOBJ,I1,I2,I12)
       CALL LUCIAQENTER('RS1   ')
 * Type of single excitations that connects the two column strings
 C     MOC = 1
-      NTESTL = 0
+      NTESTL = 0000
       NTEST = MAX(NTESTL,NTESTG)
       IF(NTEST.GE.500)THEN
         WRITE(6,*) 
@@ -4283,14 +4228,12 @@ C               CALL GETH1(H,IJ_SM(2),IJ_TP(2),IJ_SM(1),IJ_TP(1))
                   CALL WRTMAT(SSCR,NIK,IJ_DIM(1),NIK,IJ_DIM(1))
                 END IF
 *.S(I,a+ K) =  S(I, a+ K) + sgn*Sscr(I,K,i)
-                if (ga_nodeid().eq.0) then
                 DO IIORB = 1,IJ_DIM(1)
                   ISBOFF = 1+(IIORB-1)*LKABTC*NIBTC
                   CALL MATCAS(SSCR(ISBOFF),SB,NIBTC,NROW,IBOT,
      &                 LKABTC,I2(KBOT+(IIORB-1)*NKASTR),
      &                 XI2S(KBOT+(IIORB-1)*NKASTR))
                 END DO
-                endif
   701       CONTINUE
 *.end of this K partitioning
             IF(KEND.EQ.0) GOTO 700

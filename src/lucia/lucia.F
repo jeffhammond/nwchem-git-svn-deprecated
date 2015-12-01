@@ -1895,14 +1895,14 @@ C?            write(6,*) ' IORB JORB IABS JABS ',IORB,JORB,IABS,JABS
       END
 *
       INTEGER FUNCTION IDIST_CIVEC(NBLK,NBATS,LBATS,I1BATS,IBATS)
-      INCLUDE 'wrkspc.inc'
       INTEGER NBLK,NBATS,LBATS(*),I1BATS(*),IBATS(8,*)
-      INTEGER IBLK,JBATS,ISBLK,ILEN
+      INTEGER IBLK,JBATS,ISBLK,ILEN,IMAP,IDUM
 #include "errquit.fh"
 #include "mafdecls.fh"
 #include "global.fh"
       ILEN = 0
       IBLK = 0
+      IDUM = 0
       CALL MEMMAN(IDUM,IDUM,'MARK  ',IDUM,'IDIST ')
       CALL MEMMAN(IMAP,NBLK,'ADDL  ',1,'MAP1  ')
       DO JBATS = 1, NBATS
@@ -1912,10 +1912,22 @@ C?            write(6,*) ' IORB JORB IABS JABS ',IORB,JORB,IABS,JABS
             IBLK = IBLK + 1
          ENDDO
       ENDDO
-      call ga_create_irreg(mt_dbl, nvar_max, 'CONVC1', int_mb(IMAP), 
-     $                       IBLK, 1, 1, IDIST_CIVEC)
-      CALL MEMMAN(IDUMMY,IDUMMY,'FLUSM ',IDUM,'IDIST ')
+*
+      if (ga_nnodes().eq.1) then
+       if ( .not. ga_create(mt_dbl, ILEN, 1, 'CONVC1', 
+     $                           1, 1, IDIST_CIVEC))
+     $     call errquit('IDIST_CIVEC ga_create fail', ILEN, GA_ERR)
+      else
+C Now we have a list of block starts/ Now merge until we have the # of procs = # blocks
+C if we set nblcok1 to number of procs, last one gets all remianing blocks and most of work
+        if (iblk.gt.ga_nnodes()) iblk = ga_nnodes()
+        if ( .not. ga_create_irreg(mt_dbl,ILEN,1,'CONVC1',int_mb(IMAP), 
+     &                           IBLK, 1, 1, IDIST_CIVEC))
+     $     call errquit('IDIST_CIVEC ga_create fail', ILEN, GA_ERR)
+      endif
+      CALL MEMMAN(IDUM,IDUM,'FLUSM ',1,'IDIST ')
       RETURN
+      END
       SUBROUTINE GASCI(ISM,ISPC,IPRNT,IIUSEH0P,MPORENP_E,
      &                 EREF,ERROR_NORM_FINAL,CONV_F)
 *
@@ -2158,6 +2170,7 @@ C?    CALL IWRTMA(WORK(KCI1BT),1,1,1,1)
 *. Number of BLOCKS
       NBLOCK = NCBLOCK
       NBATCH = NCBATCH
+      IPRINT = 10
       IF(IPRNT.GT.10.and.ga_nodeid().eq.0) THEN 
          WRITE(6,'(A,I9)') ' Number of blocks ', NBLOCK
          WRITE(6,'(A,I9)') ' Number of batches ', NBATCH
@@ -2272,7 +2285,9 @@ C...dongxia  so KVEC1P and KVEC2P also local
 *. Allocate space for two complete vectors of variables
         KCOMVEC1 = IDIST_CIVEC(NBLOCK,NBATCH,int_mb(KSLBT),
      $                         int_mb(KSI1BT),int_mb(KSIBT))
-        call ga_duplicate(KCOMVEC1,KCOMVEC2,'CONVC2')
+        if ( .not. ga_duplicate(KCOMVEC1,KCOMVEC2,'CONVC2'))
+     $       call errquit(
+     $     'GASCI: ga_create kcomvec2 failed', KCOMVEC1 , GA_ERR)
 CNW    CALL MEMMAN(KCOMVEC1,NVAR_MAX,'ADDL  ',2,'COMVC1')
 CNW    CALL MEMMAN(KCOMVEC2,NVAR_MAX,'ADDL  ',2,'COMVC2')
       ENDIF
@@ -6278,8 +6293,6 @@ c      INCLUDE 'mxpdim.inc'
           H(IJ) = GETH1E(I,ITP,ISM,J,JTP,JSM)
         END DO
       END DO
-      call ga_sync()
-      call ga_dgop(1, H , IJ, '+')
 *
       NTEST = 00
       IF(NTEST.NE.0.and.ga_nodeid().eq.0) THEN
@@ -7961,7 +7974,7 @@ C       CALL IWRTMA(W,NORB+1,NEL+1,NORB+1,NEL+1)
 *
       RETURN
       END
-      SUBROUTINE GSTTBL(C,ICOFF,CTT,IATP,IASM,IBTP,IBSM,IOCOC,
+      SUBROUTINE GSTTBL(C,CNORM,ICOFF,CTT,IATP,IASM,IBTP,IBSM,IOCOC,
      &                  NOCTPA,NOCTPB,NSASO,NSBSO,PSSIGN,ICOOSC,IDC,
      &                  PLSIGN,LUC,SCR,NSMST,ISCALE,SCLFAC)
 
@@ -8020,28 +8033,13 @@ C?      write(6,*) ' LBL = ', LBL
           CALL FRMDSC2(SCR,LBL,-1,LUC,IMZERO,IAMPACK,NO_ZEROING)
         END IF
       ELSE
-        XNORM = 0.0d0
-        call ga_distribution(C, ga_nodeid(),ilo,ihi,idum,idum)
-        if (ihi.gt.0) then
-        call ga_access(C,ilo,ihi,1,1,ivecin,idum)
-        if (ilo.le.ICOFF+NCMB_IN.and.ihi.ge.ICOFF) then
-           mylow  = max(ilo,ICOFF) - ilo
-           myhigh = min(ihi,ICOFF+NCMB_IN) - ilo
-           do i = mylow,myhigh
-              XNORM = XNORM + dbl_mb(ivecin+i)
-           enddo
-        endif
-        call ga_release(C,ilo,ihi,1,1)
-        endif
-        call ga_sync()
-        if(ga_nnodes().gt.1) call ga_dgop(1,XNORM,1,'+')
-        
+C BERT: SCLFAC COMING IN ALREADY HAS NORM OF BLOCK
 *. It is assumed pt that vector is nonvanising
 CNW     XNORM = INPROD(C,C,NCMB_IN)
 c       XNORM = ga_ddot_patch(C,'N',ICOFF,ICOFF+NCMB_IN-1,1,1,
 c    &                        C,'N',ICOFF,ICOFF+NCMB_IN-1,1,1) 
 C?      WRITE(6,*) ' XNORM in GSTT ', XNORM
-        IF(XNORM.EQ.0.0D0) THEN
+        IF(CNORM.EQ.0.0D0) THEN
           IMZERO = 1
         ELSE 
           IMZERO = 0
@@ -8141,7 +8139,7 @@ CNW     H1DIA(IIOB) = H(IPNT(ISM)-1+IOBREL*(IOBREL+1)/2)
      &  call ga_get(H,mypt,mypt,1,1,H1DIA(IIOB),1)
   100 CONTINUE
       call ga_sync()
-      call ga_dgop(1,H1DIA,NTOOB, '+')
+      call ga_dgop(mt_dbl,H1DIA,NTOOB, '+')
 *
       NTEST = 0
       IF(NTEST.NE.0.and.ga_nodeid().eq.0) THEN
@@ -8208,10 +8206,7 @@ CNW   DIMENSION H(*)
       END IF
 *
 CNW   GTH1ES = H(IJ)
-      GTH1ES = 0.0d0
-      call ga_distribution(H,ga_nodeid(),ilo,ihi,idum,idum)
-      if (IJ.LE.ihi.and.IJ.GE.ilo) 
-     &   call ga_get(H,IJ,IJ,1,1,GTH1ES,1)
+      call ga_get(H,IJ,IJ,1,1,GTH1ES,1)
       
 *
       IF(NTEST.NE.0) THEN
@@ -8313,8 +8308,10 @@ cGLM         K(IORB,JORB) = GTIJKL(IORB,JORB,JORB,IORB)
   200 CONTINUE
       next = nxtask(-nproc, 1)
       call ga_sync()
-      call ga_dgop(1, J, NORB*NORB, '+')
-      call ga_dgop(1, K, NORB*NORB, '+')
+      if (nproc.gt.1) then
+        call ga_dgop(MT_DBL, J, NORB*NORB, '+')
+        call ga_dgop(MT_DBL, K, NORB*NORB, '+')
+      endif
 *
       NTEST = 0
       IF(NTEST.GT.10) THEN
@@ -13389,7 +13386,7 @@ COLD  DIMENSION C(*),HC(*)
 *
       CALL LUCIAQENTER('MV7  ')
 *
-      NTEST = 00
+      NTEST = 000
       NTEST = MAX(NTEST, IPRCIX)
       IF(NTEST.GE.5.AND.NTEST.LT.10) THEN
        WRITE(6,*) ' MV7 entered '
@@ -15419,7 +15416,7 @@ C
 #include "mafdecls.fh"
 #include "global.fh"
 *. Batches of sigma
-      INTEGER LBATS(*),LEBATS(*),I1BATS(*),IBATS(8,*)
+      INTEGER LBATS(*),LEBATS(*),I1BATS(*),IBATS(8,*),LEN
 *.Scratch
       DIMENSION SB(*),CB(*)
 *. Input/output if ICISTR = 1
@@ -15429,7 +15426,7 @@ CNW   DIMENSION SV(*),CV(*)
       LOGICAL ANYLOCAL
 *
       CALL LUCIAQENTER('RASSG')
-      NTEST = 10000
+      NTEST = 0000
       NTEST = MAX(NTEST,IPRCIX)
       IF(NTEST.GE.20.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' ================='
@@ -15442,12 +15439,11 @@ CNW   DIMENSION SV(*),CV(*)
 *. For scaling for each TTS block
 *
       CALL MEMMAN(IDUM,IDUM,'MARK  ',IDUM,'RASSG3')
-      CALL MEMMAN(KLSCLFAC ,MXNTTS,'ADDL  ',2,'SCLFAC') 
-      NCBLOCK_T = IELSUM(int_mb(KCLBT), NCBATCH)
-      CALL FIND_ACTIVE_BLOCKS_IN_VECTOR(CV,dbl_mb(KLSCLFAC),
-     &     NCBLOCK_T,int_mb(KCIBT))
-      NBLOCK_C =  int_mb(KCI1BT+NCBATCH)-1+ int_mb(KCLBT+NCBATCH)
-      CALL ENFORCE_SIMSYM_ACT_BLK(NBLOCK_C,ICBLOCK,dbl_mb(KLSCLFAC))
+      NCBLOCK_T = IELSUM(LBATS(1), NBATS)
+      CALL MEMMAN(KLCNORM ,NCBLOCK_T,'ADDL  ',2,'CNORM ') 
+      CALL MEMMAN(KLSCLFAC ,NCBLOCK_T,'ADDL  ',2,'SCLFAC') 
+      CALL FIND_ACTIVE_BLOCKS_IN_VECTOR(CV,dbl_mb(KLCNORM),
+     &     NCBLOCK_T,IBATS(1,1))
 *
 *. What is my local patch of Sigma Vector
 *
@@ -15465,17 +15461,27 @@ C            SBLOCK(NBLOCK,IBLOCK,IBOFF,CB,HCB,LUC,IRESTRICT,LUCBLK)
         IOFF_T = IOFF_S
         ANYLOCAL = .FALSE.
         DO ISBLK = I1BATS(JBATS),I1BATS(JBATS)+ LBATS(JBATS)-1
-          IF ((IOFF_T.GE.ilo).AND.(IOFF_T+IBATS(8,ISBLK)-1.LE.ihi)) 
-     &       ANYLOCAL = .TRUE.
-          IOFF_T = IOFF_T + IBATS(8,ISBLK)
-          LEN = LEN + IBATS(8,ISBLK)
+          ILEN = IBATS(8,ISBLK)
+          IF ((IOFF_T.GE.ilo).AND.(IOFF_T+ILEN-1.LE.ihi)) THEN
+             ANYLOCAL = .TRUE.
+          ELSE
+* Use minus sign to identify non-local blocks
+             IBATS(8,ISBLK) = -IBATS(8,ISBLK)
+          ENDIF
+          IOFF_T = IOFF_T + ILEN
+          LEN = LEN + ILEN
         ENDDO
 *
 *. Skip it all together if the SV range is outside local
 *
-        if (ANYLOCAL) 
-     &  CALL SBLOCK(LBATS(JBATS),IBATS(1,I1BATS(JBATS)),1,
-     &       CB,SB,LUC,0,0,0,0,0,CV,ECORE,ITASK,LEN,dbl_mb(KLSCLFAC))
+        if (ANYLOCAL) THEN
+           do isblk = 0, ncblock_t-1
+              dbl_mb(KLSCLFAC+isblk) = dbl_mb(KLCNORM+isblk)
+           enddo
+          CALL SBLOCK(LBATS(JBATS),IBATS(1,I1BATS(JBATS)),1,
+     &         CB,SB,LUC,0,0,0,0,0,CV,ECORE,ITASK,LEN,
+     &         dbl_mb(KLCNORM),dbl_mb(KLSCLFAC))
+        endif
 *. Transfer S block to permanent storage
         DO ISBLK = I1BATS(JBATS),I1BATS(JBATS)+ LBATS(JBATS)-1
           IATP = IBATS(1,ISBLK)
@@ -15489,11 +15495,18 @@ C?        write(6,*) 'RASSG3: IOFF, SB(IOFF)',IOFF,SB(IOFF)
             CALL ITODS(LEN,1,-1,LUHC)
             CALL TODSC(SB(IOFF),LEN,-1,LUHC)
           ELSE
-            if (LEN.gt.0.AND.(IOFF_S.GE.ilo).AND.(IOFF_S+LEN-1.LE.ihi)) 
+*
+*. Using negative length to ignore as it's a non-local block and no update
+*
+            if (LEN.gt.0)
      &         call ga_put(SV,IOFF_S,IOFF_S+LEN-1,1,1,SB(IOFF),LEN)
-CNW         CALL COPVEC(SB(IOFF),SV(IOFF_S),LEN)
-            IOFF_S = IOFF_S + LEN
+CNW       CALL COPVEC(SB(IOFF),SV(IOFF_S),LEN)
+            IOFF_S = IOFF_S + ABS(LEN)
           END IF
+*
+*. Reset length to positive sign for non-local blocks
+*
+          IBATS(8,ISBLK) = ABS(IBATS(8,ISBLK))
         END DO
       END DO
 *
@@ -15511,7 +15524,7 @@ CNW       CALL WRTMAT(SV,1,LEN_S,1,LEN_S)
       END IF
       IF(NTEST.GE.100) WRITE(6,*) ' Leaving RASSG3'
 *
-      CALL MEMMAN(IDUM,IDUM,'FLUSM ',IDUM,'RASSG3')
+      CALL MEMMAN(IDUM,IDUM,'FLUSM ',2,'RASSG3')
       CALL LUCIAQEXIT('RASSG')
       RETURN
       END
@@ -21902,7 +21915,7 @@ C?    WRITE(6,*) ' Check,  I_DO_NEWCCV = ',  I_DO_NEWCCV
 * 
 *      IF(CARDX(1:4).EQ.'AKBK') THEN 
        write(*,*) 'Fragmeting the active spaces into smaller GAS spaces'
-       call akbkqspace
+c      call akbkqspace
 *      END IF
 ************************************************************
 *                                                          *
@@ -32070,7 +32083,7 @@ C
 c
       if (.not.ma_push_get(mt_dbl,kzvar,'temp',lwork,kwork)) call
      $   errquit('sorlowg:push_get failed', kzvar, MA_ERR)
-      call ga_get(WRK,1,KZVAR,1,1,dbl_mb(iwork),1)
+      call ga_get(WRK,1,KZVAR,1,1,dbl_mb(kwork),1)
       call sorlow(dbl_mb(iwork),STVAL,ISTART,KZVAR,KEXST2,JEXSTV,0)  
       if (.not.ma_pop_stack(lwork)) call
      $   errquit('sorlowg:pop_stack failed', kzvar, MA_ERR)

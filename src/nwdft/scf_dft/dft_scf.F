@@ -323,7 +323,7 @@ c
 cold  diisreset=.false.
       if(ndisrst.gt.0) diisreset=.true.
       if (.not.rtdb_get(rtdb, 'dft:spinset', mt_log, 1,
-     &   spinset))spinset=.false.
+     &   spinset))spinset=.true.
       if (rtdb_get(rtdb, 'dft:smear_sigma', mt_dbl, 1,
      &   ssmear))then
          if (rtdb_get(rtdb, 'dft:n_rabuck', mt_int, 1,
@@ -900,12 +900,11 @@ c
          iAOacc = iAOacc_max
          tol_rho = tol_rho_max
          iswitc = 2
-         if (use_nwxc) call nwxc_reset_rho_tolerance(tol_rho)
       else
          iAOacc = iAOacc_min
          tol_rho = max(tol_rho_min,tol_rho_max)
-         if (use_nwxc) call nwxc_reset_rho_tolerance(tol_rho)
       endif
+      if (use_nwxc) call nwxc_reset_rho_tolerance(tol_rho)
       if (ltight.or.(.not.direct))then
          itol2e = itol_max
       else
@@ -1519,7 +1518,7 @@ c
       if(gotsmear(ssmear).and.mod(iter,ndisrst).eq.0) then
          if(iter.gt.1.and.diising) diisreset=.true.
       endif
-      if(diisreset.and.iswitc.eq.1) then
+      if(diisreset.and.iswitc.gt.1.and.iter.gt.0) then
          if(me.eq.0) write(LuOut,*) ' Resetting Diis'
          if(ndisrst.eq.9999) diisreset=.false.
          call diis_driver(toll_s, derr,  ipol, icall, nfock, 

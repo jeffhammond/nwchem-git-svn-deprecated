@@ -2409,7 +2409,10 @@ C MATVCC(A,VIN,VOUT,NROW,NCOL,ITRNS)
       INCLUDE 'akbk.inc'
       INCLUDE 'spinfo.inc'
 *. Some indirect transfer
-      COMMON/EXCTRNS/KLOOEXCC,KINT1_INI,KINT2_INI
+      COMMON/EXCTRNS/KLOOEXCC,KINT1_INI,KINT2_INI, IREFSPC_MCSCFL,
+     &               IPRDIALL,IIUSEH0PL,MPORENP_EL,
+     &               ERROR_NORM_FINALL,CONV_FL,
+     &               I_DO_CI_IN_INNER_ACT
 * A bit of local scratch
       INTEGER ISCR(2), ISCR_NTS((7+MXPR4T)*MXPOBS)
 *
@@ -4978,6 +4981,7 @@ cVOG    else
       include 'mxpdim.inc'
       include 'orbinp.inc'
       include 'cgas.inc'
+      include 'cstate.inc'
       include 'crun.inc'
       include 'clunit.inc'
       include 'lucinp.inc'
@@ -5120,7 +5124,7 @@ cVOG    else
 *
       totsds = weyl(nactel,nmogasp,ms2)
       totsds = totsds / nirrep
-      idigits = int(log10(real(totsds))+1)
+      idigits = int(log10(dble(totsds))+1)
       if ((ntest.ge.10).and.(ga_nodeid().eq.0))
      &  write(*,*) 'SDs from Weyl (per irrep)', totsds, idigits
 *
@@ -5567,9 +5571,10 @@ cVOG    else
       integer nele, nmo, spin
 *
 *. Scratch
-      integer inter, inter2, nom, fac1, fac2, denom, vogfactorial
+      integer inter, inter2, nom, fac1, fac2, denom
       double precision one, two, three, rweyl, rnele, rnmo, rspin
       external vogfactorial
+      integer vogfactorial
 *
       ntest = 10
 *
