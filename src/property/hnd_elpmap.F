@@ -153,6 +153,12 @@ c     -------------------------------------------------
         do_points = .false.
         do_output = .true.
       end if
+c mw529
+      if(.true.) then
+         call get_points_from_iso(rtdb,basis,geom,
+     & 0.002D0,0.00003D0,nprp,i_prp_c)
+         do_points = .true.
+      endif
 
 c
       if (.not. ma_push_get(mt_dbl,nprp,'epot pnt',l_epot,k_epot))
@@ -318,7 +324,7 @@ c     ----- release memory block -----
 c
   300 call ga_sync()
 
-      if(ga_nodeid().eq.0.and.ocube) then
+      if(.false.) then
         call util_print_centered(luout, 
      >    "writing esp potential to "//cube_name,.true.,.true.)
         call prop_grid_write_cube(geom,nprp,dbl_mb(k_tepot),cube_name)
@@ -330,6 +336,12 @@ c
         call util_print_centered(luout,
      >    "writing electron density to "//cube_name,.true.,.true.)
         call prop_grid_write_cube(geom,nprp,dbl_mb(k_eden),cube_name)
+      end if
+      if(ga_nodeid().eq.0) then
+        call write_ESP_to_grid_file(nprp, i_prp_c, k_tepot)
+        if (.not.ma_pop_stack(h_prp_c)) call errquit
+     &      ('foo, ma_pop_stack of h_prp_c failed',911,MA_ERR)
+
       end if
 
 c
