@@ -56,6 +56,7 @@ c
       logical ocube
       integer nsp(3)
       character*255 cube_name
+      character*255 esp_name
       character*255 dmat_file
 c
 c
@@ -338,7 +339,13 @@ c
         call prop_grid_write_cube(geom,nprp,dbl_mb(k_eden),cube_name)
       end if
       if(ga_nodeid().eq.0) then
-        call write_ESP_to_grid_file(nprp, i_prp_c, k_tepot)
+
+        if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
+     >     call util_file_prefix("esp.grid",esp_name)
+
+        esp_name = trim(esp_name)//'_esp.grid'
+
+        call write_ESP_to_grid_file(nprp, i_prp_c, k_tepot, esp_name)
         if (.not.ma_pop_stack(h_prp_c)) call errquit
      &      ('foo, ma_pop_stack of h_prp_c failed',911,MA_ERR)
 

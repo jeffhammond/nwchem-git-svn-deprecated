@@ -127,7 +127,7 @@ c Clean up phase
 
 c Utility method for writing ESP points out to a file
       subroutine write_ESP_to_grid_file(sub_nprp, i_sub_prp_c,
-     & k_tepot)
+     & k_tepot, esp_name)
 
       implicit none
 #include "errquit.fh"
@@ -140,15 +140,16 @@ c Utility method for writing ESP points out to a file
       integer sub_nprp, i_sub_prp_c
       integer k_tepot
       double precision xp, yp, zp
+      character*255 esp_name
 
 c output file
       if(.not.util_get_io_unit(un))
      >    call errquit("no free file unit",0,0)
 
-      open(unit=un,file="esp.grid",
+      open(unit=un,file=esp_name,
      >       form='formatted',status='unknown')
 
-      write(un, '(I6X80A)') sub_nprp,"ESP value and coordinate dump"
+      write(un, '(I6X80A)') sub_nprp,"ESP value dump"
     
       do iat=1,sub_nprp
          xp = dbl_mb(i_sub_prp_c  +3*(iat-1))
