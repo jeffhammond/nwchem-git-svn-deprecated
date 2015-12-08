@@ -158,7 +158,6 @@ c mw529
       if(.true.) then
          call get_points_from_iso(rtdb,basis,geom,
      & 0.002D0,0.00003D0,nprp,i_prp_c)
-         do_points = .true.
       endif
 
 c
@@ -338,6 +337,7 @@ c
      >    "writing electron density to "//cube_name,.true.,.true.)
         call prop_grid_write_cube(geom,nprp,dbl_mb(k_eden),cube_name)
       end if
+
       if(ga_nodeid().eq.0) then
 
         if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
@@ -345,10 +345,8 @@ c
 
         esp_name = trim(esp_name)//'_esp.grid'
 
-        call write_ESP_to_grid_file(nprp, i_prp_c, k_tepot, esp_name)
-        if (.not.ma_pop_stack(h_prp_c)) call errquit
-     &      ('foo, ma_pop_stack of h_prp_c failed',911,MA_ERR)
-
+        call write_ESP_to_grid_file(nprp, i_prp_c, k_tepot,
+     > esp_name)
       end if
 
 c
@@ -374,7 +372,7 @@ c
         if (.not.ma_pop_stack(h_prp_c)) call errquit
      &      ('hnd_elpmap, ma_pop_stack of h_prp_c failed',911,MA_ERR)
       else
-         call prop_grid_destroy()
+C         call prop_grid_destroy()
       endif
       if (.not.ma_pop_stack(l_zanpt)) call errquit
      &   ('hnd_elpmap, ma_pop_stack of l_zanpt failed',911,MA_ERR)
