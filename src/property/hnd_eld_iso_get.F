@@ -74,7 +74,7 @@ c the grid points defined in points.
 c Scan ahead and work out how many points (sub_nprp) lie on the isosurface
       sub_nprp = 0
       do i=1, nprp
-        if ( abs(dbl_mb(k_eden + i) - isovalue) < tolerance ) then
+        if ( abs(dbl_mb(k_eden + (i-1)) - isovalue) < tolerance ) then
           sub_nprp = sub_nprp + 1
         end if
       end do
@@ -87,7 +87,7 @@ c Allocate array for storting the location of these points
 
       sub_nprp = 0
       do i=1, nprp
-        if ( abs(dbl_mb(k_eden + i) - isovalue) < tolerance ) then
+        if ( abs(dbl_mb(k_eden + (i-1)) - isovalue) < tolerance ) then
 c Coordinates of grid point
            xp = dbl_mb(i_prp_c  +3*(i-1))
            yp = dbl_mb(i_prp_c+1+3*(i-1))
