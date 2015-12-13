@@ -343,10 +343,11 @@ c
         if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
      >     call util_file_prefix("esp.grid",esp_name)
 
-        esp_name = trim(esp_name)//'_esp.grid'
+        esp_name = trim(esp_name)//'_esp.cube'
 
-        call write_ESP_to_grid_file(nprp, i_prp_c, k_tepot,
-     > esp_name)
+        call prop_grid_write_cube_unformatted(geom,nprp,dbl_mb(k_tepot),
+     > i_prp_c, esp_name)
+
       end if
 
 c
