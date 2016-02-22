@@ -32,6 +32,7 @@ c
       integer mulliken
       integer spinpopulation
       integer esp
+      integer espiso
       integer efield
       integer efieldmap
       integer efieldgrad
@@ -95,6 +96,7 @@ c
       mulliken          = 1
       spinpopulation    = 1
       esp               = 1
+      espiso            = 1
       efield            = 1
       efieldmap         = 1
       efieldgrad        = 1
@@ -370,6 +372,8 @@ c ==========================================
          efield          = 0
       elseif ( inp_compare(.false., 'efield', test)) then
          efield          = 0
+      elseif ( inp_compare(.false., 'espiso', test)) then
+         espiso          = 0
       elseif ( inp_compare(.false., 'esp', test)) then
          esp             = 0
          if (inp_a(test)) then
@@ -557,6 +561,10 @@ c ... Fredy: also write EFG option key to RTDB:
       if (.not. rtdb_put(rtdb, 'prop:esp', mt_int, 1,
      $                               esp               ))
      $      call errquit('prop_input: rtdb_put failed', 0, RTDB_ERR)
+      if (.not. rtdb_put(rtdb, 'prop:espiso', mt_int, 1,
+     $                               espiso             ))
+     $      call errquit('prop_input: rtdb_put failed', 0, RTDB_ERR)
+
       if (.not. rtdb_put(rtdb, 'prop:efield', mt_int, 1,
      $                               efield            ))
      $      call errquit('prop_input: rtdb_put failed', 0, RTDB_ERR)
