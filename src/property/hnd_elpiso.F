@@ -151,7 +151,7 @@ C  This is commented out since it causes any multiproc (np > 1)
 C  to hang
 C
         if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
-     >     call util_file_prefix("esp.grid",esp_name)
+     >     call util_file_prefix("cube",esp_name)
 
         call prop_grid_write_cube_unformatted(geom,sub_nprp,
      >      dbl_mb(k_tepot), sub_i_prp_c, esp_name)
