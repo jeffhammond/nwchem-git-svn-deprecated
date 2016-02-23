@@ -15,6 +15,10 @@ C
       integer basis          ! [Input] Basis set
       integer geom           ! [Input] Geometry
 
+
+      double precision iso   ! Electron density iso surface to work on
+      double precision tol   ! tolerance for above
+
       integer nat            ! Number of atoms in system
       character*16 at_tag
       integer g_dens(3),ndens,nclosed(2),nopen(2),nvirt(2)
@@ -48,6 +52,14 @@ C
 
       character*255 esp_name ! File name for output cube
 
+C set inputs
+      if(.not.rtdb_get(rtdb,'prop:espiso:iso',MT_DBL,1,iso)) then
+         iso = 0.002D0
+      end if
+      if(.not.rtdb_get(rtdb,'prop:espiso:tol',MT_DBL,1,tol)) then
+         tol = 0.00003D0
+      end if
+
 c     Initialize integrals
 c
       call int_init(rtdb,1, basis)
@@ -79,7 +91,7 @@ c    Place atoms
    30 continue
 
 C     Calculate the electron density and extract a subset of points
-      call get_points_from_iso(rtdb,basis,geom,0.002D0,0.00003D0,
+      call get_points_from_iso(rtdb,basis,geom,iso,tol,
      & sub_nprp,sub_i_prp_c)
 
 C     Allocate total electric field array
@@ -138,10 +150,8 @@ C     Write to a cube file
 C  This is commented out since it causes any multiproc (np > 1)
 C  to hang
 C
-C        if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
-C     >     call util_file_prefix("esp.grid",esp_name)
-
-        esp_name = 'esp.cube'
+        if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
+     >     call util_file_prefix("esp.grid",esp_name)
 
         call prop_grid_write_cube_unformatted(geom,sub_nprp,
      >      dbl_mb(k_tepot), sub_i_prp_c, esp_name)
