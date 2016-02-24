@@ -1,6 +1,6 @@
       subroutine hnd_elpmap(rtdb,basis,geom)
 c
-c $Id: hnd_elpmap.F 26040 2014-08-26 03:43:05Z niri $
+c $Id$
 c
 c     This routine calculates the electrostatic potential
 c     for a given density at the atomic positions.
@@ -56,7 +56,6 @@ c
       logical ocube
       integer nsp(3)
       character*255 cube_name
-      character*255 esp_name
       character*255 dmat_file
 c
 c
@@ -154,12 +153,6 @@ c     -------------------------------------------------
         do_points = .false.
         do_output = .true.
       end if
-c mw529
-      if(.true.) then
-         call get_points_from_iso(rtdb,basis,geom,
-     & 0.002D0,0.00003D0,nprp,i_prp_c)
-      endif
-
 c
       if (.not. ma_push_get(mt_dbl,nprp,'epot pnt',l_epot,k_epot))
      &    call errquit('hnd_elfmap: ma failed',911,MA_ERR)
@@ -324,7 +317,7 @@ c     ----- release memory block -----
 c
   300 call ga_sync()
 
-      if(.false.) then
+      if(ga_nodeid().eq.0.and.ocube) then
         call util_print_centered(luout, 
      >    "writing esp potential to "//cube_name,.true.,.true.)
         call prop_grid_write_cube(geom,nprp,dbl_mb(k_tepot),cube_name)
@@ -336,18 +329,6 @@ c
         call util_print_centered(luout,
      >    "writing electron density to "//cube_name,.true.,.true.)
         call prop_grid_write_cube(geom,nprp,dbl_mb(k_eden),cube_name)
-      end if
-
-      if(ga_nodeid().eq.0) then
-
-C        if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
-C     >     call util_file_prefix("esp.grid",esp_name)
-
-        esp_name = 'esp.cube'
-
-        call prop_grid_write_cube_unformatted(geom,nprp,dbl_mb(k_tepot),
-     > i_prp_c, esp_name)
-
       end if
 
 c
@@ -368,12 +349,11 @@ c
      &   ('hnd_elpmap, ma_pop_stack of l_tepot failed',911,MA_ERR)
       if (.not.ma_pop_stack(l_epot)) call errquit
      &   ('hnd_elpmap, ma_pop_stack of l_epot failed',911,MA_ERR)
-
       if(.not.ocube)  then
         if (.not.ma_pop_stack(h_prp_c)) call errquit
      &      ('hnd_elpmap, ma_pop_stack of h_prp_c failed',911,MA_ERR)
       else
-C         call prop_grid_destroy()
+         call prop_grid_destroy()
       endif
       if (.not.ma_pop_stack(l_zanpt)) call errquit
      &   ('hnd_elpmap, ma_pop_stack of l_zanpt failed',911,MA_ERR)
