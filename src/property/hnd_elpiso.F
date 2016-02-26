@@ -1,3 +1,8 @@
+C     on a given electronic density isosurface.
+C
+C     Mark J. Williamson Spring 2016
+C     mw529@cam.ac.uk
+C
       subroutine hnd_elpiso(rtdb,basis,geom)
       implicit none
 #include "errquit.fh"
@@ -7,52 +12,54 @@
 #include "geom.fh"
 #include "stdio.fh"
 #include "bas.fh"
-C
-C     This routine calculates the electrostatic potential
-C     on a given electron density isosurface.
-C
       integer rtdb           ! [Input] rtdb
       integer basis          ! [Input] Basis set
       integer geom           ! [Input] Geometry
 
-
       double precision iso   ! Electron density iso surface to work on
-      double precision tol   ! tolerance for above
+      double precision tol   ! Tolerance of the isovalue
 
       integer nat            ! Number of atoms in system
-      character*16 at_tag
-      integer g_dens(3),ndens,nclosed(2),nopen(2),nvirt(2)
-      character*3 scftyp
-      character*30 theory
-      integer nbf
+      character*16 at_tag    ! Geom centre tag
+      integer g_dens(3)      ! Handle to density
+      integer ndens          ! Number of active density handles (RHF=1, UHF=3)
+      integer nclosed(2)     ! Occupation info
+      integer nopen(2)       ! Occupation info
+      integer nvirt(2)       ! Occupation info
+      character*3 scftyp     ! Type of wave function
+      character*30 theory    ! Input theory
 
-      integer l_xyzpt     ! Memhandle to atoms coordinate array
-      integer k_xyzpt     ! Index to atoms coordinate array
-      integer l_zanpt
-      integer k_zanpt
+      integer h_xyzpt        ! Memhandle to atoms coordinate array
+      integer i_xyzpt        ! Index to atoms coordinate array
+      integer h_zanpt        ! Memhandle to atoms charge array
+      integer i_zanpt        ! Index to atoms charge array
 
-      integer nprp           ! Number of points on cube
-      integer h_prp_c        ! Memhandle to points on cube
-      integer i_prp_c        ! Index to points on cube
+      integer sub_nprp       ! No. of points on the electron density isosurface
+      integer sub_h_prp_c    ! Memhandle points on the electron density iso
+      integer sub_i_prp_c    ! Index to points on the electron density cube
 
-      integer sub_nprp           ! Number of points on isosurface
-      integer sub_h_prp_c        ! Memhandle to points on isosuface
-      integer sub_i_prp_c        ! Index to points on isosuface
+      integer h_epot         ! Memhandle to electronic contribution of the electronic integral
+      integer i_epot         ! Index to electronic contribution of the electronic integral
 
-      integer l_epot         ! Memhandle to TODO
-      integer k_epot         ! Index to TODO
+      integer h_tepot        ! Memhandle to total electric field array
+      integer i_tepot        ! Index to total electric field array
 
-      integer l_tepot        ! Memhandle to total electric field array
-      integer k_tepot        ! Index to total electric field array
+      integer iat            ! Atom counter variable
+      integer i              ! General counter variable
+      double precision xp    ! Cartesian component of point on electron density isosurface
+      double precision yp    ! Cartesian component of point on electron density isosurface
+      double precision zp    ! Cartesian component of point on electron density isosurface
+      double precision xn    ! Cartesian component of atom 
+      double precision yn    ! Cartesian component of atom 
+      double precision zn    ! Cartesian component of atom 
 
-      integer iat, i
-      double precision xp, yp, zp, xn, yn, zn, zan
-      double precision elpotn
-      double precision rr
+      double precision zan   ! Charge on an atom
+      double precision elpotn! Electrostatic potential
+      double precision rr    ! Distance
 
-      character*255 esp_name ! File name for output cube
+      character*255 esp_name ! File name for unformatted output cube
 
-C set inputs
+C set inputs, if none, fall back to a default
       if(.not.rtdb_get(rtdb,'prop:espiso:iso',MT_DBL,1,iso)) then
          iso = 0.002D0
       end if
@@ -75,19 +82,20 @@ c
 
 C     Determine how many atoms we have
       if (.not.geom_ncent(geom,nat))
-     &    call errquit('hnd_elpmap: geom_ncent',911,GEOM_ERR)
+     &    call errquit('hnd_elpiso: geom_ncent',911,GEOM_ERR)
 
-      if (.not. ma_push_get(mt_dbl,3*nat,'xyz pnt',l_xyzpt,k_xyzpt))
-     &    call errquit('hnd_elpmap: ma failed',911,MA_ERR)
+C     Allocate arrays for atomic positions and charges
+      if (.not. ma_push_get(mt_dbl,3*nat,'xyz pnt',h_xyzpt,i_xyzpt))
+     &    call errquit('hnd_elpiso: ma failed',911,MA_ERR)
 
-      if (.not. ma_push_get(mt_dbl,nat,'zan pnt',l_zanpt,k_zanpt))
-     &    call errquit('hnd_elpmap: ma failed',911,MA_ERR)
+      if (.not. ma_push_get(mt_dbl,nat,'zan pnt',h_zanpt,i_zanpt))
+     &    call errquit('hnd_elpiso: ma failed',911,MA_ERR)
 
-c    Place atoms
+C     Populate arrays with atom locations and their charge
       do 30 iat=1,nat
-        if(.not.geom_cent_get(geom,iat,at_tag,dbl_mb(k_xyzpt+3*(iat-1)),
-     &     dbl_mb(k_zanpt+iat-1))) call
-     &     errquit('hnd_elpmap: geom_cent_get',911,GEOM_ERR)
+        if(.not.geom_cent_get(geom,iat,at_tag,dbl_mb(i_xyzpt+3*(iat-1)),
+     &     dbl_mb(i_zanpt+iat-1))) call
+     &     errquit('hnd_elpiso: geom_cent_get',911,GEOM_ERR)
    30 continue
 
 C     Calculate the electron density and extract a subset of points
@@ -95,47 +103,48 @@ C     Calculate the electron density and extract a subset of points
      & sub_nprp,sub_i_prp_c)
 
 C     Allocate total electric field array
-      if (.not. ma_push_get(mt_dbl,sub_nprp,'tot epot',l_tepot,k_tepot))
+      if (.not. ma_push_get(mt_dbl,sub_nprp,'tot epot',h_tepot,i_tepot))
      &    call errquit('hnd_elpiso: ma failed',911,MA_ERR)
 
 C     TODO
-      if (.not. ma_push_get(mt_dbl,sub_nprp,'epot pnt',l_epot,k_epot))
+      if (.not. ma_push_get(mt_dbl,sub_nprp,'epot pnt',h_epot,i_epot))
      &    call errquit('hnd_elpiso: ma failed',911,MA_ERR)
 
 
-c     This routine calculates the electronic contribution of the
-c     electronic integral defined by nder for a given density at
-c     the grid points defined in points.
+C     This routine calculates the electronic contribution of the
+C     electronic integral defined by nder for a given density at
+C     the grid points defined in points.
+C     nder=0; compute the electrostatic potential
       call hnd_elfcon(basis,geom,g_dens(ndens),
-     &       dbl_mb(sub_i_prp_c),sub_nprp,dbl_mb(k_epot),0)
+     &       dbl_mb(sub_i_prp_c),sub_nprp,dbl_mb(i_epot),0)
 
 
-c Main loop
+C Main loop
       if (ga_nodeid().gt.0) goto 300
-c
-c     ----- calculate electrostatic potential -----
-c
+C
+C     ----- calculate electrostatic potential -----
+C
       do 230  iat=1,sub_nprp
          xp = dbl_mb(sub_i_prp_c  +3*(iat-1))
          yp = dbl_mb(sub_i_prp_c+1+3*(iat-1))
          zp = dbl_mb(sub_i_prp_c+2+3*(iat-1))
 
-         elpotn = -dbl_mb(k_epot+iat-1)
-c
-c     ----- add nuclear contribution -----
-c
+         elpotn = -dbl_mb(i_epot+iat-1)
+C
+C     ----- add nuclear contribution -----
+C
          do 210 i = 1,nat
-            xn  = dbl_mb(k_xyzpt  +3*(i-1)) - xp
-            yn  = dbl_mb(k_xyzpt+1+3*(i-1)) - yp
-            zn  = dbl_mb(k_xyzpt+2+3*(i-1)) - zp
-            zan = dbl_mb(k_zanpt+i-1)
+            xn  = dbl_mb(i_xyzpt  +3*(i-1)) - xp
+            yn  = dbl_mb(i_xyzpt+1+3*(i-1)) - yp
+            zn  = dbl_mb(i_xyzpt+2+3*(i-1)) - zp
+            zan = dbl_mb(i_zanpt+i-1)
 
             rr =  sqrt(xn*xn + yn*yn + zn*zn)
             if (rr.lt.1.0d-3) go to 210
             elpotn = elpotn + zan/rr
   210    continue
 
-         dbl_mb(k_tepot+iat-1) = elpotn
+         dbl_mb(i_tepot+iat-1) = elpotn
 
   230    continue ! Assembling and printing next atom
 
@@ -146,29 +155,28 @@ c
       if (.not. rtdb_cget(rtdb, "prop:grid:output",1,esp_name))
      >    call util_file_prefix("cube",esp_name)
 
-C     Write to a cube file
       if(ga_nodeid().eq.0) then
 
-
+C     Write to an unformatted cube file
         call prop_grid_write_cube_unformatted(geom,sub_nprp,
-     >      dbl_mb(k_tepot), sub_i_prp_c, esp_name)
+     >      dbl_mb(i_tepot), sub_i_prp_c, esp_name)
       end if
 
 
 C
 C Clean up phase
 C
-      if (.not.ma_pop_stack(l_epot)) call errquit
-     &   ('hnd_elpiso, ma_pop_stack of l_epot failed',911,MA_ERR)
+      if (.not.ma_pop_stack(h_epot)) call errquit
+     &   ('hnd_elpiso, ma_pop_stack of h_epot failed',911,MA_ERR)
 
-      if (.not.ma_pop_stack(l_tepot)) call errquit
-     &   ('hnd_elpiso, ma_pop_stack of l_tepot failed',911,MA_ERR)
+      if (.not.ma_pop_stack(h_tepot)) call errquit
+     &   ('hnd_elpiso, ma_pop_stack of h_tepot failed',911,MA_ERR)
 
-      if (.not.ma_pop_stack(l_zanpt)) call errquit
-     &   ('hnd_elpmap, ma_pop_stack of l_zanpt failed',911,MA_ERR)
+      if (.not.ma_pop_stack(h_zanpt)) call errquit
+     &   ('hnd_elpmap, ma_pop_stack of h_zanpt failed',911,MA_ERR)
 
-      if (.not.ma_pop_stack(l_xyzpt)) call errquit
-     &   ('hnd_elpiso, ma_pop_stack of l_xyzpt failed',911,MA_ERR)
+      if (.not.ma_pop_stack(h_xyzpt)) call errquit
+     &   ('hnd_elpiso, ma_pop_stack of h_xyzpt failed',911,MA_ERR)
 
 C
 C     Terminate integrals
@@ -210,47 +218,61 @@ C
       integer rtdb                ! [Input] rtdb        
       integer basis               ! [Input] Basis set
       integer geom                ! [Input] Geometry
-      double precision isovalue   ! [Input]
-      double precision tolerance  ! [Input]
-      integer sub_nprp            ! [Output]
-      integer i_sub_prp_c         ! [Output]
+      double precision isovalue   ! [Input] Electron density iso surface to work on
+      double precision tolerance  ! [Input] Tolerance of the isovalue
+      integer sub_nprp            ! [Output] Number of points lying on this surface
+      integer h_sub_prp_c         ! Memhandle to points lying on the iso surface
+      integer i_sub_prp_c         ! [Output] Index to points lying on this surface
 
-      logical util_get_io_unit
       integer i,j,n,nat,iat
-      integer nprp
-      integer g_dens(3),ndens,nclosed(2),nopen(2),nvirt(2)
-      character*3 scftyp
-      character*16 element, at_tag
-      integer i_prp_c
-      integer h_sub_prp_c
-      integer l_xyzpt, k_xyzpt, l_zanpt, k_zanpt
-      integer l_eden, k_eden
-      double precision xp,yp,zp
+      integer g_dens(3)      ! Handle to density
+      integer ndens          ! Number of active density handles (RHF=1, UHF=3)
+      integer nclosed(2)     ! Occupation info
+      integer nopen(2)       ! Occupation info
+      integer nvirt(2)       ! Occupation info
+      character*3 scftyp     ! Type of wave function
+      character*16 at_tag    ! Geom centre tag
 
+      integer nprp           ! Number of points on the entire density grid
+      integer i_prp_c        ! Index to points on the entire density grid
+
+      integer h_xyzpt        ! Memhandle to atoms coordinate array
+      integer i_xyzpt        ! Index to atoms coordinate array
+      integer h_zanpt        ! Memhandle to atoms charge array
+      integer i_zanpt        ! Index to atoms charge array
+
+      integer h_eden         ! Memhandle to electron density array
+      integer i_eden         ! Index to electron density array
+      double precision xp    ! Cartesian component of point on electron density isosurface
+      double precision yp    ! Cartesian component of point on electron density isosurface
+      double precision zp    ! Cartesian component of point on electron density isosurface
+
+C     Determine how many atoms we have
       if (.not.geom_ncent(geom,nat)) call
      &    errquit('hnd_elpiso: geom_ncent',911,GEOM_ERR)
 
-      if (.not. ma_push_get(mt_dbl,3*nat,'xyz pnt',l_xyzpt,k_xyzpt))
+C     Allocate arrays for atomic positions and charges
+      if (.not. ma_push_get(mt_dbl,3*nat,'xyz pnt',h_xyzpt,i_xyzpt))
      &    call errquit('hnd_elpiso: ma failed',911,MA_ERR)
 
-      if (.not. ma_push_get(mt_dbl,nat,'zan pnt',l_zanpt,k_zanpt))
+      if (.not. ma_push_get(mt_dbl,nat,'zan pnt',h_zanpt,i_zanpt))
      &    call errquit('hnd_elpiso: ma failed',911,MA_ERR)
 
-C Copy the atoms' coordinates over to the k_xyzpt array
+C     Populate arrays with atom locations and their charge
       do 30 iat=1,nat
-        if(.not.geom_cent_get(geom,iat,at_tag,dbl_mb(k_xyzpt+3*(iat-1)),
-     &     dbl_mb(k_zanpt+iat-1))) call
+        if(.not.geom_cent_get(geom,iat,at_tag,dbl_mb(i_xyzpt+3*(iat-1)),
+     &     dbl_mb(i_zanpt+iat-1))) call
      &     errquit('hnd_elpiso: geom_cent_get',911,GEOM_ERR)
    30 continue
 
-
 C Set the grid up for the initial electron density calculation
-      call prop_grid_initialize(rtdb,nat,dbl_mb(k_xyzpt))
+      call prop_grid_initialize(rtdb,nat,dbl_mb(i_xyzpt))
+
 C Get the number of points and their coordinate point index, i_prp_c
       call prop_grid_get_r_ptr(nprp,i_prp_c)
 
-C allocate memory and an index, k_eden, to the density values
-      if (.not. ma_push_get(mt_dbl,nprp,'eden',l_eden,k_eden))
+C allocate memory and an index, i_eden, to the density values
+      if (.not. ma_push_get(mt_dbl,nprp,'eden',h_eden,i_eden))
      &    call errquit('hnd_elpiso: eden ma failed',911,MA_ERR)
 
 C Calculates density matrix
@@ -260,14 +282,14 @@ C Calculates density matrix
 C Calculates the electronic contribution of the
 C electronic integral defined by nder for a given density at
 C the grid points defined in points.
-C nder=-1; compute the 1-electron densit
+C nder=-1; compute the 1-electron density
       call hnd_elfcon(basis,geom,g_dens(ndens),dbl_mb(i_prp_c),nprp, 
-     & dbl_mb(k_eden),-1)
+     & dbl_mb(i_eden),-1)
 
 C Scan ahead and work out how many points (sub_nprp) lie on the isosurface
       sub_nprp = 0
       do i=1, nprp
-        if ( abs(dbl_mb(k_eden + (i-1)) - isovalue) < tolerance ) then
+        if ( abs(dbl_mb(i_eden + (i-1)) - isovalue) < tolerance ) then
           sub_nprp = sub_nprp + 1
         end if
       end do
@@ -280,7 +302,7 @@ C Allocate array for storing the location of these points
 
       sub_nprp = 0
       do i=1, nprp
-        if ( abs(dbl_mb(k_eden + (i-1)) - isovalue) < tolerance ) then
+        if ( abs(dbl_mb(i_eden + (i-1)) - isovalue) < tolerance ) then
 C Coordinates of grid point
            xp = dbl_mb(i_prp_c  +3*(i-1))
            yp = dbl_mb(i_prp_c+1+3*(i-1))
@@ -299,14 +321,14 @@ C Copy matching coordinates to new array
 C Clean up phase
       call prop_grid_destroy()
 
-      if (.not.ma_pop_stack(l_eden)) call errquit
-     &   ('hnd_elpmap, ma_pop_stack of l_eden failed',911,MA_ERR)
+      if (.not.ma_pop_stack(h_eden)) call errquit
+     &   ('hnd_elpmap, ma_pop_stack of h_eden failed',911,MA_ERR)
 
-      if (.not.ma_pop_stack(l_zanpt)) call errquit
-     &   ('hnd_elpmap, ma_pop_stack of l_zanpt failed',911,MA_ERR)
+      if (.not.ma_pop_stack(h_zanpt)) call errquit
+     &   ('hnd_elpmap, ma_pop_stack of h_zanpt failed',911,MA_ERR)
 
-      if (.not.ma_pop_stack(l_xyzpt)) call errquit
-     &   ('hnd_elpmap, ma_pop_stack of l_xyzpt failed',911,MA_ERR)
+      if (.not.ma_pop_stack(h_xyzpt)) call errquit
+     &   ('hnd_elpmap, ma_pop_stack of h_xyzpt failed',911,MA_ERR)
     
 1000  format(4F13.8)
       end subroutine
