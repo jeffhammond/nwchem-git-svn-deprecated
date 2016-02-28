@@ -1,0 +1,43 @@
+language: fortran
+
+addons:
+  apt:
+    packages:
+      -libmpich-dev 
+      -mpich2 
+      -gcc 
+      -gfortran 
+      -libblas-dev 
+      -liblapack-dev 
+      -libatlas-dev 
+      -libatlas3-base
+
+matrix:
+  include:
+    - sudo: required
+      dist: trusty
+
+      env: ==DEFAULT==
+	NWCHEM_TOP=`pwd`
+	NWCHEM_TARGET=LINUX64
+	NWCHEM_MODULES="all python"
+	USE_MPI=y
+	LIBMPI="-lmpich -lopa -lmpl -lrt -lpthread" 
+	MPI_LIB="/usr/lib"
+	MPI_INCLUDE="/usr/include/mpich"
+	FC=gfortran
+	CC=gcc
+	PYTHONHOME=/usr
+	PYTHONVERSION=2.7
+	PYTHONLIBTYPE=so
+	PYTHON_SYSLIB=/usr/lib
+	PYTHONCONFIGDIR=config-x86_64-linux-gnu
+	BLASOPT="-L/usr/lib/atlas-base -L/usr/lib -llapack -lf77blas -latlas"
+
+
+script:
+	cd $NWCHEM_TOP/src/tools
+	svn checkout --username=anonymous --password=anonymous https://svn.pnl.gov/svn/hpctools/branches/ga-5-4/
+	cd $NWCHEM_TOP/src
+	make nwchem_config
+	make
