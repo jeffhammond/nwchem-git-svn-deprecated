@@ -3,14 +3,15 @@ language: fortran
 addons:
   apt:
     packages:
-      -libmpich-dev 
-      -mpich2 
-      -gcc 
-      -gfortran 
-      -libblas-dev 
-      -liblapack-dev 
-      -libatlas-dev 
-      -libatlas3-base
+      - gcc
+      - gfortran
+      - libblas-dev
+      - liblapack-dev 
+      - libatlas-dev
+      - libatlas3-base
+      - libatlas-base-dev
+      - subversion
+      - csh
 
 matrix:
   include:
@@ -18,26 +19,42 @@ matrix:
       dist: trusty
 
       env: ==DEFAULT==
-	NWCHEM_TOP=`pwd`
-	NWCHEM_TARGET=LINUX64
-	NWCHEM_MODULES="all python"
-	USE_MPI=y
-	LIBMPI="-lmpich -lopa -lmpl -lrt -lpthread" 
-	MPI_LIB="/usr/lib"
-	MPI_INCLUDE="/usr/include/mpich"
-	FC=gfortran
-	CC=gcc
-	PYTHONHOME=/usr
-	PYTHONVERSION=2.7
-	PYTHONLIBTYPE=so
-	PYTHON_SYSLIB=/usr/lib
-	PYTHONCONFIGDIR=config-x86_64-linux-gnu
-	BLASOPT="-L/usr/lib/atlas-base -L/usr/lib -llapack -lf77blas -latlas"
+        NWCHEM_TOP=$TRAVIS_BUILD_DIR
+        NWCHEM_TARGET=LINUX64
+        NWCHEM_MODULES="all python"
+        USE_MPI=y
+        LIBMPI="-lmpich -lfmpich -lopa -lmpl -lrt -lpthread" 
+        MPI_LIB="/usr/lib"
+        MPI_INCLUDE="/usr/include"
+        FC=gfortran
+        CC=gcc
+        PYTHONHOME=/usr
+        PYTHONVERSION=2.7
+        PYTHONLIBTYPE=so
+        PYTHON_SYSLIB=/usr/lib
+        PYTHONCONFIGDIR=config-x86_64-linux-gnu
+        BLASOPT="-L/usr/lib/atlas-base -L/usr/lib -llapack -lf77blas -latlas"
 
+
+before_script:
+    - currentDir=`pwd`
+    - mpichVersion=3.2
+    - wget --no-check-certificate -q http://www.mpich.org/static/downloads/$mpichVersion/mpich-$mpichVersion.tar.gz
+    - tar -xzf mpich-$mpichVersion.tar.gz
+    - cd mpich-$mpichVersion
+    - mkdir build && cd build
+    - sudo ../configure --prefix=/usr CC=$CC CXX=$CXX --disable-romio &> configure.log
+    - sudo make -j2 &> make.log
+    - sudo make install &> install.log
+    - cd "$currentDir"
 
 script:
-	cd $NWCHEM_TOP/src/tools
-	svn checkout --username=anonymous --password=anonymous https://svn.pnl.gov/svn/hpctools/branches/ga-5-4/
-	cd $NWCHEM_TOP/src
-	make nwchem_config
-	make
+        cd $NWCHEM_TOP/src/tools &&
+        svn checkout --quiet --non-interactive --no-auth-cache --username=anonymous --password=anonymous https://svn.pnl.gov/svn/hpctools/branches/ga-5-4/ &&
+        cd $NWCHEM_TOP/src &&
+        make nwchem_config &&
+        make ;
+        # cd ../QA &&
+        #./doqmtests.mpi 2 &&
+        #cat doqmtests.mpi.log ;
+        
