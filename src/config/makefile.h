@@ -944,7 +944,7 @@ endif
 #gcc version 4.2.0 200608 (experimental)
 #         FOPTIONS= -malign-double# this break with gfort 4.2 and later http://gcc.gnu.org/bugzilla/show_bug.cgi?id=29562
          FOPTIMIZE+= -funroll-all-loops -mtune=native 
-         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -ftree-vectorizer-verbose=1   -fprefetch-loop-arrays  -funroll-all-loops 
+         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -fprefetch-loop-arrays  -funroll-all-loops 
 #         FOPTIMIZE=-O1
 #         FVECTORIZE=-O1
        endif
@@ -1058,7 +1058,7 @@ endif
        DEFINES   += -DGFORTRAN -DGCC4
 #
          FOPTIMIZE+= -funroll-all-loops -mtune=native 
-         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -ftree-vectorizer-verbose=1   -fprefetch-loop-arrays  -funroll-all-loops 
+         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -fprefetch-loop-arrays  -funroll-all-loops 
 #         FOPTIMIZE=-O1
 #         FVECTORIZE=-O1
         GNUMAJOR=$(shell $(FC) -dumpversion | cut -f1 -d.)
@@ -2005,7 +2005,7 @@ $(error )
         endif
         FOPTIMIZE  += -fprefetch-loop-arrays #-ftree-loop-linear
         ifeq ($(GNU_GE_4_8),true)
-          FOPTIMIZE  += -ftree-vectorize   -fopt-info-vec
+          FOPTIMIZE  += -ftree-vectorize
         endif
 
         FDEBUG += -g -O 
