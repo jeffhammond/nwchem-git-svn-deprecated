@@ -15,8 +15,7 @@ addons:
 
 matrix:
   include:
-    - sudo: required
-      dist: trusty
+    - dist: trusty
 
       env: ==DEFAULT==
         NWCHEM_TOP=$TRAVIS_BUILD_DIR
