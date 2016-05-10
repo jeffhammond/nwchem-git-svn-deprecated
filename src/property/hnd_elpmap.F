@@ -161,20 +161,11 @@ c     total electric field array (M.V.)
 c     --------------------------------
       if (.not. ma_push_get(mt_dbl,nprp,'tot epot',l_tepot,k_tepot))
      &    call errquit('hnd_elfmap: ma failed',911,MA_ERR)
-
-      if (.not. ma_push_get(mt_dbl,nprp,'eden',l_eden,k_eden))
-     &    call errquit('hnd_elpmap: eden ma failed',911,MA_ERR)
-
-
 cc
 c     ----- calculate electronic contribution at all points -----
 c
       call hnd_elfcon(basis,geom,g_dens(ndens),dbl_mb(i_prp_c),nprp,
      &                dbl_mb(k_epot),0)
-
-c     ----- calculate electron density                     ------
-      call hnd_elfcon(basis,geom,g_dens(ndens),dbl_mb(i_prp_c),nprp,
-     &                dbl_mb(k_eden),-1)
 
       dobq = .false.
       if(geom_extbq_on()) then
@@ -324,11 +315,6 @@ c
 
         if (.not. rtdb_cget(rtdb, "prop:grid:output",1,cube_name))
      >     call util_file_prefix("eld.cube",cube_name)
-
-        cube_name = trim(cube_name)//'_eld.cube'
-        call util_print_centered(luout,
-     >    "writing electron density to "//cube_name,.true.,.true.)
-        call prop_grid_write_cube(geom,nprp,dbl_mb(k_eden),cube_name)
       end if
 
 c
@@ -343,8 +329,6 @@ c     -----------------------------------------------
 cc
 c     ------- Deallocate MA memory ------
 c
-      if (.not.ma_pop_stack(l_eden)) call errquit
-     &   ('hnd_elpmap, ma_pop_stack of l_eden failed',911,MA_ERR)
       if (.not.ma_pop_stack(l_tepot)) call errquit
      &   ('hnd_elpmap, ma_pop_stack of l_tepot failed',911,MA_ERR)
       if (.not.ma_pop_stack(l_epot)) call errquit
