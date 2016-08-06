@@ -49,6 +49,7 @@ before_script:
 
 script:
         cd $NWCHEM_TOP/src/tools &&
+        echo "store-plaintext-passwords = yes" >> ~/.subversion/servers &&
         svn checkout --quiet --non-interactive --no-auth-cache --username=anonymous --password=anonymous https://svn.pnl.gov/svn/hpctools/branches/ga-5-5/ &&
         cd $NWCHEM_TOP/src &&
         make nwchem_config &&
