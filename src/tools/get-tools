@@ -108,7 +108,7 @@ then
         if rm -rf $GA_DIRNAME
         then
             echo "Checking out $GA_SVN"
-            svn checkout $GA_SVN $GA_DIRNAME --username nwchem --password nwchem
+            yes | svn checkout $GA_SVN $GA_DIRNAME --username nwchem --password nwchem
         else
             echo "Failed to remove $GA_DIRNAME"
             echo "get-tools has failed"
@@ -117,6 +117,6 @@ then
     cd $TOOLDIR
 else
     echo "Checking out $GA_SVN"
-    svn checkout $GA_SVN $GA_DIRNAME --username nwchem --password nwchem
+    yes | svn checkout $GA_SVN $GA_DIRNAME --username nwchem --password nwchem
 fi
 exit 0
