@@ -185,7 +185,10 @@ C?        write(6,*) ' Updated x', X
 *
 * Jeppe Olsen, August 1995   
 *
-      IMPLICIT REAL*8(A-H,O-Z)
+cVOG  IMPLICIT REAL*8(A-H,O-Z)
+      INCLUDE 'wrkspc.inc'
+      include 'strinp.inc'
+#include "global.fh"
 *.Input
       INTEGER NSSOA(NSMST,*),NSSOB(NSMST,*)
       INTEGER IOCOC(NOCTPA,NOCTPB)
@@ -197,8 +200,12 @@ C?        write(6,*) ' Updated x', X
       INTEGER I1BATCH(*)
       INTEGER IBATCH(8,*)
 *
-      NTEST = 0000
-      IF(NTEST.GE.100) THEN
+      NTEST = 000
+      if (newciblks.eq.1) then
+       IF(NTEST.GE.100.and.ga_nodeid().eq.0) write(*,*) 'You have work!'
+       stop
+      else
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         WRITE(6,*)
         WRITE(6,*) ' =================='
         WRITE(6,*) '     PART_CIV2     '
@@ -295,7 +302,7 @@ C?      WRITE(6,*) ' IA IB LBLOCK_AS', IA,IB, LBLOCK_AS
         ELSE IF(IDC.EQ.2.AND.IA.EQ.IB.AND.IASM.EQ.IBSM) THEN
           LBLOCKP = NSTA*(NSTA+1)/2
         END IF
-        IF(NTEST.GE.1000) THEN
+        IF(NTEST.GE.1000.and.ga_nodeid().eq.0) THEN
 cVOG      WRITE(6,*) ' IASM IBSM IA IB LBLOCKP,LBLOCK' ,    
           WRITE(6,'(a,6I5)') ' IASM IBSM IA IB LBLOCKP,LBLOCK' ,
      &                 IASM,IBSM,IA,IB,LBLOCKP,LBLOCK
@@ -340,7 +347,7 @@ cVOG      WRITE(6,*) ' IASM IBSM IA IB LBLOCKP,LBLOCK' ,
       END IF
  2002 CONTINUE
 *
-      IF(NTEST.GE.10) THEN
+      IF(NTEST.GE.10.and.ga_nodeid().eq.0) THEN
 C?      WRITE(6,*) 'Output from PART_CIV'
 C?      WRITE(6,*) '====================='
         WRITE(6,*)
@@ -360,6 +367,7 @@ C?      WRITE(6,*) '====================='
           END DO
         END DO
       END IF
+      end if !End if newciblks
 *
       RETURN
       END
@@ -4790,7 +4798,7 @@ CNW   DIMENSION CV(*)
       CALL LUCIAQENTER('SBLOK')
       NTEST = 000
       NTEST = MAX(NTEST,IPRCIX)
-      IF(NTEST.GE.10) THEN
+      IF(NTEST.GE.10.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' Output from SBLOCK '
         WRITE(6,*) ' =================='
         WRITE(6,*) ' IPERTOP = ', IPERTOP
@@ -4847,9 +4855,11 @@ CNW   DIMENSION CV(*)
       CALL MEMMAN(KCONSPB,NOCTPB**2,'ADDL  ',1,'CONSPB')  !done
 C     SPGRPCON(IOFSPGRP,NSPGRP,NGAS,MXPNGAS,IELFSPGRP,ISPGRPCON,IPRNT)
       CALL SPGRPCON(IOCTPA,NOCTPA,NGAS,MXPNGAS,NELFSPGP,
-     &              int_mb(KCONSPA),IPRCIX)
+     &              int_mb(KCONSPA),IPRCIX,ga_nodeid())
+cVOG &              int_mb(KCONSPA),IPRCIX)
       CALL SPGRPCON(IOCTPB,NOCTPB,NGAS,MXPNGAS,NELFSPGP,
-     &              int_mb(KCONSPB),IPRCIX)
+     &              int_mb(KCONSPB),IPRCIX,ga_nodeid())
+cVOG &              int_mb(KCONSPB),IPRCIX)
 *
 * string sym, string sym => sx sym
 * string sym, string sym => dx sym
@@ -5059,6 +5069,8 @@ C     IF(ISIMSYM.EQ.0) THEN
        KSIPA = 0
        KCJPA = 0
 *. June 30 : I will try to use go through the normal route with ISIMSYM :
+cVOG  cpu_vog  = util_cpusec()
+cVOG  wall_vog = util_wallsec()
       CALL SBLOCKS(NBLOCK,IBLOCK(1,IBOFF),CB,HCB,dbl_mb(KC2),
      &     int_mb(KCIOIO),ISMOST(1,ICSM),int_mb(KCBLTP),
      &     NACOB,int_mb(KNSTSO(IATP)),int_mb(KNSTSO(IBTP)),
@@ -5081,6 +5093,11 @@ C     IF(ISIMSYM.EQ.0) THEN
      &     ICBAT_RES,ICBAT_INI,ICBAT_END,IUSE_PH,IPHGAS,I_RES_AB,
      &     IUSE_PA,int_mb(KCJPA),int_mb(KSIPA),ISIMSYM,dbl_mb(KINSCR2),
      &     MXADKBLK,ICISTR,CV,ECORE,NCBATCH,ITASK,ILEN)
+cVOG  cpu_vog  = util_cpusec() - cpu_vog
+cVOG  wall_vog = util_wallsec()- wall_vog
+cVOG  write(*,00002) ga_nodeid(), cpu_vog , wall_vog !VOG timings
+cVOG 00002     format(/'SBLK Proc',i6,' Task  times  cpu:',f11.1,
+cVOG &           's     wall:',f11.1,'s')
 C     ELSE
 C     CALL SBLOCKSN(NBLOCK,IBLOCK(1,IBOFF),CB,HCB,WORK(KC2),
 C    &     WORK(KCIOIO),ISMOST(1,ICSM),WORK(KCBLTP),
@@ -5679,6 +5696,7 @@ C    &          IOCTPA,IOCTPB,I_DO_EXACT_BLOCK)
                 IF(INTERACT.EQ.0.OR.I_DO_EXACT_BLK.EQ.0) GOTO 10000
 
                 IF(NTEST.GE.1000) THEN
+                  WRITE(6,*) ' PROCESSOR ', ga_nodeid(), 'Before RSSB'
                   WRITE(6,*) ' Next s block in batch : '
                   write(6,*) ' ISBLK IASM IBSM IATP IBTP'
                   write(6,'(5I5)')  ISBLK,IASM,IBSM,IATP,IBTP
@@ -5692,6 +5710,7 @@ C    &          IOCTPA,IOCTPB,I_DO_EXACT_BLOCK)
      &            GOTO 8764
 *
                 IF(NTEST.GE.200) THEN
+                  WRITE(6,*) ' PROCESSOR ', ga_nodeid(), 'IS SPEAKING'
                   WRITE(6,*) ' RSSBCB will be called for '
                   WRITE(6,*) ' Sigma block : '
                   WRITE(6,*) ' ISOFF ', ISOFF
@@ -5750,6 +5769,8 @@ c?                 WRITE(6,*) ' Core energy added = ', ECORE
      &             
        CALL MEMCHK2('CHECKC')
                 IF(I_DO_EXACT_BLK.EQ.1) THEN
+cVOG  cpu_vogr  = util_cpusec()
+cVOG  wall_vogr = util_wallsec()
                  CALL RSSBCB2(IASM,IATP,IOCTPA,
      &               IBSM,IBTP,IOCTPB,
      &               LLASM,LLATP,LLBSM,LLBTP,NGAS,
@@ -5772,6 +5793,11 @@ c?                 WRITE(6,*) ' Core energy added = ', ECORE
      &               IH_OCC_CONS,ISIMSYM,XINT2,
      &               MXADKBLK,INEW_CTT,INEW_STT,IEND_CTT,CB(ICOFF_TT),
      &               ITASK,ILEN)
+cVOG  cpu_vogr  = util_cpusec() - cpu_vogr
+cVOG  wall_vogr = util_wallsec()- wall_vogr
+cVOG  write(*,00002) ga_nodeid(), cpu_vogr , wall_vogr !VOG timings
+cVOG00002     format(/'RSSB Proc',i6,' Task  times  cpu:',f11.1,
+cVOG &           's     wall:',f11.1,'s')
                 ELSE IF(I_DO_EXACT_BLK.EQ.-1) THEN
 *. Multiply with diagonal
 C                   ADDDIA_TERM(FACTOR,CVEC,SVEC,IASPGP,IBSPGP,IASM,IBSM,
@@ -5861,6 +5887,7 @@ C?   &          NSSOA(IASM,IATP)* NSSOB(IBSM,IBTP))
 *      (Geneva, just before darkness....)
 *
       IMPLICIT REAL*8(A-H,O-Z)
+#include "global.fh"
       INCLUDE 'mxpdim.inc'
       INCLUDE 'cgas.inc'
       INCLUDE 'gasstr.inc'
@@ -5889,7 +5916,7 @@ C?   &          NSSOA(IASM,IATP)* NSSOB(IBSM,IBTP))
       IOCTPB = IBSPGPFTP(IBTP)
 *
       NTEST = 00
-      IF(NTEST.GE.100) THEN
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         write(6,*) ' IAIBCM speaking '
         WRITE(6,*) ' =============== '
         write(6,*) ' ICISPC, LCMBSPC, ICISPC ' 
@@ -5905,7 +5932,7 @@ C?   &          NSSOA(IASM,IATP)* NSSOB(IBSM,IBTP))
      &            NELFGP,MXPNGAS,NGAS,IAIB,IPRDIA,I_RE_MS2_SPACE,
      &            I_RE_MS2_VALUE,I_CHECK_ENSGS)
 *
-      IF(NTEST.GE.100) THEN
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) 
      &  ' Matrix giving allowed combinations of al-, be-supergroups'
         CALL IWRTMA(IAIB,NOCTPA,NOCTPB,NOCTPA,NOCTPB)

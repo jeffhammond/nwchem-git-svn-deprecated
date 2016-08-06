@@ -169,8 +169,10 @@ cccc#include "frac_occ.fh"
       logical  control_out_of_time,control_new_vpsi
       external control_out_of_time,control_new_vpsi
 
+      logical  pspw_HFX_localize2
       logical  control_SA,control_Fei,pspw_SIC,pspw_HFX,control_pressure
       real*8   control_SA_decay
+      external pspw_HFX_localize2
       external control_SA,control_Fei,pspw_SIC,pspw_HFX,control_pressure
       external control_SA_decay
 
@@ -193,8 +195,8 @@ cccc#include "frac_occ.fh"
       integer  ion_nconstraints,ion_ndof
       external ion_nconstraints,ion_ndof
 
-      logical  psp_pawexist
-      external psp_pawexist
+      logical  psp_pawexist,ion_makehmass2
+      external psp_pawexist,ion_makehmass2
 
 
 *                            |************|
@@ -509,6 +511,7 @@ c      call frac_occ_init(rtdb,ispin,ne)
          if (fractional) write(luout,1132)
          call pspw_print_SIC(luout)
          call pspw_print_HFX(luout)
+         if (ion_makehmass2()) write(luout,1135)
          write(luout,1140)
          do ia = 1,ion_nkatm()
             call psp_print(ia)
@@ -880,7 +883,7 @@ c      call xyz_write()
 
          call dipole_motion_write((control_version().eq.3),
      >                     (icount*it_in*control_time_step()),
-     >                     ispin,ne,n2ft3d,
+     >                     ispin,ne,neq,npack1,nfft3d,
      >                     dbl_mb(dn(1)),
      >                     dcpl_mb(psi1(1)))
 
@@ -1069,19 +1072,22 @@ c         end do
 c         end if
 
 
-*        *** rotate current psi ***
-         call Dneall_fmf_Multiply(0,dcpl_mb(psi1(1)),npack1,
-     >                              dbl_mb(hml(1)),  1.0d0,
-     >                              dcpl_mb(psi2(1)),0.0d0)
+*        **** do not rotate for wannier localization algorithm ****
+         if (.not.pspw_HFX_localize2()) then
+*           *** rotate current psi ***
+            call Dneall_fmf_Multiply(0,dcpl_mb(psi1(1)),npack1,
+     >                                 dbl_mb(hml(1)),  1.0d0,
+     >                                 dcpl_mb(psi2(1)),0.0d0)
 
 
-*        *** rotate current v_psi ***
-         call dcopy(2*npack1*nemaxq,dcpl_mb(psi0(1)),1,
-     >                              dcpl_mb(psi1(1)),1)
+*           *** rotate current v_psi ***
+            call dcopy(2*npack1*nemaxq,dcpl_mb(psi0(1)),1,
+     >                                 dcpl_mb(psi1(1)),1)
 
-         call Dneall_fmf_Multiply(0,dcpl_mb(psi1(1)),npack1,
-     >                              dbl_mb(hml(1)),  1.0d0,
-     >                              dcpl_mb(psi0(1)),0.0d0)
+            call Dneall_fmf_Multiply(0,dcpl_mb(psi1(1)),npack1,
+     >                                 dbl_mb(hml(1)),  1.0d0,
+     >                                 dcpl_mb(psi0(1)),0.0d0)
+         end if
 
       end if
 
@@ -1390,6 +1396,9 @@ c      call frac_occ_end()
  1130 FORMAT(5X,' electron spin        = ',A)
  1131 FORMAT(5X,' exchange-correlation = ',A)
  1132 FORMAT(5X,' using fractional occupation')
+ 1135 FORMAT(/' The masses of QM H atoms converted to 2.0 amu. ',
+     >       /' To turn off this default',
+     >        ' set nwpw:makehmass2 .false.')
  1140 FORMAT(/' elements involved in the cluster:')
  1150 FORMAT(5X,I2,': ',A4,'  core charge:',F4.1,'  lmax=',I1)
  1151 FORMAT(5X,'        cutoff =',4F8.3)

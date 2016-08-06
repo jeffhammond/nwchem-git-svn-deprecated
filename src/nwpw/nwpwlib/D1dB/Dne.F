@@ -20,7 +20,6 @@
 
 #include "bafdecls.fh"
 #include "errquit.fh"
-
 #include "Dne.fh"
 
 *     **** local variables ****
@@ -979,7 +978,7 @@ c     >             dbl_mb(rwork1(1)),dbl_mb(rwork2(1)))
             if (n.le.0) go to 30
             shift  = 1 + (ms-1)*ne(1)*npack1
             shift2 = 1 + (ms-1)*ishift2
-            call DGEMM('N','N',2*npack1,n,n,
+            call DGEMM_OMP('N','N',2*npack1,n,n,
      >                (alpha),
      >                Ain(shift),  2*npack1,
      >                hml(shift2),    n,
@@ -1098,7 +1097,7 @@ c      call Pack_npack(1,npack1)
             if (n.le.0) go to 30
             shift  = 1 + (ms-1)*ne(1)*npack1
             shift2 = 1 + (ms-1)*ishift2
-            call DGEMM('N','N',2*npack1,n,n,
+            call DGEMM_OMP('N','N',2*npack1,n,n,
      >                (alpha),
      >                Ain(shift),  2*npack1,
      >                hml(shift2),    n,
@@ -1531,11 +1530,107 @@ c     ****************************************
       end
 
 
+c     ****************************************
+c     *                                      *
+c     *        Dneall_w_determinant          *
+c     *                                      *
+c     ****************************************
 
 
 c     ****************************************
 c     *                                      *
-c     *        Dneall_m_diagonalize         *
+c     *        Dneall_w_eigenvalues          *
+c     *                                      *
+c     ****************************************
+
+c  This routine compute the complex eigenvalues of a complex matrix.
+
+      subroutine Dneall_w_eigenvalues(mb,hml,eig)
+      implicit none
+      integer    mb
+      complex*16 hml(*),eig(*)
+
+#include "bafdecls.fh"
+#include "errquit.fh"
+#include "Dne.fh"
+
+*     ***** local variables ****
+      integer MASTER
+      parameter (MASTER=0)
+      logical value
+      integer ms,ms1,ms2,shift1,shift2,ishift1,ishift2,ierr
+      integer tmp1(2),tmp2(2),tmp3(2),V(2),VV(2),Q(2),tu(2),ework(2)
+
+      call nwpw_timing_start(17)
+
+      if (mparallelized) then
+         write(*,*) " WARNING : NEEDS to be fixed for distributed m"
+         call errquit('WARNING Dneall_w_eigenvalues failed',0,MA_ERR)
+      else
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift1 = ne(1)
+            ishift2 = ne(1)*ne(1)
+            call dcopy(2*(ne(1)+ne(2)),0.0d0,0,eig,1)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift1 = 0
+            ishift2 = 0
+            call dcopy(2*ne(mb),0.0d0,0,eig,1)
+         end if
+
+         value = BA_push_get(mt_dbl,(2*ne(1)*ne(1)),
+     >                       'tmp1',tmp1(2),tmp1(1))
+         value = value.and.
+     >                 BA_push_get(mt_dbl,(4*ne(1)*ne(1)),
+     >                       'tmp2',tmp2(2),tmp2(1))
+         value = value.and.
+     >           BA_push_get(mt_dbl,(2*ne(1)),
+     >                       'tmp3',tmp3(2),tmp3(1))
+         if (.not. value)
+     >      call errquit('Dneall_w_eigenvalues:out of stack',
+     >                    1,MA_ERR)
+
+*        ***** diagonalize the matrix *****
+         do ms=ms1,ms2
+            shift1 = 1+(ms-1)*ishift1
+            shift2 = 1+(ms-1)*ishift2
+            if (ne(ms).le.0) go to 30
+!$OMP MASTER
+            call dcopy(2*ne(ms)*ne(ms),hml(shift1),1,dbl_mb(tmp1(1)),1)
+            call ZGEEV('N','N',ne(ms),
+     >                 dbl_mb(tmp1(1)),ne(ms),
+     >                 eig(shift1),
+     >                 dbl_mb(tmp2(1)),1,dbl_mb(tmp2(1)),1,
+     >                 dbl_mb(tmp2(1)),2*ne(1)*ne(1),
+     >                 dbl_mb(tmp3(1)),
+     >                 ierr)
+!$OMP END MASTER
+!$OMP BARRIER
+  30        continue
+         end do
+
+         value =           BA_pop_stack(tmp3(2))
+         value = value.and.BA_pop_stack(tmp2(2))
+         value = value.and.BA_pop_stack(tmp1(2))
+         if (.not.value)
+     >    call errquit('error popping stack in Dneall_w_eigenvalues',
+     >                 0,MA_ERR)
+
+      end if
+
+      call nwpw_timing_end(17)
+      return
+      end 
+
+
+
+
+c     ****************************************
+c     *                                      *
+c     *        Dneall_m_diagonalize          *
 c     *                                      *
 c     ****************************************
 
@@ -1593,6 +1688,7 @@ c     ****************************************
 
       
             call nwpw_timing_start(22)
+            write(*,*) "into tredq"
             call DMatrix_tredq(ne(ms),
      >                hml(shift2),dbl_mb(Q(1)),
      >                mcq(ms),int_mb(mc(1,ms)),int_mb(nc(1,ms)),
@@ -1603,6 +1699,7 @@ c     ****************************************
      >                dbl_mb(V(1)),dbl_mb(VV(1)))
             call nwpw_timing_end(22)
 
+            write(*,*) "into get_diags"
             call nwpw_timing_start(23)
             call DMatrix_getdiags(ne(ms),
      >                eig(shift1),dbl_mb(tu(1)),
@@ -1615,6 +1712,7 @@ c     ****************************************
             call dcopy(mcq(ms)*ncq(ms),dbl_mb(Q(1)),1,hml(shift2),1)
             call nwpw_timing_end(23)
 
+            write(*,*) "into tqliq"
             call nwpw_timing_start(24)
             call DMatrix_tqliq(ne(ms),
      >                eig(shift1),dbl_mb(tu(1)),
@@ -1680,6 +1778,7 @@ c     ****************************************
             shift2 = 1+(ms-1)*ishift2
             if (ne(ms).le.0) go to 30
 
+!$OMP MASTER
             call DSYEV('V','U',ne(ms),
      >                 hml(shift2),ne(ms), 
      >                 eig(shift1),
@@ -1687,9 +1786,11 @@ c     ****************************************
      >                 ierr)
 
             if (.not.assending)
-     >         call eigsrt(eig(shift1),
+     >         call EIGSRT(eig(shift1),
      >                   hml(shift2),
      >                   ne(ms),ne(ms))
+!$OMP END MASTER
+!$OMP BARRIER
 
   30        continue
          end do
@@ -1717,7 +1818,7 @@ c     *        Dneall_m_cholesky             *
 c     *                                      *
 c     ****************************************
 
-*   This routine computes teh cholesky decomposition of a postitive definate
+*   This routine computes the cholesky decomposition of a postitive definate
 *  matrix A = L*L'   On exit A is replaced by L.
       subroutine Dneall_m_cholesky(mb,A)
       implicit none
@@ -1729,79 +1830,57 @@ c     ****************************************
 #include "Dne.fh"
 
 *     **** local variables ****
-      integer i,j,ms,ms1,ms2,nj,nn,ishift1,ishift2,shift1,shift2,indx
-      integer S(2)
+      integer i,j,ms,ms1,ms2,nn,ishift2,shift2,ierr
 
       if (mb.eq.0) then
          ms1 = 1
          ms2 = ispin
-         nj  = ne(1)+ne(2)
-         ishift1 = ne(1)
          ishift2 = ne(1)*ne(1)
       else
          ms1 = mb
          ms2 = mb
-         nj  = ne(mb)
-         ishift1 = 0
          ishift2 = 0
       end if
 
-      if (.not.BA_push_get(mt_dbl,nj,'Swork',S(2),S(1)))
-     >      call errquit('Dneall_m_cholesky:out of stack',
-     >                    0,MA_ERR)
-
-*     **** generate V and Sigma^2 ****
-      call Dneall_m_diagonalize(mb,A,dbl_mb(S(1)),.false.)
-      do j=1,nj
-         if (dbl_mb(S(1)+j-1).lt.0.0d0)
-     >       dbl_mb(S(1)+j-1) = dabs(dbl_mb(S(1)+j-1))
-         dbl_mb(S(1)+j-1) = dsqrt(dbl_mb(S(1)+j-1))
-      end do
-
 *     ***** WARNING : NEEDS to fixed for distributed m ****
       if (mparallelized) then
-         write(*,*) " WARNING : NEEDS to fixed for distributed m"
+         write(*,*) " WARNING : NEEDS to be fixed for distributed m"
          call errquit('WARNING Dneall_m_cholesky failed',0,MA_ERR)
       else
          do ms=ms1,ms2
-            shift1 = (ms-1)*ishift1
-            shift2 = (ms-1)*ishift2
-            do j=1,ne(ms)
-               do i=1,ne(ms)
-                  indx = i+(j-1)*ne(ms) + shift2
-                  A(indx) = A(indx) * dbl_mb(S(1)+i-1+shift1)
-               end do
-            end do
+            shift2 = (ms-1)*ishift2+1
+            call DPOTRF('L',ne(ms),A(shift2),ne(ms),ierr)
          end do
       end if
-      if (.not.BA_pop_stack(S(2)))
-     >   call errquit('error popping stack in Dneall_m_cholesky',
-     >                0,MA_ERR)
 
       return
       end
 
 
+
+
 c     ****************************************
 c     *                                      *
-c     *        Dneall_mf_forwardsolve        *
+c     *        Dneall_mg_forwardsolve        *
 c     *                                      *
 c     ****************************************
 
 *   This routine computes transpose(B) =  inv(L)*transpose(A)
 *  On exit A is replaced by B.
-      subroutine Dneall_mf_forwardsolve(mb,L,n2ft3d,A)
+      subroutine Dneall_mg_forwardsolve(mb,L,n2ft3d,A)
       implicit none
       integer mb,n2ft3d
       real*8 L(*),A(n2ft3d,*)
 
+#include "bafdecls.fh"           
 #include "errquit.fh"
 #include "Dne.fh"
 
 *     **** local variables ****
-      real*8 tmp
+      !real*8 tmp
       integer i,j,k,ms,ms1,ms2,shift1,shift2,ishift1,ishift2,indx,indx0
-      integer p,q
+      integer p,q,ii,jj
+      integer tmp(2)
 
       if (mb.eq.0) then
          ms1 = 1
@@ -1817,27 +1896,49 @@ c     ****************************************
 
       if (mparallelized) then
          write(*,*) " WARNING : NEEDS to fixed for distributed m"
-         call errquit('WARNING Dneall_mf_forwardsolve failed',0,MA_ERR)
+         call errquit('WARNING Dneall_mg_forwardsolve failed',0,MA_ERR)
       else
-      do k=1,n2ft3d
+
+         if (.not.BA_push_get(mt_dbl,n2ft3d,'tmp',tmp(2),tmp(1)))
+     >      call errquit('Dneall_mg_forwardsolve:out of stack',0,MA_ERR)
+
          do ms=ms1,ms2
             shift1 = (ms-1)*ishift1
             shift2 = (ms-1)*ishift2
-            do j=1,ne(ms)
-               indx0 = j+(j-1)*ne(ms)+shift2
-               tmp = 0.0d0
-               do i=1,j-1
-                  call Dneall_ntoqp(i,q,p)
+            do i=1,ne(ms)
+               indx0 = i+(i-1)*ne(ms)+shift2
+               !tmp = 0.0d0
+               !call dcopy(n2ft3d,0.0d0,0,dbl_mb(tmp(1)),1)
+               call Parallel_shared_vector_zero(.true.,n2ft3d,
+     >                                          dbl_mb(tmp(1)))
+               do j=1,i-1
+                  jj = j + shift1
+                  call Dneall_ntoqp(jj,q,p)
                   if (p.eq.taskid_j) then
                      indx = i+(j-1)*ne(ms)+shift2
-                     tmp = tmp + L(indx)*A(k,q+shift1)
+                     !tmp = tmp + L(indx)*A(k,q+shift1)
+                     !write(*,*) "i,j,L=",i,j,L(indx)
+                     call daxpy_omp(n2ft3d,L(indx),A(1,q),1,
+     >                              dbl_mb(tmp(1)),1)
                   end if
-               end do
-               call D1dB_SumAll(tmp)
-               A(k,j) = (A(k,j)-tmp)/L(indx0)
-            end do
-         end do
-      end do
+               end do !*j*
+               !call D1dB_SumAll(tmp)
+               !A(k,j) = (A(k,j)-tmp)/L(indx0)
+               !write(*,*) "i,L(i,i)=",i,L(indx0)
+               call D1dB_Vector_SumAll(n2ft3d,dbl_mb(tmp(1)))
+               ii = i + shift1
+               call Dneall_ntoqp(ii,q,p)
+               if (p.eq.taskid_j) then
+                 call daxpy_omp(n2ft3d,-1.0d0,dbl_mb(tmp(1)),1,A(1,q),1)
+                 call dscal_omp(n2ft3d,(1.0d0/L(indx0)),A(1,q),1)
+               end if
+            end do !*i*
+         end do !*ms*
+
+         if (.not.BA_pop_stack(tmp(2)))
+     >      call errquit('Dneall_mg_forwardsolve: popping stack',
+     >                   0,MA_ERR)
+
       end if
 
       return
@@ -2245,14 +2346,14 @@ c            call Pack_c_SMul(1,sum1,U(indxk),U(indxk))
 
 c     ****************************************
 c     *                                      *
-c     *        Dneall_mm_transpose          *
+c     *        Dneall_mm_transpose           *
 c     *                                      *
 c     ****************************************
 
-      subroutine Dneall_mm_transpose(mb,Min,Mout)
+      subroutine Dneall_mm_transpose(mb,M0,M1)
       implicit none
       integer mb
-      real*8  Min(*),Mout(*)
+      real*8  M0(*),M1(*)
 
 
 #include "bafdecls.fh"
@@ -2276,7 +2377,7 @@ c     ****************************************
            if (ne(ms).le.0) goto 20
            shift2 = 1 + (ms-1)*ishift2
            call DMatrix_mm_transpose(ne(ms),
-     >                 Min(shift2),Mout(shift2),
+     >                 M0(shift2),M1(shift2),
      >                 mcq(ms),int_mb(mc(1,ms)),int_mb(nc(1,ms)))
  20        continue
          end do
@@ -2296,7 +2397,7 @@ c     ****************************************
            if (ne(ms).le.0) goto 30
            shift2 = 1 + (ms-1)*ishift2
            call Dneall_mm_transpose_sub(ne(ms),
-     >                 Min(shift2),Mout(shift2))
+     >                 M0(shift2),M1(shift2))
  30        continue
          end do
       end if
@@ -2310,11 +2411,13 @@ c     ****************************************
       real*8 A(n,n)
       real*8 B(n,n)
       integer i,j
+!$OMP DO
       do j=1,n
          do i=1,n
             B(i,j) = A(j,i)
          end do
       end do
+!$OMP END DO
       return
       end
 
@@ -2680,7 +2783,7 @@ c     ****************************************
             n     = ne(ms)
             if (n.le.0) go to 30
             shift2 = 1 + (ms-1)*ishift2
-            call DGEMM('T','N',n,n,n,1.0d0,
+            call DGEMM_OMP('T','N',n,n,n,1.0d0,
      >                A(shift2), n,
      >                B(shift2), n,
      >                0.0d0,
@@ -2768,7 +2871,7 @@ c     ****************************************
             n     = ne(ms)
             if (n.le.0) go to 30
             shift2 = 1 + (ms-1)*ishift2
-            call DGEMM('N','T',n,n,n,1.0d0,
+            call DGEMM_OMP('N','T',n,n,n,1.0d0,
      >                A(shift2), n,
      >                B(shift2), n,
      >                0.0d0,
@@ -2860,7 +2963,7 @@ c     ****************************************
             n     = ne(ms)
             if (n.le.0) go to 30
             shift2 = 1 + (ms-1)*ishift2
-            call DGEMM('N','N',n,n,n,
+            call DGEMM_OMP('N','N',n,n,n,
      >                alpha,
      >                A(shift2), n,
      >                B(shift2), n,
@@ -3057,6 +3160,84 @@ c     ****************************************
       end
 
 
+
+c     ****************************************
+c     *                                      *
+c     *           Dneall_m_sqr_trace         *
+c     *                                      *
+c     ****************************************
+      double precision function Dneall_m_sqr_trace(mb,M)
+      implicit none
+      integer mb
+      real*8  M(*)
+
+#include "bafdecls.fh"
+#include "Dne.fh"
+
+*     **** local variables ****
+      integer ms,ms1,ms2,shift2,ishift2,indx,i,j
+      real*8  sum
+
+*     ***** external functions ****
+      real*8   DMatrix_sqr_trace
+      external DMatrix_sqr_trace
+      if (mparallelized) then
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = mcq(1)*ncq(1)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+         end if
+         sum = 0.0d0
+         do ms=ms1,ms2
+            shift2 = 1 + (ms-1)*ishift2
+            sum =  sum + DMatrix_sqr_trace(ne(ms),
+     >                                     M(shift2),mcq(ms),
+     >                                     int_mb(mc(1,ms)),
+     >                                     int_mb(nc(1,ms)),
+     >                                     taskid_i,taskid_j)
+         end do
+
+      else
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = ne(1)*ne(1)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+         end if
+
+         sum = 0.0d0
+         do ms=ms1,ms2
+
+           if (ne(ms).le.0) goto 30
+           shift2 = (ms-1)*ishift2
+
+           do j=1,ne(ms)
+           do i=1,ne(ms)
+              indx = i + (j-1)*ne(ms) + shift2
+              sum = sum + M(indx)**2
+           end do
+           end do
+
+ 30        continue
+         end do
+      end if
+
+      Dneall_m_sqr_trace = sum
+      return
+      end
+
+
+
+
+
+
 c     ****************************************
 c     *                                      *
 c     *           Dneall_m_scal             *
@@ -3088,7 +3269,7 @@ c     ****************************************
          end if
       end if
 
-      call dscal(nn,alpha,M,1)
+      call dscal_omp(nn,alpha,M,1)
       return
       end
 
@@ -3292,6 +3473,7 @@ c     ****************************************
            if (ne(ms).le.0) go to 30
            shift2 = (ms-1)*ishift2
 
+!$OMP DO
            do k=1,ne(ms)
               indx = k + (k-1)*ne(ms) + shift2
               s22(indx) = (1.0d0 - s22(indx))*0.5d0/dte
@@ -3304,6 +3486,7 @@ c     ****************************************
                  s22(indxt) = s22(indx)
               end do
            end do
+!$OMP END DO
 
  30        continue
          end do
@@ -3365,6 +3548,7 @@ c     ****************************************
            if (ne(ms).le.0) go to 30
            shift2 = (ms-1)*ishift2
 
+!$OMP DO
            do k=1,ne(ms)
               indx = k + (k-1)*ne(ms) + shift2
               s21(indx) = (1.0d0 - s21(indx))*0.5d0
@@ -3377,6 +3561,7 @@ c     ****************************************
                  s21(indxt) = s21(indx)
               end do
            end do
+!$OMP END DO
 
  30        continue
          end do
@@ -3438,6 +3623,7 @@ c     ****************************************
            if (ne(ms).le.0) go to 30
            shift2 = (ms-1)*ishift2
 
+!$OMP DO
            do k=1,ne(ms)
               indx = k + (k-1)*ne(ms) + shift2
               s11(indx) = -s11(indx)*0.5d0*dte
@@ -3450,6 +3636,7 @@ c     ****************************************
                  s11(indxt) = s11(indx)
               end do
            end do
+!$OMP END DO
 
  30        continue
          end do
@@ -3646,7 +3833,8 @@ c     ****************************************
 
       end if
 
-      call dcopy(nn,A,1,A0(shift2),1)
+      !call dcopy(nn,A,1,A0(shift2),1)
+      call Parallel_shared_vector_copy(.true.,nn,A,A0(shift2))
       return
       end
 
@@ -3901,8 +4089,13 @@ c     ****************************************
          if (.not.value)
      >   call errquit('Dneall_m_add_sw1sw2:push stack',0,MA_ERR)
 
-         call dcopy(nn*nprj,0.0d0,0,dbl_mb(sw1b(1)),1)
-         call dcopy(nn*nprj,0.0d0,0,dbl_mb(sw2b(1)),1)
+         !call dcopy(nn*nprj,0.0d0,0,dbl_mb(sw1b(1)),1)
+         !call dcopy(nn*nprj,0.0d0,0,dbl_mb(sw2b(1)),1)
+         call Parallel_shared_vector_zero(.false.,nn*nprj,
+     >                                    dbl_mb(sw1b(1)))
+         call Parallel_shared_vector_zero(.true.,nn*nprj,
+     >                                    dbl_mb(sw2b(1)))
+!$OMP MASTER
          do q=1,nnq
             call Dneall_qton(q+mshiftp,n)
             n = n-mshiftm
@@ -3913,6 +4106,8 @@ c     ****************************************
             call dcopy(nprj,sw1(q),nnq,dbl_mb(sw1b(1)+n-1),nn)
             call dcopy(nprj,sw2(q),nnq,dbl_mb(sw2b(1)+n-1),nn)
          end do
+!$OMP END MASTER
+!$OMP BARRIER
          call D1dB_SumAll(nn*nprj,dbl_mb(sw1b(1)))
          call D1dB_SumAll(nn*nprj,dbl_mb(sw2b(1)))
 
@@ -3936,9 +4131,12 @@ c     ****************************************
      >                                     int_mb(mc(1,ms)),
      >                                     int_mb(nc(1,ms)))
                   if (pto.eq.taskid) then
+!$OMP MASTER
                      w = ddot(nprj,dbl_mb(sw1b(1)+i-1+shift1),nn,
      >                             dbl_mb(sw2b(1)+j-1+shift1),nn)
                      call Dneall_m_add_value(scal*w,mb,ms,i,j,S)
+!$OMP END MASTER
+!$OMP BARRIER
                   end if
                end do
                end do
@@ -3960,7 +4158,7 @@ c     ****************************************
                if (ne(ms).gt.0) then
                   shift1 =   (ms-1)*ishift1
                   shift2 = 1+(ms-1)*ishift2
-                  call DGEMM('N','T',ne(ms),ne(ms),nprj,
+                  call DGEMM_OMP('N','T',ne(ms),ne(ms),nprj,
      >                       scal,
      >                       dbl_mb(sw1b(1)+shift1), nn,
      >                       dbl_mb(sw2b(1)+shift1), nn,
@@ -3991,7 +4189,7 @@ c     ****************************************
             if (ne(ms).gt.0) then
                shift1 = 1+(ms-1)*ishift1
                shift2 = 1+(ms-1)*ishift2
-               call DGEMM('N','T',
+               call DGEMM_OMP('N','T',
      >                    ne(ms),ne(ms),nprj,
      >                    scal,
      >                    sw1(shift1), nn,
@@ -4230,17 +4428,22 @@ c     ****************************************
            shift1 = 1 + (ms-1)*ishift1
            shift2 = 1 + (ms-1)*ishift2
 
-           indx1 = shift1
-           indx2 = shift2
+           !indx1 = shift1
+           !indx2 = shift2
+!$OMP DO
            do k=1,ne(ms)
-              indx3 = shift1
+              !indx3 = shift1
+              indx1 = shift1+(k-1)
               do j=1,ne(ms)
+                indx2 = shift2+(k-1)*ne(ms)+(j-1)
+                indx3 = shift1+(j-1)
                 A(indx2) = A(indx2)/(D(indx1)+D(indx3))
-                indx2 = indx2 + 1
-                indx3 = indx3 + 1
+                !indx2 = indx2 + 1
+                !indx3 = indx3 + 1
               end do
-              indx1 = indx1 + 1
+              !indx1 = indx1 + 1
            end do
+!$OMP END DO
 
  30        continue
          end do
@@ -4387,12 +4590,17 @@ c     ****************************************
          do ms=ms1,ms2
            if (ne(ms).le.0) go to 30
            shift2 = 1 + (ms-1)*ishift2
-           call dcopy(ne(ms)*ne(ms),0.0d0,0,A(shift2),1)
+           !call dcopy(ne(ms)*ne(ms),0.0d0,0,A(shift2),1)
+           call Parallel_shared_vector_zero(.true.,ne(ms)*ne(ms),
+     >                                      A(shift2))
            indx2 = shift2
+!$OMP DO
            do k=1,ne(ms)
+              indx2 = shift2 + (k-1)*(1+ne(ms))
               A(indx2) = alpha
-              indx2    = indx2 + (1+ne(ms))
+              !indx2    = indx2 + (1+ne(ms))
            end do
+!$OMP END DO
 
  30        continue
          end do
@@ -4566,7 +4774,9 @@ c     ****************************************
       integer ms,ms1,ms2,n,shift,j,k,indxk,indxj
       integer V(2),tmp2(2),S(2),A(2)
       integer jj,kk,jcur,kcur
-      real*8 sum1,w
+
+      real*8 w
+      common /Dneall_f_Sortho_tmp/ w
 
  
       if (parallelized) then
@@ -4591,9 +4801,15 @@ c     ****************************************
                if (kcur.eq.taskid_j) then
                  indxk = 1 + kk*npack1    + (ms-1)*shift
                   call Pack_cc_dot(1,U(indxk),SU(indxk),w)
+!$OMP MASTER
                   w        = 1.0d0/dsqrt(w)
+!$OMP END MASTER
+!$OMP BARRIER
                   call Pack_c_SMul1(1,w,U(indxk))
-                  call dcopy(2*npack1,U(indxk),1,dcpl_mb(A(1)),1)
+                  !call dcopy(2*npack1,U(indxk),1,dcpl_mb(A(1)),1)
+                  call Parallel_shared_vector_copy(.true.,2*npack1,
+     >                                        U(indxk),
+     >                                        dcpl_mb(A(1)))
                end if
                if (kcur.gt.0) 
      >            call D1dB_Brdcst_values(kcur,2*npack1,dcpl_mb(A(1)))
@@ -4612,7 +4828,10 @@ c              *** set j = k+1 ***
                   if (jcur.eq.taskid_j) then
                      indxj = 1 + jj*npack1    + (ms-1)*shift
                      call Pack_cc_dot(1,dcpl_mb(A(1)),SU(indxj),w)
+!$OMP MASTER
                      w = -w
+!$OMP END MASTER
+!$OMP BARRIER
                      call Pack_cc_daxpy(1,w,dcpl_mb(A(1)),U(indxj))
                   end if
 
@@ -4653,16 +4872,22 @@ c     **** not parallized ****
          do ms=ms1,ms2
          do k=ne(ms),1,-1
             indxk = 1+(k-1)*npack1 + (ms-1)*shift
-            call Pack_cc_dot(1,U(indxk),SU(indxk),sum1)
-            sum1 = 1.0d0/dsqrt(sum1)
-c            call Pack_c_SMul(1,sum1,U(indxk),U(indxk))
-            call Pack_c_SMul1(1,sum1,U(indxk))
+            call Pack_cc_dot(1,U(indxk),SU(indxk),w)
+!$OMP MASTER
+            w = 1.0d0/dsqrt(w)
+!$OMP END MASTER
+!$OMP BARRIER
+c            call Pack_c_SMul(1,w,U(indxk),U(indxk))
+            call Pack_c_SMul1(1,w,U(indxk))
 
             do j=k-1,1,-1
                indxj = 1+(j-1)*npack1 + (ms-1)*shift
-               call Pack_cc_dot(1,U(indxk),SU(indxj),sum1)
-               sum1 = -sum1
-               call Pack_cc_daxpy(1,sum1,U(indxk),U(indxj))
+               call Pack_cc_dot(1,U(indxk),SU(indxj),w)
+!$OMP MASTER
+               w = -w
+!$OMP END MASTER
+!$OMP BARRIER
+               call Pack_cc_daxpy(1,w,U(indxk),U(indxj))
             end do
          end do
          end do
@@ -4677,10 +4902,13 @@ c            call Pack_c_SMul(1,sum1,U(indxk),U(indxk))
       integer nall,npack,indx(*)
       real*8 A(*),B(*)
       integer i
-      call dcopy(nall,0.0d0,0,B,1)
+      !call dcopy(nall,0.0d0,0,B,1)
+      call Parallel_shared_vector_zero(.true.,nall,B)
+!$OMP DO
       do i=1,npack
          B(indx(i)) = A(i)
       end do  
+!$OMP END DO
       call Parallel_Vector_SumAll(nall,B)
       return
       end
@@ -4690,9 +4918,11 @@ c            call Pack_c_SMul(1,sum1,U(indxk),U(indxk))
       integer npack,indx(*)
       real*8 A(*),B(*)
       integer i
+!$OMP DO
       do i=1,npack
          B(i) = A(indx(i))
       end do  
+!$OMP END DO
       return
       end
 
@@ -7084,7 +7314,127 @@ c     ****************************************
 
 c     ****************************************
 c     *                                      *
-c     *        Dneall_ggm_sym_Multiply      *
+c     *        Dneall_gmg_Multiply           *
+c     *                                      *
+c     ****************************************
+
+*  uses rotation algorithm
+
+      subroutine Dneall_gmg_Multiply(mb,Ain,n2ft3d,
+     >                                   hml,alpha,
+     >                                   Aout,beta)
+      implicit none
+      integer    mb
+      real*8     Ain(*)
+      integer    n2ft3d
+      real*8     hml(*)
+      real*8     alpha
+      real*8     Aout(*)
+      real*8     beta
+
+#include "bafdecls.fh"
+#include "Dne.fh"
+
+*     **** local variables ****
+      integer ms,ms1,ms2,n,shift,shift2,shift3,ishift2,ishift3
+
+
+      call nwpw_timing_start(16)
+      if (parallelized) then
+       if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = mcq(1)*ncq(1)
+            ishift3 = ne(1)*ne(1)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+            ishift3 = 0
+         end if
+
+         if (mparallelized) then
+            do ms=ms1,ms2
+               shift  = 1 + (ms-1)*neq(1)*n2ft3d
+               shift2 = 1 + (ms-1)*ishift2
+               call DMatrix_dgemm1_rot(n2ft3d_all,ne(ms),ne(ms),
+     >                alpha,
+     >                Ain(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                           int_mb(ma2(1,ms)),
+     >                           int_mb(na(1,ms)),
+     >                hml(shift2),mcq(ms),
+     >                            int_mb(mc(1,ms)),
+     >                            int_mb(nc(1,ms)),
+     >                beta,
+     >                Aout(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                            int_mb(ma2(1,ms)),
+     >                            int_mb(na(1,ms)),
+     >                taskid_i,taskid_j,
+     >                np_i,np_j,
+     >                comm_i, comm_j,
+     >                dbl_mb(bcolwork(1)),dbl_mb(bwork2(1)),
+     >                dbl_mb(rwork1(1)),dbl_mb(rwork2(1)))
+            end do
+         else
+            do ms=ms1,ms2
+               shift  = 1 + (ms-1)*neq(1)*n2ft3d
+               shift3 = 1 + (ms-1)*ishift3
+               call DMatrix_dgemm1_rot2(n2ft3d_all,ne(ms),ne(ms),
+     >                alpha,
+     >                Ain(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                           int_mb(ma2(1,ms)),
+     >                           int_mb(na(1,ms)),
+     >                hml(shift3),mcq(ms),
+     >                            int_mb(mc(1,ms)),
+     >                            int_mb(nc(1,ms)),
+     >                beta,
+     >                Aout(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                            int_mb(ma2(1,ms)),
+     >                            int_mb(na(1,ms)),
+     >                taskid_i,taskid_j,
+     >                np_i,np_j,
+     >                comm_i, comm_j,
+     >                dbl_mb(bcolwork(1)),dbl_mb(bwork2(1)),
+     >                dbl_mb(rwork1(1)),dbl_mb(rwork2(1)))
+            end do
+         end if
+
+
+      else
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = ne(1)*ne(1)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+         end if
+
+         do ms=ms1,ms2
+            n     = ne(ms)
+            if (n.le.0) go to 30
+            shift  = 1 + (ms-1)*ne(1)*n2ft3d
+            shift2 = 1 + (ms-1)*ishift2
+            call DGEMM_OMP('N','N',n2ft3d,n,n,
+     >                (alpha),
+     >                Ain(shift),  n2ft3d,
+     >                hml(shift2),    n,
+     >                (beta),
+     >                Aout(shift),n2ft3d)
+   30       continue
+         end do
+      end if
+
+      call nwpw_timing_end(16)
+      return
+      end
+
+
+
+c     ****************************************
+c     *                                      *
+c     *        Dneall_ggm_sym_Multiply       *
 c     *                                      *
 c     ****************************************
 
@@ -7193,6 +7543,251 @@ c     ****************************************
       call nwpw_timing_end(15)
       return
       end
+
+
+
+c     ****************************************
+c     *                                      *
+c     *        Dneall_ggm_Multiply           *
+c     *                                      *
+c     ****************************************
+
+      subroutine Dneall_ggm_Multiply(mb,A1,A2,alpha,n2ft3d,hml,beta)
+      implicit none
+      integer    mb
+      real*8     A1(*),A2(*),alpha
+      integer    n2ft3d
+      real*8     hml(*),beta
+           
+#include "bafdecls.fh"
+#include "Dne.fh"
+
+*     **** local variables ****
+      integer ms,ms1,ms2,n,shift,shift2,ishift2,nn
+
+      call nwpw_timing_start(15)
+      if (parallelized) then
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = mcq(1)*ncq(1)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+         end if
+
+         if (mparallelized) then
+         do ms=ms1,ms2
+            if (ne(ms).le.0) go to 20
+            shift  = 1 + (ms-1)*neq(1)*n2ft3d
+            shift2 = 1 + (ms-1)*ishift2
+            call DMatrix_dgemm2(ne(ms),ne(ms),n2ft3d_all,128,
+     >             alpha,
+     >             A1(shift),int_mb(ma2(1,ms)+taskid_i), 
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             A2(shift),int_mb(ma2(1,ms)+taskid_i), 
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             beta,
+     >             hml(shift2),int_mb(mc(1,ms)+taskid_i), 
+     >                         int_mb(mc(1,ms)),
+     >                         int_mb(nc(1,ms)),
+     >             taskid_i,taskid_j,
+     >             np_i,np_j,
+     >             comm_i, comm_j,
+     >             dbl_mb(work1(1)),dbl_mb(work2(1)))
+
+  20        continue
+         end do
+         else
+         do ms=ms1,ms2
+            if (ne(ms).le.0) go to 21
+            shift  = 1 + (ms-1)*neq(1)*n2ft3d
+            shift2 =     (ms-1)*ishift2
+            call DMatrix_dgemm2(ne(ms),ne(ms),n2ft3d_all,128,
+     >             alpha,
+     >             A1(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             A2(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             beta,
+     >             dbl_mb(mat_tmp(1)+shift2),int_mb(mc(1,ms)+taskid_i),
+     >                         int_mb(mc(1,ms)),
+     >                         int_mb(nc(1,ms)),
+     >             taskid_i,taskid_j,
+     >             np_i,np_j,
+     >             comm_i, comm_j,
+     >             dbl_mb(work1(1)),dbl_mb(work2(1)))
+
+  21        continue
+         end do
+         call Dneall_m_gather(mall(mb),mpack(mb),int_mb(mindx(1,mb)),
+     >                        dbl_mb(mat_tmp(1)),hml)
+
+         end if
+      else
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = ne(1)*ne(1)
+            nn      = ne(1)*ne(1) + ne(2)*ne(2)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+            nn      = ne(mb)*ne(mb)
+         end if
+
+         do ms=ms1,ms2
+            shift  = 1 + (ms-1)*ne(1)*n2ft3d
+            shift2 = 1 + (ms-1)*ishift2
+            n     = ne(ms)
+            if (n.le.0) go to 30
+
+            call DGEMM_OMP('T','N',n,n,n2ft3d,
+     >                alpha,
+     >                A1(shift), n2ft3d,
+     >                A2(shift), n2ft3d,
+     >                beta,
+     >                hml(shift2),n)
+
+  30        continue
+         end do
+         call D3dB_Vector_SumAll(nn,hml)
+
+      end if
+
+      call nwpw_timing_end(15)
+      return
+      end
+
+
+
+
+c     ****************************************
+c     *                                      *
+c     *        Dneall_ggm_AMultiply          *
+c     *                                      *
+c     ****************************************
+
+      subroutine Dneall_ggm_AMultiply(mb,A1,A2,alpha,n2ft3d,hml,beta)
+      implicit none
+      integer    mb
+      real*8     A1(*),A2(*),alpha
+      integer    n2ft3d
+      real*8     hml(*),beta
+           
+#include "bafdecls.fh"
+#include "Dne.fh"
+
+*     **** local variables ****
+      integer ms,ms1,ms2,n,shift,shift2,ishift2,nn
+
+      call nwpw_timing_start(15)
+      if (parallelized) then
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = mcq(1)*ncq(1)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+         end if
+
+         if (mparallelized) then
+         do ms=ms1,ms2
+            if (ne(ms).le.0) go to 20
+            shift  = 1 + (ms-1)*neq(1)*n2ft3d
+            shift2 = 1 + (ms-1)*ishift2
+            call DMatrix_dgamm2(ne(ms),ne(ms),n2ft3d_all,128,
+     >             alpha,
+     >             A1(shift),int_mb(ma2(1,ms)+taskid_i), 
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             A2(shift),int_mb(ma2(1,ms)+taskid_i), 
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             beta,
+     >             hml(shift2),int_mb(mc(1,ms)+taskid_i), 
+     >                         int_mb(mc(1,ms)),
+     >                         int_mb(nc(1,ms)),
+     >             taskid_i,taskid_j,
+     >             np_i,np_j,
+     >             comm_i, comm_j,
+     >             dbl_mb(work1(1)),dbl_mb(work2(1)))
+
+  20        continue
+         end do
+         else
+         do ms=ms1,ms2
+            if (ne(ms).le.0) go to 21
+            shift  = 1 + (ms-1)*neq(1)*n2ft3d
+            shift2 =     (ms-1)*ishift2
+            call DMatrix_dgamm2(ne(ms),ne(ms),n2ft3d_all,128,
+     >             alpha,
+     >             A1(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             A2(shift),int_mb(ma2(1,ms)+taskid_i),
+     >                       int_mb(ma2(1,ms)),
+     >                       int_mb(na(1,ms)),
+     >             beta,
+     >             dbl_mb(mat_tmp(1)+shift2),int_mb(mc(1,ms)+taskid_i),
+     >                         int_mb(mc(1,ms)),
+     >                         int_mb(nc(1,ms)),
+     >             taskid_i,taskid_j,
+     >             np_i,np_j,
+     >             comm_i, comm_j,
+     >             dbl_mb(work1(1)),dbl_mb(work2(1)))
+
+  21        continue
+         end do
+         call Dneall_m_gather(mall(mb),mpack(mb),int_mb(mindx(1,mb)),
+     >                        dbl_mb(mat_tmp(1)),hml)
+
+         end if
+      else
+         if (mb.eq.0) then
+            ms1 = 1
+            ms2 = ispin
+            ishift2 = ne(1)*ne(1)
+            nn      = ne(1)*ne(1) + ne(2)*ne(2)
+         else
+            ms1 = mb
+            ms2 = mb
+            ishift2 = 0
+            nn      = ne(mb)*ne(mb)
+         end if
+
+         do ms=ms1,ms2
+            shift  = 1 + (ms-1)*ne(1)*n2ft3d
+            shift2 = 1 + (ms-1)*ishift2
+            n     = ne(ms)
+            if (n.le.0) go to 30
+
+            call DGAMM_OMP('T','N',n,n,n2ft3d,
+     >                alpha,
+     >                A1(shift), n2ft3d,
+     >                A2(shift), n2ft3d,
+     >                beta,
+     >                hml(shift2),n)
+
+  30        continue
+         end do
+         call D3dB_Vector_SumAll(nn,hml)
+
+      end if
+
+      call nwpw_timing_end(15)
+      return
+      end
+
+
 
 
 
@@ -7341,7 +7936,8 @@ c     ****************************************
          end if
       end if
 
-      call dcopy(nn,M1,1,M2,1)
+      !call dcopy(nn,M1,1,M2,1)
+      call Parallel_shared_vector_copy(.true.,nn,M1,M2)
       return
       end
 
@@ -7376,7 +7972,7 @@ c     ****************************************
          end if
       end if
 
-      call daxpy(nn,alpha,M1,1,M2,1)
+      call daxpy_omp(nn,alpha,M1,1,M2,1)
       return
       end
 
@@ -7412,7 +8008,8 @@ c     ****************************************
          end if
       end if
 
-      call dcopy(nn,0.0d0,0,M1,1)
+      !call dcopy(nn,0.0d0,0,M1,1)
+      call Parallel_shared_vector_zero(.true.,nn,M1)
       return
       end
 

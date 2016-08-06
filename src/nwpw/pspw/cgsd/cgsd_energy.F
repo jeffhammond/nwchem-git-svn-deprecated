@@ -133,12 +133,15 @@ c#include "global.fh"
       if (minimizer.eq.5) it_out = 1
       if (minimizer.eq.8) it_out = 1
       if (newpsi) then
+         call pspw_Lin_HFX_reset()
          call sdminimize(15)
          !call bybminimize(E,deltae,deltac,1,.true.,2)
       end if
    2  continue
          icount = icount + 1
          if (stalled) then
+           !call pspw_hfx_localize_set_findcolumns(.true.)
+           call pspw_Lin_HFX_reset()
            call sdminimize(0)
            bfgscount = 0 
          end if
@@ -231,6 +234,9 @@ c          **** reset minimizer if failed ****
             !go to 3
          end if
          deltae = dabs(deltae)
+         !if (deltae.lt.1.0d-3) then
+         !   call pspw_hfx_localize_set_findcolumns(.false.)
+         !end if
          if ((deltae.lt.tole).and.
      >       (deltac.lt.tolc)) then
             if (oprint) 
@@ -1035,6 +1041,9 @@ c     call dscal(3*nion,(-1.0d0),G1,1)
         call daxpy(9,1.0d0,tstress,1,stress,1)
         if (hprint) call write_stress(tstress,"HFX")
       end if
+
+*     **** DFT+U energy component : dE_dftu/dhuv ****
+
 
 *     **** Dispersion energy component : dE_disp/dhuv ****
       if (ion_disp_on()) then

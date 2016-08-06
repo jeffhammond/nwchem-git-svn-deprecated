@@ -50,26 +50,69 @@ c     == local variables ==
      &     lchi_ao, ichi_ao,
      &     ldelchi_ao, idelchi_ao
       integer lzora(4),izora(4),lscal(4),iscal(4)
+      integer l_zora_i,i_zora_i,l_scal_i,i_scal_i
+      integer ilo,ihi,jlo,jhi
       integer inntsize,ddblsize,ok
+      logical dorepl
+      integer g_densrep(2),g_dens0(2),dorep_glob
+      logical docopy,dozero,dorepd,dorepon
+      logical util_mirrmat
+      external util_mirrmat
+
       logical grid_file_rewind
       external grid_file_rewind,ga_antisymmetrize
 c
 c     == allocate memory ==
-      do i=1,4
-       if (.not.MA_Push_Get(mt_dbl,nbf_ao*nbf_ao,
-     &                      'zora0',lzora(i),izora(i))) 
+       if (.not.MA_Push_Get(mt_dbl,4*nbf_ao*nbf_ao,
+     &                      'zora0',l_zora_i,i_zora_i)) 
      &    call errquit('zora_getv_so: zorai',0, MA_ERR)
-       if (.not.MA_Push_Get(mt_dbl,nbf_ao*nbf_ao,
-     &                     'scal0',lscal(i),iscal(i))) 
+       if (.not.MA_Push_Get(mt_dbl,4*nbf_ao*nbf_ao,
+     &                     'scal0',l_scal_i,i_scal_i)) 
      &    call errquit('zora_getv_so: scali',0, MA_ERR)
+      do i=1,4
+         lzora(i)=l_zora_i+(i-1)*nbf_ao*nbf_ao
+         izora(i)=i_zora_i+(i-1)*nbf_ao*nbf_ao
+         lscal(i)=l_scal_i+(i-1)*nbf_ao*nbf_ao
+         iscal(i)=i_scal_i+(i-1)*nbf_ao*nbf_ao
       enddo
 c     == preliminaries ==
-      do i= 1, nbf_ao*nbf_ao
-       do j=1,4
-         dbl_mb(izora(j)+i-1)=0.d0
-         dbl_mb(iscal(j)+i-1)=0.d0
-       enddo
-      enddo
+      call dfill(4*nbf_ao*nbf_ao,0d0,dbl_mb(i_zora_i),1)
+      call dfill(4*nbf_ao*nbf_ao,0d0,dbl_mb(i_scal_i),1)
+c mirroring
+      dorepon=.true.
+      if (.not.rtdb_get(rtdb,'fock:mirrmat',mt_log,1,dorepon)) then
+         dorepon=nbf_ao.lt.3000
+      endif
+
+      dorepl=.false.
+      if(ga_cluster_nnodes().gt.1.and.dorepon) then
+         docopy=.true.
+         dozero=.false.
+         dorepd=util_mirrmat(ipol,g_dens,g_densrep,docopy,dozero)
+         dorepl=dorepd
+         dorep_glob=0
+         if(dorepl) dorep_glob=1
+         call ga_igop(375,dorep_glob,1, '+')
+         dorepl=dorep_glob.eq.ga_nnodes()
+         if(dorepl) then
+            g_dens0(1)=g_dens(1)
+            g_dens(1)=g_densrep(1)
+            if(ipol.eq.2) then
+               g_dens0(2)=g_dens(2)
+               g_dens(2)=g_densrep(2)
+            endif
+         else
+            if(dorepd) then
+               call util_mirrstop(g_densrep(1))
+               if(ipol.eq.2) call util_mirrstop(g_densrep(2))
+            endif
+            if(ga_nodeid().eq.0) then
+               write(6,*) ' no mirroring in zora_getv_so'
+               call util_flush(6)
+            endif
+         endif
+      endif
+
 c     == generate the grid ==
       dummy(1) = 0.d0
       dummy(2) = 0.d0
@@ -215,40 +258,67 @@ c     == delete memory ==
      &     call errquit("zora_getv_sf: pop bas_cset_info", 100, MA_ERR)
       if(.not.MA_pop_stack(lbas_cent_info))
      &     call errquit("zora_getv_sf: pop bas_cent_info", 100, MA_ERR)
+      if(dorepl) then
+         call util_mirrstop(g_densrep(1))
+         if(ipol.eq.2) call util_mirrstop(g_densrep(2))
+         g_dens(1)=g_dens0(1)
+         if(ipol.eq.2) g_dens(2)=g_dens0(2)
+      endif
 c
 c     == tally up over all the nodes ==
-      nij = 0
-      do i = 1, nbf_ao
-        do j = 1, nbf_ao
-         nij = nij + 1
-         do k=1,4
-          call ga_dgop(msg_excrho, dbl_mb(izora(k)+nij-1), 1, '+')
-          call ga_dgop(msg_excrho, dbl_mb(iscal(k)+nij-1), 1, '+')
-         enddo
-        enddo
-      enddo
+      call ga_dgop(msg_excrho, dbl_mb(i_zora_i), 4*nbf_ao*nbf_ao, '+')
+      call ga_dgop(msg_excrho+1, dbl_mb(i_scal_i), 4*nbf_ao*nbf_ao, '+')
 c     == pack into a ga ==
 c     == scalar contribution ==
-      do i=1,ipol
-       call ga_zero(g_zora_sf(i))
-       call ga_put(g_zora_sf(i),1,nbf_ao,1,nbf_ao,
-     &             dbl_mb(izora(1)),nbf_ao)
-       call ga_symmetrize(g_zora_sf(i))
-       call ga_zero(g_zora_scale_sf(i))
-       call ga_put(g_zora_scale_sf(i),1,nbf_ao,1,nbf_ao,
-     &             dbl_mb(iscal(1)),nbf_ao)
-       call ga_symmetrize(g_zora_scale_sf(i))
-      enddo
+      call ga_zero(g_zora_sf(1))
+      call ga_distribution(g_zora_sf(1),
+     .     ga_nodeid(), ilo, ihi, jlo, jhi)
+      if (ilo.gt.0 .and. ilo.le.ihi) then
+         do j=jlo,jhi
+            call ga_put(g_zora_sf(1),ilo, ihi, jlo, jhi,
+     &           dbl_mb(izora(1)+(jlo-1)*nbf_ao+ilo-1),nbf_ao)
+         enddo
+      endif
+      call ga_symmetrize(g_zora_sf(1))
+      call ga_zero(g_zora_scale_sf(1))
+      call ga_distribution(g_zora_scale_sf(1),
+     .     ga_nodeid(), ilo, ihi, jlo, jhi)
+      if (ilo.gt.0 .and. ilo.le.ihi) then
+         do j=jlo,jhi
+            call ga_put(g_zora_scale_sf(1),ilo, ihi, jlo, jhi,
+     &           dbl_mb(iscal(1)+(jlo-1)*nbf_ao+ilo-1),nbf_ao)
+         enddo
+      endif
+      call ga_symmetrize(g_zora_scale_sf(1))
+
+      if(ipol.eq.2) then
+         call ga_copy(g_zora_sf(1),g_zora_sf(2))
+         call ga_copy(g_zora_scale_sf(1),g_zora_scale_sf(2))
+      endif
+
 c     == spin-orbit contributions ==
       ind=4 ! = 4,3,2 = z,y,x in g_zora_so(i)
       do i=1,3 ! = z,y,x
        call ga_zero(g_zora_so(i)) 
-       call ga_put(g_zora_so(i),1,nbf_ao,1,nbf_ao,
-     &             dbl_mb(izora(ind)),nbf_ao)
+       call ga_distribution(g_zora_so(i),
+     .     ga_nodeid(), ilo, ihi, jlo, jhi)
+      if (ilo.gt.0 .and. ilo.le.ihi) then
+         do j=jlo,jhi
+            call ga_put(g_zora_so(i),ilo, ihi, jlo, jhi,
+     &           dbl_mb(izora(ind)+(jlo-1)*nbf_ao+ilo-1),nbf_ao)
+         enddo
+       endif
        call ga_antisymmetrize(g_zora_so(i))
+c
        call ga_zero(g_zora_scale_so(i)) 
-       call ga_put(g_zora_scale_so(i),1,nbf_ao,1,nbf_ao,
-     &             dbl_mb(iscal(ind)),nbf_ao)
+       call ga_distribution(g_zora_scale_so(i),
+     .     ga_nodeid(), ilo, ihi, jlo, jhi)
+      if (ilo.gt.0 .and. ilo.le.ihi) then
+         do j=jlo,jhi
+            call ga_put(g_zora_scale_so(i),ilo, ihi, jlo, jhi,
+     &           dbl_mb(iscal(ind)+(jlo-1)*nbf_ao+ilo-1),nbf_ao)
+         enddo
+       endif
        call ga_antisymmetrize(g_zora_scale_so(i))
        ind=ind-1
       enddo

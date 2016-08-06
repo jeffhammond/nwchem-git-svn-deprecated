@@ -23,7 +23,7 @@ c
 c
 c
       double precision THRESHOLD
-      integer intdum(1)
+      integer intdum(1),intdum1
       double precision dbldum(1)
 c
       THRESHOLD=10.d0**(-itol2e)
@@ -32,7 +32,8 @@ c
       call dcopy(n3c_dbl,0d0,0,i3c_eri, 1)
 c      
 
-      call dft_getcdt(ncenters, 1, .false., threshold, .true.,
+      call dft_getcdt(.false.,intdum1,
+     N     ncenters, 1, .false., threshold, .true.,
      N     n_batch, n_bmax, iwhat,
      &     n3c_dbl, i3c_eri,
      T     dbldum, intdum)
@@ -40,7 +41,8 @@ c
       return
       end
 
-      subroutine dft_getcdt(natoms, nfit, derfit, threshold, compute,
+      subroutine dft_getcdt(dryrun, ndone,
+     N     natoms, nfit, derfit, threshold, compute,
      N     n_batch, n_bmax, iwhat,
      &     n3c_dbl, i3c_eri,
      T     tvec,g_dens)
@@ -56,6 +58,7 @@ c
 #include "schwarz.fh"
 #include "msgids.fh"
 #include "sym.fh"
+      logical dryrun
       integer natoms
       double precision tvec(*)
       integer nfit
@@ -87,13 +90,13 @@ c
       integer istart,n1
       integer size_atblock
       integer ndone,n_batch_done
-      integer nxtask,icount,ipoint
+      integer nxtask_static,icount,ipoint
       integer ishd_0,ishd_1
       integer l_at,k_at
       integer atom_c_in,atom_d_in
       logical dowork,use_nxtask,lschw_pmax1,doshell
       double precision dabsmax
-      external nxtask,dabsmax
+      external nxtask_static,dabsmax
 c      
 c     Parallelize the loop over the products of AO shells.
 c      
@@ -101,8 +104,7 @@ c
      C     errquit('fitcd derfint not impl',5, 0)
       nproc  = ga_nnodes()
 c      
-
-c      
+      if(.not.dryrun) then
       if(.not.compute) then
       Nao2 = nbf_ao_mxnbf_ce*nbf_ao_mxnbf_ce
       if(.not.MA_Push_Get(MT_Dbl,Nao2*nfit,'gather vector',l_p,k_p))
@@ -120,6 +122,7 @@ c
       nscr =  mscratch_2e3c 
       if(.not.MA_Push_Get(MT_Dbl,nscr,'scr',lscr,iscr))
      &  call errquit('dft_fitcd: cannot allocate scr',0, MA_ERR)
+      endif
 
       if(.not.MA_Push_Get(MT_int,natoms,'at list',l_at,k_at))
      &  call errquit('dft_3cinc: cannot allocate at list',0, MA_ERR)
@@ -127,17 +130,17 @@ c     sort atoms list based on decreasing atomic weight
       call dft_sortatbyz(geom,natoms,int_mb(k_at))
 c
 c     invalidate iwhat for procs that might remain out of work
-      if(compute) then
+      if(compute.and.(.not.dryrun)) then
          do ishp=1,n_bmax
             iwhat(ishp)=-123
          enddo
       endif
 c
       n1=0
+      call ga_sync()
       use_nxtask=compute.or.(.not.incore)
       n_batch=0
-      if(use_nxtask) n1 = nxtask(nproc,1)
-
+      if(use_nxtask) n1 = nxtask_static(nproc,1)
       icount = 0
       ndone = 1
       n_batch_done = 1
@@ -217,11 +220,12 @@ c introduce more screening to avoid instability
               if( Pmat_max*ERI_est.gt.THRESHOLD*1d-3 )then
 c              
                  istart = iERI
-                 call dcopy(nao2*nbf_cd,0d0,0,dbl_mb(istart), 1)
+                 if(.not.dryrun)
+     D                call dcopy(nao2*nbf_cd,0d0,0,dbl_mb(istart), 1)
 
                  fac = 2.0d0
-
                  if(atom_c.eq.atom_d) fac = 1.d0
+
                  if(.not.incore) then
 
                     do ishp = 1,nshells_cd
@@ -244,7 +248,7 @@ c
                        q1=1.d0
                        doshell=.true.
                        if(oskel) doshell=sym_shell(cd_bas_han,ishp,q1)
-
+                       if(.not.dryrun) then
                        if (doshell) then
                           if(istart+Ninteg_api-ieri.gt.maxg*nshells_cd)
      c    write(*,*)ga_nodeid(),'dlb_mb ieri small ',
@@ -258,19 +262,21 @@ c
                           call dcopy(nintegrals,0d0,0,
      D                         dbl_mb(istart),1)
                        endif
+                       endif
                        istart = istart+nintegrals
 c     
                     enddo       !ishp
 
                  endif! end of work for comp. ints
+                 if(.not.dryrun) then
                  if(compute) then
 c     incore 3c calculation
 c     copy (ahia!) ints to i3c_eri
                     if( (ndone+Nao2*nbf_cd-1) .gt. n3c_dbl) then
-                       write(LuOut,*) ' nlast n3cdbl ',
+                       write(LuOut,*) ga_nodeid(),' nlast n3cdbl ',
      N                      ndone+Nao2*nbf_cd-1, n3c_dbl
                        call errquit('dft_3cincor: blew out of dbls',
-     C                      999,UNKNOWN_ERR)
+     C                      ga_nodeid(),UNKNOWN_ERR)
                     endif
 
                     call dcopy(Nao2*nbf_cd,dbl_mb(iERI),1,
@@ -297,6 +303,7 @@ c
                        call errquit('dft_fitcd: not impl',1, BASIS_ERR)
                     endif
                  endif
+                 endif
                  ndone  = ndone  + Nao2*nbf_cd
               endif             ! schwartz with real pmax
               ipoint = ipoint + Nao2*nbf_cd
@@ -308,11 +315,11 @@ c
         icount_c=icount_c+nshbfc
       enddo ! ishc
       if(use_nxtask) then
-         n1 = nxtask(nproc,1)
+         n1 = nxtask_static(nproc,1)
       else
          n_batch_done = n_batch_done + 1
       endif
-      if(compute) then
+      if(compute.and.(.not.dryrun)) then
          n_batch = n_batch + 1
          if( n_batch.gt.n_bmax)
      &        call errquit('dft_3cincor: out of ints',n_bmax,
@@ -329,13 +336,13 @@ c
           icount = icount + 1
        enddo ! atom_d
       enddo ! atom_c
-
 c
+      if(use_nxtask) n1 = nxtask_static(-nproc,1)
+      if(dryrun) return
       if(.not.ma_chop_stack(leri))
      &  call errquit('dft_fitcd: cannot pop stack',12, MA_ERR)
 
 c
-      if(use_nxtask) n1 = nxtask(-nproc,1)
       if(compute) return
       if(.not.ma_chop_stack(l_p))
      &  call errquit('dft_fitcd: cannot pop stack',12, MA_ERR)
@@ -412,13 +419,39 @@ c
 c        call errquit('neworder error ',0,0)
       endif
 #ifdef DEBUG
+      if(ga_nodeid().eq.0) then
       do atom_c_in = 1,natoms
-         atom_c=klist(atom_c)
+         atom_c=klist(atom_c_in)
          write(6,'(a,i4,a,i4,a,i4)') ' new list: atom_c_in ',atom_c_in,
      C        ' org indx ',atom_c,' z ',int_mb(k_z+atom_c-1)
       enddo
+      endif
 #endif
       if(.not.ma_chop_stack(l_z))
      &  call errquit('dft_fitcd: cannot pop stack',13, MA_ERR)
+      return
+      end
+      integer function nxtask_static(nproc,ichunk)
+      implicit none
+#include "global.fh"
+      integer nproc  ![in]
+      integer ichunk ![in] ignored
+c
+      integer icount, nleft
+      save icount, nleft
+      data nleft, icount /0, 0/
+c     
+      if(nproc.gt.0) then
+         if (nleft .eq. 0) then
+            icount = ga_nodeid()
+            nleft = 1
+         endif
+         nxtask_static = icount
+         icount = icount + ga_nnodes()
+      else
+         nleft = 0
+         nxtask_static = 0
+      endif
+
       return
       end

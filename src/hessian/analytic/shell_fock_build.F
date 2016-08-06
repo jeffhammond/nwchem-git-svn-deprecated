@@ -277,6 +277,7 @@ c
 #include "schwarz.fh"
 #include "util.fh"
 #include "bas.fh"
+#include "rtdb.fh"
 c
       integer basis             ! [input] familiar handles
       integer nder              ! [input] No. of derivatives (0 = energy)
@@ -350,6 +351,9 @@ c
       logical docopy,dozero,dorepd,dorepf,dorepon
       logical util_mirrmat
       external util_mirrmat
+      integer bgj_get_rtdb_handle
+      external bgj_get_rtdb_handle
+      integer rtdb_out
 c     
       firstij=.true.
       firstkl=.true.
@@ -369,10 +373,14 @@ c
 c
 c     replicated DM and Fock Matrix
 c
-c     turned off for nbf gt 500 since becomes a memory hog
+c     turned off for nbf gt 3000 since becomes a memory hog
 c
+      rtdb_out=bgj_get_rtdb_handle()
       dorepon=.true.
-      if(nbf.gt.3000) dorepon=.false.
+      if (.not.rtdb_get(rtdb_out,'fock:mirrmat',mt_log,1,dorepon)) then
+         dorepon=nbf.lt.3000
+      endif
+
       dorepl=.false.
       if(ga_cluster_nnodes().gt.1.and.dorepon) then
          docopy=.true.
@@ -392,13 +400,15 @@ c
             g_fock0=g_fock
             g_fock=g_fockrep
          else
-            if(dorepd) call util_mirrstop(1,g_densrep)
+            if(dorepd) call util_mirrstop(g_densrep)
             if(ga_nodeid().eq.0) then
                write(6,*) ' no mirroring in shellfockbld'
                call util_flush(6)
             endif
          endif
       endif
+c      if(ga_nodeid().eq.0) 
+c     W     write(6,*) ' dorepon dorepd dorepl ',dorepon,dorepd,dorepl
 c     write(6,*) 'nshblocks and task_size ',nshblocks,task_size
 c     
 c     Parallel loop over quartets of reordered shell blocks
@@ -640,7 +650,7 @@ c
       next = nxtask(-nproc,task_size)
       call ga_sync()
       if(dorepl) then
-         call util_mirrstop(1,g_densrep)
+         call util_mirrstop(g_densrep)
          g_dens=g_dens0
          call util_mirrmrgadd(g_fockrep,g_fock0)
          g_fock=g_fock0

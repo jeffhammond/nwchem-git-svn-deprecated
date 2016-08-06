@@ -25,6 +25,8 @@ C>
 #include "bas.fh"
 #include "msgids.fh"
 #include "cosmoP.fh"
+#include "cosmo_params.fh"
+#include "util_params.fh"
 c
       integer rtdb   !< [Input] the RTDB handle
       integer geom   !< [Input] the geometry handle
@@ -45,16 +47,6 @@ c
       logical odbug, osome
       integer me
 c
-      double precision dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      double precision adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      integer          do_cosmo_model,lineq,minbem,maxbem,ificos,
-     +                 cosmo_sccor
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     +                  cosmo_sccor
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      double precision vdwr(102)
-      double precision vander(102)
 c
 c MN solvation models -->
 c
@@ -259,9 +251,7 @@ c
      &  errquit('cosmo_init,ma_pop_stack of l_tag failed',911, MA_ERR)
 c
       do_cosmo_model = DO_COSMO_YK
-      solvname_short  = 'unknown'
-      dielec   =78.4d+00
-      dielecinf = 1.333d0*1.333d0 ! n**2 (refractive index squarred)
+      dielec   =78.4d+00 ! default water dielectric
       cosmo_screen = COSMO_SCREEN_ST
       cosmo_sccor  = COSMO_SCCOR_LAGRA ! surface charge correction adapted for geometry optimzations
       minbem   =2
@@ -283,8 +273,20 @@ c
       sola = -1.d0
       solb = -1.d0
       solc = -1.d0
+      solg = -1.d0
       solh = -1.d0
       soln = -1.d0
+      if (dielec.eq.78.4d+00) then
+         solvname_short  = 'h2o'
+         solvname_long  = 'water'
+         sola =  0.82d0
+         solb =  0.35d0
+         solc =  0.d0
+         solg =  103.62d0
+         solh =  0.d0
+         soln =  1.333d0
+         dielecinf = soln*soln ! n**2 (refractive index squarred)
+      end if
       status = 
      $ rtdb_get(rtdb,'cosmo:do_cosmo_smd',mt_log,1,do_cosmo_smd)
 c
@@ -599,7 +601,7 @@ c        call smd model
      $ 'cosmo_initialize: cannot get areacds from rtdb',
      $ 911,rtdb_err)
          if (me.eq.0) then
-          write(luout,9976) gcds*627.509451d+00
+          write(luout,9976) gcds*cau2kcal
           write(luout,9975) areacds   
          endif 
       end if

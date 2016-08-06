@@ -2,17 +2,29 @@
 * $Id$
 *
 
+c     **********************************************
+c     *                                            *
+c     *                pspw_wannier                *
+c     *                                            *
+c     **********************************************
+
+c Computes wannier orbitals using the Silvestrelli algorithm.
+
       logical function pspw_wannier(rtdb)
       implicit none
       integer rtdb
 
 #include "bafdecls.fh"
 #include "btdb.fh"
-
+#include "stdio.fh"
+#include "errquit.fh"
 
 *     **** local variables ****
       integer MASTER,taskid,tmp_len
       parameter (MASTER=0,tmp_len=140)
+
+      real*8 autoDebye
+      parameter (autoDebye=2.5416d0)
 
       logical value,oprint
       integer mapping,mapping1d,maxiter
@@ -22,14 +34,16 @@
       integer info
       integer np,nion,ii
 
-      integer psi(2),psi2(2),psi_r(2),psi_r2(2)
-      integer X(2,6)
+      integer psi(2),psi2(2),psi_r(2),psi_r2(2),Rwav(2)
+      integer X(2,6),Xeig(2,6)
       integer A(2),Ar(2)
       real*8 bv(3,6),wrk(6,6),wts(6),bmat(3,3)
       real*8 b(3),ixmat(3,6)
-      real*8 xx,yy,zz,tmp1(tmp_len),maxtime
-      real*8 dx,dy,dz,nx,ny,nz,tx,ty,tz,alpha,scal
-      complex*16 arg,wx
+      real*8 xx,yy,zz,tmp1(tmp_len),maxtime,pcharge
+      real*8 dx(2),dy(2),dz(2),nx,ny,nz,tx,ty,tz,alpha,scal
+      real*8 dix(2),diy(2),diz(2),tix,tiy,tiz
+      real*8 drx(2),dry(2),drz(2),trx,try,trz
+      complex*16 arg,wx,arg0
       character*2 labels(6)
 
 c      double precision unita(3,3),b(3),alpha
@@ -79,23 +93,23 @@ c      character*255 full_filename,full_filename2
 
 *     ***** print out header ****
       if (oprint) then
-         write(6,1000)
-         write(6,1010)
-         write(6,1020)
-         write(6,1010)
-         write(6,1030)
-         write(6,1010)
-         write(6,1035)
-         write(6,1010)
-         write(6,1037)
-         write(6,1010)
-         write(6,1040)
-         write(6,1010)
-         write(6,1041)
-         write(6,1042)
-         write(6,1043)
-         write(6,1010)
-         write(6,1000)
+         write(luout,1000)
+         write(luout,1010)
+         write(luout,1020)
+         write(luout,1010)
+         write(luout,1030)
+         write(luout,1010)
+         write(luout,1035)
+         write(luout,1010)
+         write(luout,1037)
+         write(luout,1010)
+         write(luout,1040)
+         write(luout,1010)
+         write(luout,1041)
+         write(luout,1042)
+         write(luout,1043)
+         write(luout,1010)
+         write(luout,1000)
          call nwpw_message(1)
       end if
       
@@ -109,84 +123,8 @@ c      character*255 full_filename,full_filename2
 
       call Parallel2d_Init(control_np_orbital())
 
-      call ion_init(rtdb)
-
-      !**** Make sure ngrid is consistent with mapping ***
-      if (mapping.eq.1) then
-        if ((np.gt.ngrid(3)).or.(ngrid(2).ne.ngrid(3))) then
-          if (taskid.eq.MASTER) then
-            write(6,*) 'Error: the number of processors must ',
-     >                 ' be in the range ( 1 ...ngrid(3)=',
-     >                   ngrid(3),')'
-           write(6,*) ' and ngrid(2) == ngrid(3), ',
-     >                ' ngrid(2)=',ngrid(2),
-     >                ' ngrid(3)=',ngrid(3)
-          end if
-          value = .false.
-          go to 9000
-        end if
-        if (mod(ngrid(1),2).ne.0) then
-          if (taskid.eq.MASTER) then
-           write(6,*)
-     >      'Error: ngrid(1) must be even (ngrid(1) mod 2 == 0)'
-           write(6,*) 'Error: ngrid(1)=',ngrid(1)
-          end if
-          value = .false.
-          go to 9000
-        end if
-      end if
-      if (mapping.eq.2) then
-        if (np.gt.(ngrid(2)*ngrid(3))) then
-          if (taskid.eq.MASTER) then
-           write(6,*) 'Error: np > MIN(ngrid(2)*ngrid(3),',
-     >                ' (ngrid(1)/2+1)*ngrid(2),',
-     >                ' (ngrid(1)/2+1)*ngrid(3))'
-           write(6,*) 'Error: np > ngrid(2)*ngrid(3)'
-           write(6,*) 'Error: the number of processors must ',
-     >                 ' be in the range ( 1 ...',
-     >                   ngrid(2)*ngrid(3),')'
-          end if
-          value = .false.
-          go to 9000
-        end if
-        if (np.gt.((ngrid(1)/2+1)*ngrid(2))) then
-          if (taskid.eq.MASTER) then
-           write(6,*) 'Error: np > MIN(ngrid(2)*ngrid(3),',
-     >                ' (ngrid(1)/2+1)*ngrid(2),',
-     >                ' (ngrid(1)/2+1)*ngrid(3))'
-           write(6,*) 'Error: np > (ngrid(1)/2+1)*ngrid(2)'
-           write(6,*) 'Error: the number of processors must ',
-     >                 ' be in the range ( 1 ...',
-     >                   (ngrid(1)/2+1)*ngrid(2),')'
-          end if
-          value = .false.
-          go to 9000
-        end if
-        if (np.gt.((ngrid(1)/2+1)*ngrid(3))) then
-          if (taskid.eq.MASTER) then
-           write(6,*) 'Error: np > MIN(ngrid(2)*ngrid(3),',
-     >                ' (ngrid(1)/2+1)*ngrid(2),',
-     >                ' (ngrid(1)/2+1)*ngrid(3))'
-           write(6,*) 'Error: np > (ngrid(1)/2+1)*ngrid(3)'
-           write(6,*) 'Error: the number of processors must ',
-     >                 ' be in the range ( 1 ...',
-     >                   (ngrid(1)/2+1)*ngrid(3),')'
-          end if
-          value = .false.
-          go to 9000
-        end if
-        if (mod(ngrid(1),2).ne.0) then
-          if (taskid.eq.MASTER) then
-           write(6,*)
-     >      'Error: ngrid(1) must be even (ngrid(1) mod 2 == 0)'
-           write(6,*) 'Error: ngrid(1)=',ngrid(1)
-          end if
-          value = .false.
-          go to 9000
-        end if
-
-      end if
-
+*     **** initialize psi_data ****
+      call psi_data_init(100)
 
 *     **** initialize D3dB data structure ****
       call D3dB_Init(1,ngrid(1),ngrid(2),ngrid(3),mapping)
@@ -201,6 +139,11 @@ c      character*255 full_filename,full_filename2
       call Pack_init()
       call Pack_npack(1,npack1)      
       call D3dB_pfft_init()
+
+      call ion_init(rtdb)
+      call psp_init()
+      call psp_readall()
+
 
 
 *     ***** allocate psi and psi_r wavefunctions ****
@@ -222,6 +165,9 @@ c      character*255 full_filename,full_filename2
       value = value.and.
      >        BA_alloc_get(mt_dbl,n2ft3d*nemaxq,
      >                     'psi_r2',psi_r2(2),psi_r2(1))
+      value = value.and.
+     >        BA_alloc_get(mt_dbl,3*(ne(1)+ne(2)),
+     >                     'Rwav',Rwav(2),Rwav(1))
       if (.not. value) 
      >   call errquit('pspw_wannier:out of heap memory',0,0)
 
@@ -232,37 +178,37 @@ c      character*255 full_filename,full_filename2
 
       if (oprint) then
   
-         write(6,109) control_input_psi()
-         write(6,110) control_output_psi()
+         write(luout,109) control_input_psi()
+         write(luout,110) control_output_psi()
 
-         write(6,1220) ne(1),ne(ispin),' ( Fourier space)'
-         write(6,1230)
-         write(6,1241) lattice_unita(1,1),
+         write(luout,1220) ne(1),ne(ispin),' ( Fourier space)'
+         write(luout,1230)
+         write(luout,1241) lattice_unita(1,1),
      >                 lattice_unita(2,1),
      >                 lattice_unita(3,1)
-         write(6,1242) lattice_unita(1,2),
+         write(luout,1242) lattice_unita(1,2),
      >                 lattice_unita(2,2),
      >                 lattice_unita(3,2)
-         write(6,1243) lattice_unita(1,3),
+         write(luout,1243) lattice_unita(1,3),
      >                 lattice_unita(2,3),
      >                 lattice_unita(3,3)
-         write(6,1244) lattice_unitg(1,1),
+         write(luout,1244) lattice_unitg(1,1),
      >                 lattice_unitg(2,1),
      >                 lattice_unitg(3,1)
-         write(6,1245) lattice_unitg(1,2),
+         write(luout,1245) lattice_unitg(1,2),
      >                 lattice_unitg(2,2),
      >                 lattice_unitg(3,2)
-         write(6,1246) lattice_unitg(1,3),
+         write(luout,1246) lattice_unitg(1,3),
      >                 lattice_unitg(2,3),
      >                 lattice_unitg(3,3)
-         write(6,1231) lattice_omega()
-         write(6,1250) lattice_ecut(),ngrid(1),ngrid(2),ngrid(3),
+         write(luout,1231) lattice_omega()
+         write(luout,1250) lattice_ecut(),ngrid(1),ngrid(2),ngrid(3),
      >                 pack_nwave_all(0),pack_nwave(0)
-         write(6,1251) lattice_wcut(),ngrid(1),ngrid(2),ngrid(3),
+         write(luout,1251) lattice_wcut(),ngrid(1),ngrid(2),ngrid(3),
      >                 pack_nwave_all(1),pack_nwave(1)
 
-         write(6,1280) maxtime
-         write(6,1281) maxiter
+         write(luout,1280) maxtime
+         write(luout,1281) maxiter
       end if
 
 
@@ -297,6 +243,8 @@ c     >                     'A',A(2),A(1))
 
       do j=1,6
          value = value.and.Dneall_w_allocate(1,X(1,j))
+         value = value.and.
+     >           BA_alloc_get(mt_dcpl,n,'Xeig',Xeig(2,j),Xeig(1,j))
       end do
       value = value.and.Dneall_w_allocate(1,A)
       value = value.and.Dneall_m_allocate(1,Ar)
@@ -395,17 +343,36 @@ c     *** Silvestrelli G3 ***
       nx=0.0d0
       ny=0.0d0
       nz=0.0d0
+      pcharge = 0.0d0
       nion=ion_nion()
       do i=1,nion
         j=ion_katm(i)
         nx=nx+psp_zv(j)*ion_rion(1,i)
         ny=ny+psp_zv(j)*ion_rion(2,i)
         nz=nz+psp_zv(j)*ion_rion(3,i)
+        pcharge = pcharge + psp_zv(j)
       end do   
 
-      dx=0.0d0
-      dy=0.0d0
-      dz=0.0d0
+      dx(1)=0.0d0
+      dx(2)=0.0d0
+      dy(1)=0.0d0
+      dy(2)=0.0d0
+      dz(1)=0.0d0
+      dz(2)=0.0d0
+
+      dix(1)=0.0d0
+      dix(2)=0.0d0
+      diy(1)=0.0d0
+      diy(2)=0.0d0
+      diz(1)=0.0d0
+      diz(2)=0.0d0
+
+      drx(1)=0.0d0
+      drx(2)=0.0d0
+      dry(1)=0.0d0
+      dry(2)=0.0d0
+      drz(1)=0.0d0
+      drz(2)=0.0d0
 
       if (oprint) then
          write(*,1260) 
@@ -417,8 +384,8 @@ c     *** Silvestrelli G3 ***
       
       do ms=1,ispin
 
-        if ((oprint).and.(ms.eq.1)) write(6,1300)
-        if ((oprint).and.(ms.eq.2)) write(6,1301)
+        if ((oprint).and.(ms.eq.1)) write(luout,1300)
+        if ((oprint).and.(ms.eq.2)) write(luout,1301)
 
 
         do i=1,rank
@@ -430,16 +397,26 @@ c     *** Silvestrelli G3 ***
      >                  dbl_mb(psi_r(1)),
      >                  dbl_mb(psi_r2(1)),
      >                  dcpl_mb(X(1,i)))
+          call Dneall_w_eigenvalues(ms,dcpl_mb(X(1,i)),
+     >                              dcpl_mb(Xeig(1,i)))
         end do
 
         if (oprint) then
-          write(6,1380)
+          write(luout,1380)
           do i=1,ne(ms)
             shift=(i-1)*ne(ms)+(i-1)
             xx=0.0d0
             yy=0.0d0
             zz=0.0d0
             do j=1,rank
+
+               !*** really just want complex eigenvalues of X here ***
+               arg0=dcpl_mb(Xeig(1,j)+(i-1))
+               arg0= -wts(j)*datan2(dimag(arg0),dble(arg0))
+               drx(ms)=drx(ms)+bv(1,j)*arg0/scal
+               dry(ms)=dry(ms)+bv(2,j)*arg0/scal
+               drz(ms)=drz(ms)+bv(3,j)*arg0/scal
+
                arg=dcpl_mb(X(1,j)+shift)
                arg= -wts(j)*datan2(dimag(arg),dble(arg))
                xx=xx+bv(1,j)*arg/scal
@@ -447,15 +424,19 @@ c     *** Silvestrelli G3 ***
                zz=zz+bv(3,j)*arg/scal
             end do
             ii = ion_nearest_index(xx,yy,zz)
+            dix(ms)=dix(ms)+xx
+            diy(ms)=diy(ms)+yy
+            diz(ms)=diz(ms)+zz
 
             if (ms.eq.1)
-     >        write(6,1390) i,xx,yy,zz,ion_aname_nocarat(ii),ii
+     >        write(luout,1390) i,xx,yy,zz,ion_aname_nocarat(ii),ii
 
 
             if (ms.eq.2)
-     >        write(6,1391) i+ne(1),xx,yy,zz,ion_aname_nocarat(ii),ii
+     >        write(luout,1391) i+ne(1),xx,yy,zz,
+     >                          ion_aname_nocarat(ii),ii
           end do
-          write(6,1800)
+          write(luout,1800)
         end if
 
         call silvestrelli_minimize(maxiter,ms,ne(ms),rank,wts,
@@ -464,56 +445,41 @@ c     *** Silvestrelli G3 ***
      >                             dcpl_mb(X(1,5)),dcpl_mb(X(1,6)),
      >                             dcpl_mb(A(1)))
 
-        if (oprint) then
-          write(6,1381)
-          write(15,*) ne(ms)
-          write(15,*)
-          do i=1,ne(ms)
-            shift=i-1
-            shift=shift*ne(ms)+shift
-            xx=0.0d0
-            yy=0.0d0
-            zz=0.0d0
-            do j=1,rank
-               arg=dcpl_mb(X(1,j)+shift)
-               arg= -wts(j)*datan2(dimag(arg),dble(arg))
-               xx=xx+bv(1,j)*arg/scal
-               yy=yy+bv(2,j)*arg/scal
-               zz=zz+bv(3,j)*arg/scal
-            end do
-            ii = ion_nearest_index(xx,yy,zz)
-            dx=dx+xx
-            dy=dy+yy
-            dz=dz+zz
-            if (ms.eq.1) then
-              write(6,1390) i,xx,yy,zz,ion_aname_nocarat(ii),ii
-              write(15,*) "H ",xx*0.529177d0,yy*0.529177d0,zz*0.529177d0
-            end if
+        if (oprint) write(luout,1381)
+        do i=1,ne(ms)
+           !shift=i-1
+           !shift=shift*ne(ms)+shift
+           shift=(i-1)*ne(ms)+(i-1)
+           xx=0.0d0
+           yy=0.0d0
+           zz=0.0d0
+           do j=1,rank
+              arg=dcpl_mb(X(1,j)+shift)
+              arg= -wts(j)*datan2(dimag(arg),dble(arg))
+              xx=xx+bv(1,j)*arg/scal
+              yy=yy+bv(2,j)*arg/scal
+              zz=zz+bv(3,j)*arg/scal
+           end do
+           dbl_mb(Rwav(1)+3*((ms-1)*ne(1)+i-1))   = xx
+           dbl_mb(Rwav(1)+3*((ms-1)*ne(1)+i-1)+1) = yy
+           dbl_mb(Rwav(1)+3*((ms-1)*ne(1)+i-1)+2) = zz
+           ii = ion_nearest_index(xx,yy,zz)
+           dx(ms)=dx(ms)+xx
+           dy(ms)=dy(ms)+yy
+           dz(ms)=dz(ms)+zz
+           if (oprint) then
+              if (ms.eq.1) then
+                write(luout,1390) i,xx,yy,zz,ion_aname_nocarat(ii),ii
+                !write(15,*) "H ",xx*0.529177d0,yy*0.529177d0,zz*0.529177d0
+              end if
 
-
-            if (ms.eq.2) then
-              write(6,1391) i+ne(1),xx,yy,zz,ion_aname_nocarat(ii),ii
-              write(15,*) "H ",xx*0.529177d0,yy*0.529177d0,zz*0.529177d0
-            end if
-          end do
-          if (ispin.eq.1) then
-             dx=dx*2.0d0
-             dy=dy*2.0d0
-             dz=dz*2.0d0
-          end if
-cccccccccccccccccccccccccccccccccccccccccccccc
-c  Molecular dipoles from Resta's theory!
-ccccccccccccccccccccccccccccccccccccccccccccc
-          WRITE(6,1776)
-          WRITE(6,1777)dx,dy,dz
-          WRITE(6,1780)
-          WRITE(6,1777)nx,ny,nz
-          tx=nx-dx
-          ty=ny-dy
-          tz=nz-dz
-          WRITE(6,1785)
-          WRITE(6,1777)tx,ty,tz
-        end if
+              if (ms.eq.2) then
+                write(luout,1391) i+ne(1),xx,yy,zz,
+     >                            ion_aname_nocarat(ii),ii
+                !write(15,*) "H ",xx*0.529177d0,yy*0.529177d0,zz*0.529177d0
+              end if
+           end if
+        end do
 
 *       **** rotate psi to produce Wannier orbitals ****
         call Dneall_wtom_Real(ms,dcpl_mb(A(1)),dbl_mb(Ar(1)))
@@ -523,40 +489,80 @@ ccccccccccccccccccccccccccccccccccccccccccccc
      >                  dcpl_mb(A(1)),1.0d0,
      >                  dcpl_mb(psi2(1)),
      >                  0.0d0)
-c        do i=1,ne(ms)
-c          call Pack_c_Zero(1,
-c     >                     dcpl_mb(psi2(1)+(i-1) *npack1
-c     >                                    +(ms-1)*npack1*ne(1)))
-c          do j=1,ne(ms)
-cc              wx    = dcpl_mb(A(1)+(i-1)+(j-1)*ne(ms) 
-cc     >                            +(ms-1)*ne(1)*ne(1))
-c              wx    = dcpl_mb(A(1)+(i-1)+(j-1)*ne(ms)) 
-c              alpha = dble(wx)
-c
-c              call Pack_cc_daxpy(1,alpha,
-c     >                           dcpl_mb(psi(1) +(j-1)*npack1
-c     >                                          +(ms-1)*npack1*ne(1)),
-c     >                           dcpl_mb(psi2(1)+(i-1)*npack1
-c     >                                          +(ms-1)*npack1*ne(1)))
-c          end do
-c        end do
-
       end do !* ms *
+
+cccccccccccccccccccccccccccccccccccccccccccccc
+c  Molecular dipoles from Resta's theory!
+ccccccccccccccccccccccccccccccccccccccccccccc
+      tx=nx-dx(1)-dx(ispin)
+      ty=ny-dy(1)-dy(ispin)
+      tz=nz-dz(1)-dz(ispin)
+      xx = dsqrt(tx*tx + ty*ty + tz*tz)
+
+      tix=nx-dix(1)-dix(ispin)
+      tiy=ny-diy(1)-diy(ispin)
+      tiz=nz-diz(1)-diz(ispin)
+      yy = dsqrt(tix*tix + tiy*tiy + tiz*tiz)
+
+      trx=nx-drx(1)-drx(ispin)
+      try=ny-dry(1)-dry(ispin)
+      trz=nz-drz(1)-drz(ispin)
+      zz = dsqrt(trx*trx + try*try + trz*trz)
+
+      if (oprint) then
+         write(luout,1771)
+         write(luout,1772) 'spin up   ',
+     >                     dx(1)/dble(ne(1)),
+     >                     dy(1)/dble(ne(1)),
+     >                     dz(1)/dble(ne(1))
+         if (ne(ispin).ne.0)
+     >      write(luout,1772) 'spin down ',
+     >                        dx(ispin)/dble(ne(ispin)),
+     >                        dy(ispin)/dble(ne(ispin)),
+     >                        dz(ispin)/dble(ne(ispin))
+         write(luout,1772) 'electronic',
+     >                      (dx(1)+dx(ispin))/dble(ne(1)+ne(ispin)),
+     >                      (dy(1)+dy(ispin))/dble(ne(1)+ne(ispin)),
+     >                      (dz(1)+dz(ispin))/dble(ne(1)+ne(ispin))
+         write(luout,1772) 'ionic     ',
+     >                      nx/pcharge,
+     >                      ny/pcharge,
+     >                      nz/pcharge
+         write(luout,1773)
+         write(luout,1774) tx,ty,tz
+         write(luout,1775) xx,xx*autoDebye
+
+         write(luout,1779)
+         write(luout,1774) tix,tiy,tiz
+         write(luout,1775) yy,yy*autoDebye
+
+         write(luout,1778)
+         write(luout,1774) trx,try,trz
+         write(luout,1775) zz,zz*autoDebye
+      end if
 
 
 *     ***** write psi2 wavefunctions ****
       call psi_write_noocc(ispin,ne,dcpl_mb(psi2(1)))
 
-      call ion_write(rtdb)
-      call ion_end()
+c*     ***** write basis functions *****
+c      call psi_makebasisfunctions(1,ispin,ne,neq,
+c     >                            dbl_mb(Rwav(1)),
+c     >                            dcpl_mb(psi2(1)),
+c     >                            dcpl_mb(psi(1)))
+c
 
 *     **** deallocate heap memory ****
+      call ion_write(rtdb)
+      call ion_end()
+      call psp_end()
       call mask_end()
       call Pack_end()
       call G_end()
       call D3dB_pfft_end()
       call D3dB_end(1)
       call Dne_end()
+      call psi_data_end()
 
 c      value =  BA_free_heap(A(2))
 c      do j=1,6
@@ -566,7 +572,9 @@ c      end do
       value = value.and.Dneall_m_free(A)
       do j=1,6
       value = value.and.Dneall_m_free(X(1,j))
+      value = value.and.BA_free_heap(Xeig(2,j))
       end do
+      value = value.and.BA_free_heap(Rwav(2))
       value = value.and.BA_free_heap(psi_r2(2))
       value = value.and.BA_free_heap(psi_r(2))
       value = value.and.BA_free_heap(psi2(2))
@@ -625,8 +633,15 @@ c      end do
      >       ' ) - spin up orbital, nearest ion=',A3,I5)
  1391 FORMAT(5X,'psi',I5,' (',3F11.5,
      >       ' ) - spin down orbital, nearest ion=',A3,I5)
+ 1771 FORMAT(//'== Center of Charge =='/)
+ 1772 FORMAT(A10,'  (',F10.4,',',F10.4,',',F10.4,' )')
+ 1773 FORMAT(//'== Wannier Crystal Dipole =='/)
+ 1774 FORMAT('mu   =  (',F10.4,',',F10.4,',',F10.4,' ) au')
+ 1775 FORMAT('|mu| = ',F10.4,' au,   ',F10.4,' Debye')
  1776 FORMAT(/"ELECTRONIC DIPOLES")
  1777 FORMAT("DX =",F11.5," DY= ",F11.5," DZ= ",F11.5)
+ 1778 FORMAT(//'== Resta (not localized) Crystal Dipole =='/)
+ 1779 FORMAT(//'== Initial Wannier Crystal Dipole =='/)
  1780 FORMAT("NUCLEAR DIPOLES")
  1785 FORMAT("TOTAL DIPOLES")
  1800 FORMAT(/2x,'iter.',8x,'Omega ',6x,' maxgrad',9x,'domega ',5x,

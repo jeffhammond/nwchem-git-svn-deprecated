@@ -99,6 +99,25 @@ c
       logical oparallel       ! [input] true=append .nodeid
       character*(*) name      ! [output] full filename
 c
+
+      call util_file_name0(stub, oscratch, oparallel, name, -1)
+c
+      end
+      subroutine util_file_name0(stub, oscratch, oparallel, name, nodgs)
+      implicit none
+#include "errquit.fh"
+#include "util.fh"
+#include "inp.fh"      
+#include "cfileprefix.fh"
+#include "global.fh"
+#include "stdio.fh"
+c
+      character*(*) stub      ! [input] stub name for file
+      logical oscratch        ! [input] true=scratch, false=permanent
+      logical oparallel       ! [input] true=append .nodeid
+      character*(*) name      ! [output] full filename
+      integer nodgs           ! [input] no. of digits for prefix
+c
       character*(nw_max_path_len) dir, tmp
       integer ltmp, ldir, me
       logical util_file_parse_dir
@@ -138,7 +157,12 @@ c
      $           inp_strlen(name), INPUT_ERR)
          endif
          tmp = name
-         call util_pname(tmp, name)
+         if(nodgs.eq.-1) then
+            call util_pname(tmp, name)
+         else
+            call util_pname0(tmp, name,ga_nodeid(),10**nodgs)
+         endif
+            
       endif
 c
       end
@@ -488,7 +512,7 @@ c     on BGP/BGQ all fs are parallel, therefore we need only node0
       iocheckk=ga_nodeid().eq.0
 #endif     
 c
-      if (nodeid() .gt. 0) goto 10000
+      if (ga_nodeid() .gt. 0) goto 10000
 c
 c     default is a startup with name extracted from that of the input
 c     file unless a database of that name is present in which case

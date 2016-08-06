@@ -10,7 +10,7 @@
 * queue FFT added to HFX and more rigid msgtyping added to queueFFT
 * ....EJB
 *
-* Revision 1.17  2006/10/07 00:10:07  bylaska
+* Revision 1.17  2006/10/07 00:30:07  bylaska
 * Initial implementation of 2d processor grid parallelization in pspw.  Currently works with:
 *
 * task pspw steepest_descent
@@ -798,28 +798,29 @@ c       call D3dB_cc_idot(1,A(1,j),B(1,k),sum)
       real*8     MM
 
 *     **** local variables ****
-      integer j,np
+      integer j,np,nida,nidb
       real*8 sum
 
-*     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
-      common / pack_blk / pack,nida,nidb
+c*     **** common block for pack ****
+c      integer nida(0:3),nidb(0:3)
+c      integer pack(2,0:3)
+c      common / pack_blk / pack,nida,nidb
 
 
 *     **** external functions ****
       real*8   ddot
       external ddot
 
-
       call Parallel2d_np_i(np)
+      call Pack_nida(1,nida)
+      call Pack_nidb(1,nidb)
       MM = 0.0d0
       do j=1,n
 c        call Pack_cc_idot(1,A(1,j),B(1,j),sum)
 c        MM = MM + sum
         MM = MM 
-     >     + ddot(2*nida(1),A(1,j),1,B(1,j),1)
-     >     + 2*ddot(2*nidb(1),A(nida(1)+1,j),1,B(nida(1)+1,j),1)
+     >     + ddot(2*nida,A(1,j),1,B(1,j),1)
+     >     + 2*ddot(2*nidb,A(nida+1,j),1,B(nida+1,j),1)
       end do
       if (np.gt.1) call D3dB_SumAll(MM)
 
@@ -843,19 +844,21 @@ c        MM = MM + sum
       real*8     MM
 
 *     **** local variables ****
-      integer j,np
+      integer j,np,nida,nidb
       real*8 sum
 
-*     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
-      common / pack_blk / pack,nida,nidb
+c*     **** common block for pack ****
+c      integer nida(0:3),nidb(0:3)
+c      integer pack(2,0:3)
+c      common / pack_blk / pack,nida,nidb
 
 
 *     **** external functions ****
       real*8   ddot
       external ddot
 
+      call Pack_nida(1,nida)
+      call Pack_nidb(1,nidb)
 
 c      call Parallel2d_np_i(np)
       MM = 0.0d0
@@ -863,8 +866,8 @@ c      call Parallel2d_np_i(np)
 c        call Pack_cc_idot(1,A(1,j),B(1,j),sum)
 c        MM = MM + sum
         MM = MM
-     >     + ddot(2*nida(1),A(1,j),1,B(1,j),1)
-     >     + 2*ddot(2*nidb(1),A(nida(1)+1,j),1,B(nida(1)+1,j),1)
+     >     + ddot(2*nida,A(1,j),1,B(1,j),1)
+     >     + 2*ddot(2*nidb,A(nida+1,j),1,B(nida+1,j),1)
       end do
 c      if (np.gt.1) call D3dB_SumAll(MM)
 

@@ -177,7 +177,7 @@ c
 *            read(unitno, err=1001, end=1001)
 *     $           (dbl_mb(k_vecs+j), j=0,nbf-1)
             call sread(unitno, dbl_mb(k_vecs), nbf)
-            call ga_put(g_vecs, 1, nbf, i, i, dbl_mb(k_vecs), 1)
+            call ga_put(g_vecs, 1, nbf, i, i, dbl_mb(k_vecs), nbf)
          enddo
  9       close(unitno,err=1002)
          ok = 1
@@ -584,8 +584,10 @@ c
                if (j.lt.0 .or. j.gt.dim2) call errquit
      $              ('movecs_swap: invalid vector ', j, INPUT_ERR)
 c     
-               call ga_get(g_vecs(set), 1, dim1, i, i, dbl_mb(k_veci),1)
-               call ga_get(g_vecs(set), 1, dim1, j, j, dbl_mb(k_vecj),1)
+               call ga_get(g_vecs(set), 1, dim1, i, i, 
+     D              dbl_mb(k_veci),dim1)
+               call ga_get(g_vecs(set), 1, dim1, j, j, 
+     D              dbl_mb(k_vecj),dim1)
 c
                if(dorot) then 
                   if (.not. ma_push_get(mt_dbl, dim1, 'swap', 
@@ -628,8 +630,10 @@ c
                   if (.not. ma_chop_stack(l_ti)) call errquit(
      M                 'moswap: chop stack?', 0,MA_ERR)
             else
-               call ga_put(g_vecs(set), 1, dim1, i, i, dbl_mb(k_vecj),1)
-               call ga_put(g_vecs(set), 1, dim1, j, j, dbl_mb(k_veci),1)
+               call ga_put(g_vecs(set), 1, dim1, i, i, 
+     D              dbl_mb(k_vecj),dim1)
+               call ga_put(g_vecs(set), 1, dim1, j, j, 
+     D              dbl_mb(k_veci),dim1)
             endif
 c
             enddo
@@ -1168,7 +1172,7 @@ c
      $    call errquit('matrix_fwrite: ma failed', nrow, MA_ERR)
         lgth=8d0*nrow
         do j=jlo,jhi
-          call ga_get(g_a, ilo, ihi, j, j, dbl_mb(k_tmp), 1)
+          call ga_get(g_a, ilo, ihi, j, j, dbl_mb(k_tmp), ihi-ilo+1)
           ierr = eaf_write(unitno, offset, dbl_mb(k_tmp),lgth)
           if (ierr .ne. 0) then
              call eaf_errmsg(ierr, errmsg)
@@ -1323,7 +1327,7 @@ c
           goto 1001
         endif
         offset=offset+lgth
-        call ga_put(g_a, ilo, ihi, j, j, dbl_mb(k_tmp), 1)
+        call ga_put(g_a, ilo, ihi, j, j, dbl_mb(k_tmp), ihi-ilo+1)
         enddo
         if (.not. ma_pop_stack(l_tmp))
      $    call errquit('file_read_ga: ma pop failed', l_tmp, MA_ERR)

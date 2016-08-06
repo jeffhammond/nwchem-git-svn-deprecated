@@ -475,24 +475,34 @@ c      end if
       real*8 exc_tmp
 
 *     **** external functions ****
-      real*8   log_integrate_def
-      external log_integrate_def
+      real*8   log_integrate_def_destroyf
+      external log_integrate_def_destroyf
 
       call nwpw_timing_start(36)
 
 *     *** index for spin down in temp arrays ***      
       lmax2  = (mult_l_max+1)**2
+!$OMP MASTER
       dbl_mb(paw_xc_e(1)+ii-1)=0.0d0
+!$OMP END MASTER
      
 *     *** zero out vxclm multipole arrays ***
       nsize = ispin*n1dgrid_max*lmax2
-      call dcopy(nsize,0.0d0,0,dbl_mb(paw_vxc_ae(1)),1)
-      call dcopy(nsize,0.0d0,0,dbl_mb(paw_vxc_ps(1)),1)
+      !call dcopy(nsize,0.0d0,0,dbl_mb(paw_vxc_ae(1)),1)
+      !call dcopy(nsize,0.0d0,0,dbl_mb(paw_vxc_ps(1)),1)
+      call Parallel_shared_vector_zero(.false.,nsize,
+     >                                 dbl_mb(paw_vxc_ae(1)))
+      call Parallel_shared_vector_zero(.true.,nsize,
+     >                                 dbl_mb(paw_vxc_ps(1)))
 
 *     *** zero out dvxclm multipole arrays ***
       if (gga.ge.10) then
-         call dcopy(3*nsize,0.0d0,0,dbl_mb(paw_dvxc_ae(1)),1)
-         call dcopy(3*nsize,0.0d0,0,dbl_mb(paw_dvxc_ps(1)),1)
+         !call dcopy(3*nsize,0.0d0,0,dbl_mb(paw_dvxc_ae(1)),1)
+         !call dcopy(3*nsize,0.0d0,0,dbl_mb(paw_dvxc_ps(1)),1)
+         call Parallel_shared_vector_zero(.false.,3*nsize,
+     >                                    dbl_mb(paw_dvxc_ae(1)))
+         call Parallel_shared_vector_zero(.true.,3*nsize,
+     >                                    dbl_mb(paw_dvxc_ps(1)))
       end if
 
 *     *** find rholm multipole expansion on spherical grid ***
@@ -537,12 +547,24 @@ c      end if
       
 *       *** zero out temp arrays ***
         nsize = ispin*n1dgrid_max
-        call dcopy(nsize,0.0d0,0,dbl_mb(rho_ae(1)),1)
-        call dcopy(nsize,0.0d0,0,dbl_mb(rho_ps(1)),1)
-        call dcopy(nsize,0.0d0,0,dbl_mb(vxc_ae(1)),1)
-        call dcopy(nsize,0.0d0,0,dbl_mb(vxc_ps(1)),1)
-        call dcopy(nsize,0.0d0,0,dbl_mb(exc_ae(1)),1)
-        call dcopy(nsize,0.0d0,0,dbl_mb(exc_ps(1)),1)
+        !call dcopy(nsize,0.0d0,0,dbl_mb(rho_ae(1)),1)
+        !call dcopy(nsize,0.0d0,0,dbl_mb(rho_ps(1)),1)
+        !call dcopy(nsize,0.0d0,0,dbl_mb(vxc_ae(1)),1)
+        !call dcopy(nsize,0.0d0,0,dbl_mb(vxc_ps(1)),1)
+        !call dcopy(nsize,0.0d0,0,dbl_mb(exc_ae(1)),1)
+        !call dcopy(nsize,0.0d0,0,dbl_mb(exc_ps(1)),1)
+        call Parallel_shared_vector_zero(.false.,nsize,
+     >                                   dbl_mb(rho_ae(1)))
+        call Parallel_shared_vector_zero(.false.,nsize,
+     >                                   dbl_mb(rho_ps(1)))
+        call Parallel_shared_vector_zero(.false.,nsize,
+     >                                   dbl_mb(vxc_ae(1)))
+        call Parallel_shared_vector_zero(.false.,nsize,
+     >                                   dbl_mb(vxc_ps(1)))
+        call Parallel_shared_vector_zero(.false.,nsize,
+     >                                   dbl_mb(exc_ae(1)))
+        call Parallel_shared_vector_zero(.true., nsize,
+     >                                   dbl_mb(exc_ps(1)))
 
 *       *** generate atomic densities on spherical grid ***          
         call nwpw_xc_gen_atomic_densities(n1dgrid,lmax2,ispin,
@@ -671,6 +693,7 @@ c          **** find dvxclm multipole expansion ****
 *        ******************************************************
 *        *** compute the atomic exchange correlation energy ***
 *        ******************************************************
+!$OMP DO
          do ig=1,n1dgrid
             dbl_mb(xc_temp(1)+ig-1)=
      >             (
@@ -684,12 +707,16 @@ c          **** find dvxclm multipole expansion ****
      >             )*
      >             dbl_mb(exc_ps(1)+ig-1)
          end do
-         exc_tmp = log_integrate_def(0,dbl_mb(xc_temp(1)),
+!$OMP END DO
+!$OMP MASTER
+         exc_tmp = log_integrate_def_destroyf(0,dbl_mb(xc_temp(1)),
      >                               2,rgrid,log_amesh,n1dgrid)
          dbl_mb(paw_xc_e(1)+ii-1)=dbl_mb(paw_xc_e(1)+ii-1)+
      >                           exc_tmp*
      >                           dbl_mb(paw_xc_w_theta(1)+i_t-1)*
      >                           dbl_mb(paw_xc_w_phi(1)+i_p-1)
+!$OMP END MASTER
+!$OMP BARRIER
 
       end do !i_p
       end do !i_t
@@ -909,11 +936,13 @@ c
 
       integer    lm,ig
 
-      do lm=1,lmax2
-         do ig=1,ng
+!$OMP DO
+      do ig=1,ng
+         do lm=1,lmax2
            rho(ig) = rho(ig) + rholm(ig,lm)*Tlm(lm)
          end do
       end do
+!$OMP END DO
       
       return
       end
@@ -931,9 +960,11 @@ c
       real*8     rho(*)
 
       integer    ig
+!$OMP DO
       do ig=1,ic
         rho(ig) = rho(ig)/r(ig)
       end do
+!$OMP END DO
       return
       end
 
@@ -963,12 +994,14 @@ c
 
       do ms = 1,ispin
          do lm = 1,lmax2
+!$OMP DO
             do i  = 1,ic
                vxclm_ae(i,lm,ms) = vxclm_ae(i,lm,ms) 
      >                           + vxc_ae(i,ms)*(tlm(lm)*alpha)
                vxclm_ps(i,lm,ms) = vxclm_ps(i,lm,ms) 
      >                          + vxc_ps(i,ms)*(tlm(lm)*alpha)
             end do
+!$OMP END DO
          end do
       end do
       return
@@ -1000,13 +1033,14 @@ c
       real*8  tmp_ae,tmp_ps
 
 *     **** external functions ****
-      real*8   log_integrate_def
-      external log_integrate_def
+      real*8   log_integrate_def_destroyf
+      external log_integrate_def_destroyf
 
       do ms=1,ispin
          do lm=1,lmax2
            do i=1,nb
            do j=i,nb
+!$OMP DO
               do ig=1,ng
                  tmp_ae = phi_ae(ig,i)
      >                   *phi_ae(ig,j)/(r(ig)**2)
@@ -1015,8 +1049,13 @@ c
                  tmpC(ig) = vxclm_ae(ig,lm,ms)*tmp_ae
      >                    - vxclm_ps(ig,lm,ms)*tmp_ps
               end do
-              matr(i,j,lm,ms)=log_integrate_def(0,tmpC,2,r,log_amesh,ng)
+!$OMP END DO
+!$OMP MASTER
+              matr(i,j,lm,ms)
+     >         = log_integrate_def_destroyf(0,tmpC,2,r,log_amesh,ng)
               if (i.ne.j) matr(j,i,lm,ms) = matr(i,j,lm,ms)
+!$OMP END MASTER
+!$OMP BARRIER
            end do
            end do
          end do
@@ -1049,10 +1088,12 @@ c
      >                              rholm(1,1,ms),
      >                              tlm,
      >                              rho(1,ms))
-         call daxpy(ng,0.5d0,rhocore,1,rho(1,ms),1)
+         !call daxpy(ng,0.5d0,rhocore,1,rho(1,ms),1)
+!$OMP DO
          do i=1,ng
-            rho(i,ms) = dabs(rho(i,ms))
+            rho(i,ms) = dabs(rho(i,ms)+0.5d0*rhocore(i))
          end do
+!$OMP END DO
       end do
 
       return
@@ -1086,7 +1127,8 @@ c
 
       integer ms,i
 
-      call dcopy(3*ic*ispin,0.0d0,0,rho_prime,1)
+      !call dcopy(3*ic*ispin,0.0d0,0,rho_prime,1)
+      call Parallel_shared_vector_zero(.true.,3*ic*ispin,rho_prime)
 
       do ms=1,ispin
 
@@ -1097,7 +1139,13 @@ c
      >                              rho_prime(1,1,ms))
 
 *        *** add core d/dr densities***
-         call daxpy(ic,0.5d0,rhocore_prime,1,rho_prime(1,1,ms),1)
+         !call daxpy(ic,0.5d0,rhocore_prime,1,rho_prime(1,1,ms),1)
+!$OMP DO
+         do i=1,ic
+            rho_prime(i,1,ms) = rho_prime(i,1,ms) 
+     >                        + 0.5d0*rhocore_prime(i)
+         end do
+!$OMP END DO
 
 
          !*** only computate radial derivatives if lmax2==1 ****
@@ -1157,17 +1205,21 @@ c
       if (lmax2.eq.1) then
 
 c        **** compute |grad n| ****
+!$OMP DO
          do ig=1,ic
             agr(ig,2*ispin-1)
      >       = dsqrt( (rho_prime(ig,1,1)+rho_prime(ig,1,ispin))**2)
          end do
+!$OMP END DO
 
 c        **** compute |grad nup| and |grad ndn| ****
          if (ispin.eq.2) then
            do ms=1,ispin
+!$OMP DO
            do ig=1,ic
               agr(ig,ms) = dsqrt(rho_prime(ig,1,ms)**2)
            end do
+!$OMP END DO
            end do
          end if
 
@@ -1176,21 +1228,25 @@ c        **** compute |grad nup| and |grad ndn| ****
       !***  computate theta and phi derivatives if lmax2>1 ****
       else
 c        **** compute |grad n| ****
+!$OMP DO
          do ig=1,ic   
             agr(ig,2*ispin-1) 
      >       = dsqrt( (rho_prime(ig,1,1)+rho_prime(ig,1,ispin))**2
      >              + (rho_prime(ig,2,1)+rho_prime(ig,2,ispin))**2
      >              + (rho_prime(ig,3,1)+rho_prime(ig,3,ispin))**2)
          end do
+!$OMP END DO
 
 c        **** compute |grad nup| and |grad ndn| ****
          if (ispin.eq.2) then
            do ms=1,ispin
+!$OMP DO
            do ig=1,ic
               agr(ig,ms) = dsqrt( rho_prime(ig,1,ms)**2
      >                          + rho_prime(ig,2,ms)**2
      >                          + rho_prime(ig,3,ms)**2)
            end do
+!$OMP END DO
            end do
          end if
 
@@ -1227,15 +1283,18 @@ c        **** compute |grad nup| and |grad ndn| ****
 *     *** restricted ****
       if (ispin.eq.1) then
          do j=1,jmax
+!$OMP DO
           do i=1,ic
            rho_prime(i,j,1) = (rho_prime(i,j,1)+rho_prime(i,j,1))
      >                       *(fdn(i,1)/(agr(i,1)+eta))
           end do
+!$OMP END DO
          end do
 
 *     *** unrestricted ****
       else
          do j=1,jmax
+!$OMP DO
           do i=1,ic
             drho1 = rho_prime(i,j,1)
             drho2 = rho_prime(i,j,2)
@@ -1245,6 +1304,7 @@ c        **** compute |grad nup| and |grad ndn| ****
             rho_prime(i,j,2) = (drho2/(agr(i,2)+eta))*fdn(i,2)
      >                       + (drhoa/(agr(i,3)+eta))*fdn(i,3)
           end do
+!$OMP END DO
          end do
       end if
       return
@@ -1282,12 +1342,14 @@ c        **** compute |grad nup| and |grad ndn| ****
       do ms = 1,ispin
          do j  = 1,jmax
             do lm = 1,lmax2
+!$OMP DO
                do i  = 1,ic
                  dvxclm_ae(i,lm,j,ms) = dvxclm_ae(i,lm,j,ms)
      >                                + dvxc_ae(i,j,ms)*(tlm(lm)*alpha)
                  dvxclm_ps(i,lm,j,ms) = dvxclm_ps(i,lm,j,ms)
      >                                + dvxc_ps(i,j,ms)*(tlm(lm)*alpha)
                end do
+!$OMP END DO
             end do
          end do
       end do
@@ -1328,17 +1390,18 @@ c        **** compute |grad nup| and |grad ndn| ****
       real*8  tmp_ae,tmp_ps
 
 *     **** external functions ****
-      real*8   log_integrate_def
-      external log_integrate_def
+      real*8   log_integrate_def_destroyf
+      external log_integrate_def_destroyf
 
-      call dcopy(nb*nb*lmax2*3*ispin,0.0d0,0,dmatr,1)
+      !call dcopy(nb*nb*lmax2*3*ispin,0.0d0,0,dmatr,1)
+      call Parallel_shared_vector_zero(.true.,nb*nb*lmax2*3*ispin,dmatr)
 
 *     **** radial derivative integral ****
       do ms=1,ispin
       do lm=1,lmax2
         do i=1,nb
         do j=i,nb
-
+!$OMP DO
           do ig=1,ng
             tmp_ae 
      >        = ( phi_ae_prime(ig,i)*phi_ae(ig,j)
@@ -1356,8 +1419,13 @@ c        **** compute |grad nup| and |grad ndn| ****
              tmpC(ig) = dvxclm_ae(ig,lm,1,ms)*tmp_ae
      >                - dvxclm_ps(ig,lm,1,ms)*tmp_ps
           end do
-          dmatr(i,j,lm,1,ms)=log_integrate_def(0,tmpC,2,r,log_amesh,ng)
+!$OMP END DO
+!$OMP MASTER
+          dmatr(i,j,lm,1,ms)
+     >     = log_integrate_def_destroyf(0,tmpC,2,r,log_amesh,ng)
           if (i.ne.j) dmatr(j,i,lm,1,ms) = dmatr(i,j,lm,1,ms)
+!$OMP END MASTER
+!$OMP BARRIER
         end do
         end do
       end do
@@ -1372,7 +1440,7 @@ c        **** compute |grad nup| and |grad ndn| ****
       do lm=1,lmax2
         do i=1,nb
         do j=i,nb
-
+!$OMP DO
           do ig=1,ng
              tmp_ae = phi_ae(ig,i)
      >               *phi_ae(ig,j)
@@ -1383,8 +1451,13 @@ c        **** compute |grad nup| and |grad ndn| ****
              tmpC(ig) = dvxclm_ae(ig,lm,2,ms)*tmp_ae
      >                - dvxclm_ps(ig,lm,2,ms)*tmp_ps
           end do
-          dmatr(i,j,lm,2,ms)= log_integrate_def(0,tmpC,2,r,log_amesh,ng)
+!$OMP END DO
+!$OMP MASTER
+          dmatr(i,j,lm,2,ms)
+     >     = log_integrate_def_destroyf(0,tmpC,2,r,log_amesh,ng)
           if (i.ne.j) dmatr(j,i,lm,2,ms) = dmatr(i,j,lm,2,ms)
+!$OMP END MASTER
+!$OMP BARRIER
         end do
         end do
       end do
@@ -1396,6 +1469,7 @@ c        **** compute |grad nup| and |grad ndn| ****
         do i=1,nb
         do j=i,nb
 
+!$OMP DO
           do ig=1,ng
              tmp_ae = phi_ae(ig,i)
      >               *phi_ae(ig,j)
@@ -1406,8 +1480,13 @@ c        **** compute |grad nup| and |grad ndn| ****
              tmpC(ig) = dvxclm_ae(ig,lm,3,ms)*tmp_ae
      >                - dvxclm_ps(ig,lm,3,ms)*tmp_ps
           end do
-          dmatr(i,j,lm,3,ms)= log_integrate_def(0,tmpC,2,r,log_amesh,ng)
+!$OMP END DO
+!$OMP MASTER
+          dmatr(i,j,lm,3,ms)
+     >     = log_integrate_def_destroyf(0,tmpC,2,r,log_amesh,ng)
           if (i.ne.j) dmatr(j,i,lm,3,ms) = dmatr(i,j,lm,3,ms)
+!$OMP END MASTER
+!$OMP BARRIER
         end do
         end do
       end do
@@ -1494,6 +1573,10 @@ c   overlap coefficients.
       integer ms,n,i,lm,iprj,jprj,bi,bj,n1(2),n2(2)
       real*8  tmp_ms,coeff,w,scal
 
+*     **** parallel_wshared common block - used for simple OMP reductions ***
+      real*8 wshared(100),wshared1
+      common /parallel_wshared/ wshared,wshared1
+
 *     **** external functions ****
       real*8   lattice_omega
       external lattice_omega
@@ -1506,8 +1589,12 @@ c   overlap coefficients.
       scal = 1.0d0/lattice_omega()
 
 *     ***init to zero***
-      call dcopy(ispin*lmax2*n1dgrid,0.0d0,0,rholm_ae,1)
-      call dcopy(ispin*lmax2*n1dgrid,0.0d0,0,rholm_ps,1)
+      !call dcopy(ispin*lmax2*n1dgrid,0.0d0,0,rholm_ae,1)
+      !call dcopy(ispin*lmax2*n1dgrid,0.0d0,0,rholm_ps,1)
+      call Parallel_shared_vector_zero(.false.,ispin*lmax2*n1dgrid,
+     >                                 rholm_ae)
+      call Parallel_shared_vector_zero(.true.,ispin*lmax2*n1dgrid,
+     >                                 rholm_ps)
 
       do i=1,nindx
          lm    = lm_rholm(i)
@@ -1518,12 +1605,17 @@ c   overlap coefficients.
          coeff = coeff_rholm(i)*scal
          do ms=1,ispin
             if (ne(ms).gt.0) then
-               w = 0.0d0
+!$OMP MASTER
+               wshared1 = 0.0d0
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO REDUCTION(+:wshared1)
                do n=n1(ms),n2(ms)
-                  w = w + sw1(n,iprj)*sw1(n,jprj)
+                  wshared1 = wshared1 + sw1(n,iprj)*sw1(n,jprj)
                end do
-               call D1dB_SumAll(w)
-               tmp_ms = w*coeff
+!$OMP END DO
+               call D1dB_SumAll(wshared1)
+               tmp_ms = wshared1*coeff
                call nwpw_xc_density_gen_rho(n1dgrid,tmp_ms,
      >                  rgrid,phi_ae(1,bi),phi_ae(1,bj),
      >                  rholm_ae(1,lm+1,ms))
@@ -1539,6 +1631,7 @@ c   overlap coefficients.
       return
       end
 
+
       subroutine nwpw_xc_density_gen_rho(ic,alpha,r,phi1,phi2,rho)
       implicit none
       integer ic
@@ -1552,10 +1645,12 @@ c   overlap coefficients.
       integer i
       double precision tmp
 
+!$OMP DO
       do i=1,ic
          tmp = (phi1(i)*phi2(i))/(r(i)**2)
          rho(i) = rho(i) + alpha*tmp
       end do
+!$OMP END DO
 
       return
       end
@@ -1594,6 +1689,11 @@ c   overlap coefficients.
       integer ms,n,i,lm,iprj,jprj,bi,bj,n1(2),n2(2)
       real*8  tmp_ms,coeff,w,scal
 
+*     **** parallel_wshared common block - used for simple OMP reductions ***
+      real*8 wshared(100),wshared1
+      common /parallel_wshared/ wshared,wshared1
+
+
 *     **** external functions ****
       real*8   lattice_omega
       external lattice_omega
@@ -1606,8 +1706,12 @@ c   overlap coefficients.
       scal = 1.0d0/lattice_omega()
 
 *     ***init to zero***
-      call dcopy(n1dgrid*lmax2*ispin,0.0d0,0,rholm_ae_prime,1)
-      call dcopy(n1dgrid*lmax2*ispin,0.0d0,0,rholm_ps_prime,1)
+      !call dcopy(n1dgrid*lmax2*ispin,0.0d0,0,rholm_ae_prime,1)
+      !call dcopy(n1dgrid*lmax2*ispin,0.0d0,0,rholm_ps_prime,1)
+      call Parallel_shared_vector_zero(.false.,n1dgrid*lmax2*ispin,
+     >                                 rholm_ae_prime)
+      call Parallel_shared_vector_zero(.true.,n1dgrid*lmax2*ispin,
+     >                                 rholm_ps_prime)
 
       do i=1,nindx
          lm    = lm_rholm(i)
@@ -1618,12 +1722,17 @@ c   overlap coefficients.
          coeff = coeff_rholm(i)*scal
          do ms=1,ispin
             if (ne(ms).gt.0) then
-               w = 0.0d0
+!$OMP MASTER
+               wshared1 = 0.0d0
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO REDUCTION(+:wshared1)
                do n=n1(ms),n2(ms)
-                  w = w + sw1(n,iprj)*sw1(n,jprj)
+                  wshared1 = wshared1 + sw1(n,iprj)*sw1(n,jprj)
                end do
-               call D1dB_SumAll(w)
-               tmp_ms = w*coeff
+!$OMP END DO
+               call D1dB_SumAll(wshared1)
+               tmp_ms = wshared1*coeff
                call nwpw_xc_density_gen_drho(n1dgrid,tmp_ms,
      >                  rgrid,
      >                  phi_ae(1,bi),dphi_ae(1,bi),
@@ -1658,11 +1767,13 @@ c   overlap coefficients.
       integer i
       double precision tmp
 
+!$OMP DO
       do i=1,ic
          tmp = (dphi1(i)*phi2(i)+phi1(i)*dphi2(i))/(r(i)**2)
      >       - 2.0d0*(phi1(i)*phi2(i))/(r(i)**3)
          drho(i) = drho(i) + alpha*tmp
       end do
+!$OMP END DO
       return
       end
 
@@ -1715,10 +1826,12 @@ c
          coeff = coeff_rholm(i)
          do ms=1,ispin
             if (ne(ms).gt.0) then
+!$OMP DO
                do n=n1(ms),n2(ms)
                   sw2(n,iprj) = sw2(n,iprj) 
      >                        + coeff*matr(bi,bj,lm+1,ms)*sw1(n,jprj)
                end do 
+!$OMP END DO
             end if
          end do
       end do
@@ -1782,12 +1895,14 @@ c
          coeff3 = coeff_rholm3(i)
          do ms=1,ispin
             if (ne(ms).gt.0) then
+!$OMP DO
                do n=n1(ms),n2(ms)
                   sw2(n,iprj) = sw2(n,iprj)
      >                       + coeff *dmatr(bi,bj,lm+1,1,ms)*sw1(n,jprj)
      >                       + coeff2*dmatr(bi,bj,lm+1,2,ms)*sw1(n,jprj)
      >                       + coeff3*dmatr(bi,bj,lm+1,3,ms)*sw1(n,jprj)
                end do
+!$OMP END DO
             end if
          end do
       end do

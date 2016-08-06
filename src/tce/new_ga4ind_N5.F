@@ -1,3 +1,4 @@
+#define ADDR2OFF 1
       SUBROUTINE new_ga4ind_N5(rtdb,d_v2,
      1                                kax_v2_alpha_offset,
      1                                size_2e)
@@ -18,6 +19,7 @@ C     t ( p1 p2 h3 h4 )_t
 #include "errquit.fh"
 #include "tce.fh"
 #include "tce_main.fh"
+#include "n4ind_ps.fh"
 c
 c written by K. Kowalski
 c
@@ -30,14 +32,17 @@ c
       integer kax_v2_alpha_offset  ! MO integrals offset
       integer size_2e              ! 2e file size
 c
-      INTEGER azone1,azone2,azone3,azone4
-      INTEGER g1b,g2b,g3b,g4b
+cold      INTEGER azone1,azone2,azone3,azone4
+cold      INTEGER g1b,g2b,g3b,g4b
+      INTEGER azone1_in,azone2_in,azone3_in,azone4_in
+      integer g2b_in,g3b_in,g4b_in
       INTEGER igi1,igi2,igi3,igi4
       INTEGER ii,i,j,k,l,N,ipos1,ipos2,ipos3,ipos4
       INTEGER size_4a,l_4a,k_4a
       INTEGER size_aaaa
       INTEGER d_agaa,size_agaa,l_offset_agaa,k_offset_agaa
       INTEGER d_ggaa,size_ggaa,l_offset_ggaa,k_offset_ggaa
+      integer d_ggaa_rep
       INTEGER d_ggga,size_ggga,l_offset_ggga,k_offset_ggga
       INTEGER l_loc_aaaa,k_loc_aaaa,size_loc_aaaa
       INTEGER l_loc_agaa,k_loc_agaa,size_loc_agaa
@@ -104,10 +109,26 @@ c
       integer nxtask
       external nxtask
       logical nodezero
+      integer size_put
+      integer k_4a_ptr
+      integer ilo_put,ihi_put
+      integer d4af_min,d4af_max
       logical idiskl
+      integer mxsize_loc_aaaa,mxsize_loc_agaa
+      integer mxsize_loc_ggga,mxsize_loc_ggaa
+      integer mxsize_aux2,mxsize_aux3,mxsize_aux
+      logical n4cache_found
+      integer addr_n
+      integer n4cache_newentry
+      external n4cache_found,n4cache_newentry
+      external tce_gacreatem_sloc
+      logical tce_gacreatem_sloc,n4cache
+      logical doget3
+#include "n4ind_offset.fh"
 c
 c
       nodezero=(ga_nodeid().eq.0)
+      call n4ind_pstat_init(rtdb)
 c
 c
       max_size_temp=imaxsize**4
@@ -134,19 +155,33 @@ c N is the number of correlated orbitals
 c
 c     pre-compute size_loc_agaa & size_loc_aaaa
 c
-      size_loc_agaa=0
-      size_loc_aaaa=0
+      mxsize_loc_agaa=0
+      mxsize_loc_aaaa=0
+      mxsize_aux=0
+      mxsize_aux2=0
+      mxsize_aux3=0
       DO azone2 = 1,atpart
-         DO azone1 = 1,azone2
+         DO azone1 = 1,atpart
             nnn=nalength(azone1)*nalength(azone2)
             DO g3b = 1,noa+nva
                DO azone3 = 1,atpart
-                  size_loc_agaa= max(size_loc_agaa,
+                  mxsize_loc_agaa= max(mxsize_loc_agaa,
      V                 nnn*
      1                 nalength(azone3)*int_mb(k_range_alpha+g3b-1))
+
+                  mxsize_aux2=max(mxsize_aux2,
+     N                 nbf*nalength(azone3)*nalength(azone1)
+     1                 *nalength(azone2))
+                  mxsize_aux=max(mxsize_aux,
+     N                 nbf*int_mb(k_range_alpha+g3b-1)*nalength(azone1)
+     1         *nalength(azone2))
+
                   DO azone4=1,atpart
+                     mxsize_aux3=max(mxsize_aux3,
+     N                    nalength(azone1)*nalength(azone2)*
+     1                    nalength(azone3)*nalength(azone4))
                      
-                     size_loc_aaaa=max(size_loc_aaaa,
+                     mxsize_loc_aaaa=max(mxsize_loc_aaaa,
      V                    nnn*
      1                    nalength(azone3)*nalength(azone4))
                   enddo
@@ -156,18 +191,26 @@ c
       enddo
 c     pre-compute size_loc_ggaa & size_loc_ggga
 c
-      size_loc_ggaa=0
-      size_loc_ggga=0
+      mxsize_loc_ggaa=0
+      mxsize_loc_ggga=0
       DO azone2 = 1,atpart
          DO g2b = 1,noa+nva
             DO g3b = 1,noa+nva
-               DO g4b = g3b,noa+nva
-                  size_loc_ggga= max(size_loc_ggga,
+               DO g4b = 1,noa+nva
+                  mxsize_loc_ggga= max(mxsize_loc_ggga,
      N                 nalength(azone2)*int_mb(k_range_alpha+g2b-1)*
      1 int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1))
+                  mxsize_aux2=max(mxsize_aux2,
+     1                 int_mb(k_range_alpha+g3b-1)*
+     *                 int_mb(k_range_alpha+g4b-1)*
+     1                 nbf*nalength(azone2))
+c                  mxsize_aux2=max(mxsize_aux2,
+c     1                 int_mb(k_range_alpha+g3b-1)*
+c     *                 int_mb(k_range_alpha+g4b-1)*
+c     1                 nbf*int_mb(k_range_alpha+g2b-1))
 
                   DO azone1=1,atpart ! azone1
-                     size_loc_ggaa=max(size_loc_ggaa,
+                     mxsize_loc_ggaa=max(mxsize_loc_ggaa,
      N                    nalength(azone1)*nalength(azone2)*
      1  int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1))
 
@@ -176,15 +219,27 @@ c
             enddo
          enddo
       enddo
+      mxsize_aux3=max(mxsize_loc_ggaa,mxsize_aux3) 
 
+
+      if (.not.rtdb_get(rtdb,'tce:n4cache',mt_log,1,n4cache))
+     A     n4cache=.false.
 c
 c     Offset for 4a file
 c
       sf_chunk=(imaxsize)**4
-      call tce_4a_offset(l_4af_offset,k_4af_offset,size_4af)
-
+      call tce_4af_offset(l_4af_offset,k_4af_offset,size_4af)
+c     open offset l_agaa
+      call tce_offset_agaa(l_offset_agaa,k_offset_agaa,size_agaa)  
+c     open offset l_ggaa
+      call tce_offset_ggaa(l_offset_ggaa,k_offset_ggaa,size_ggaa)
+c     open offset l_ggga
+      call tce_offset_ggga(l_offset_ggga,k_offset_ggga,size_ggga)
+#ifdef NEW
+      call tce_offset_gggg(l_offset_gggg,k_offset_gggg,size_gggg)
+#endif
       call tce_gacreate_sloc(d_4af, size_4af, 
-     S     size_loc_aaaa, 'd_4af')
+     S     mxsize_loc_aaaa, 'd_4af',int_mb(k_4af_offset),.false.)
 ccx      call ga_zero(d_4af)
 
 c
@@ -202,6 +257,9 @@ c      call dcopy(nbf*(iha+ipa),0.0d0, 0,dbl_mb(k_movecs_orb), 1)
       call dcopy(nbf*ipa,
      c     dbl_mb(k_movecs_sorted+(iha+ihb)*nbf),1,
      C     dbl_mb(k_movecs_orb+iha*nbf),1)
+#ifdef STEP0
+c
+c
 c
 c
       call int_mem_2e4c(work1,work2)
@@ -209,8 +267,6 @@ c
      1  call errquit('tce_ao2e: MA problem work1',0,MA_ERR)
       if (.not.ma_push_get(mt_dbl,work2,'work2',l_work2,k_work2))
      1  call errquit('tce_ao2e: MA problem work2',1,MA_ERR)
-c
-c
 c 
 c 4af file formed here
 c
@@ -223,17 +279,29 @@ c
       nprocs = GA_NNODES()
       count = 0
       call  ga_distribution(d_4af,ga_nodeid(),ilo,ihi,jlo,jhi)
+cdbg      if(ga_nodeid().eq.0) write(6,*) ' size_loc_aaaa ',size_loc_aaaa,
+cdbg     A ' size_4af ',size_4af
+cdbg      write(6,4691) ga_nodeid(),' d_4af distr ',ilo,ihi,jlo,jhi
+ 4691 format(i6,a,4i16)
       if(jlo.gt.0) then
 cold      next = NXTASK(nprocs, 1)
+         key_4af=-1
       DO azone1 = 1,atpart      !nu
       DO azone2 = azone1,atpart !mu
       DO azone3 = 1,atpart      !sigma
       DO azone4 = azone3,atpart !rho
          size_4a = nalength(azone1)*nalength(azone2)*
      1            nalength(azone3)*nalength(azone4)
-         key_4af=azone4 - 1 + atpart * (azone3 - 1 +
-     &          atpart * (azone2 - 1 + atpart * (azone1 - 1)))
-        call tce_hash(int_mb(k_4af_offset),key_4af,offset_4af)
+c         key_4af=key_4af+1
+         key_4af=
+     =     key_4af_off(azone1,azone2,azone3,azone4,atpart) 
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_4af(azone1,azone2,azone3,azone4,atpart) 
+       call tce_addr2off(int_mb(k_offset_4af),addr_n,offset_4af)
+#else
+        call tce_hash_n(int_mb(k_4af_offset),key_4af,offset_4af)
+#endif
        if((ilo.le.offset_4af+size_4a).and.
      A      (ihi.ge.offset_4af+1)) then
 cold      IF (next.eq.count) THEN
@@ -260,6 +328,7 @@ c ---------------------------
      2      BASIS_ERR)
             rho_range = rho_hi - rho_lo + 1
          shift_sigma = 0
+            if (on4indps) call pstat_on(ps_int2e0)
          do sigma = a2length(azone3)+1,a2length(azone3+1)
             if (.not.bas_cn2bfr(ao_bas_han,sigma,sigma_lo,sigma_hi))
      1      call errquit('tce_ao2e: basis fn range problem 1',0,
@@ -270,28 +339,15 @@ c ---------------------------
             call int_2e4c(ao_bas_han,mu,nu,ao_bas_han,rho,sigma,
      1           work2,dbl_mb(k_work2),work1,dbl_mb(k_work1))
 c
-            i=0
-            do mu1     = 1,mu_range
-               imu1=mu1+shift_mu
-               do nu1     = 1,nu_range
-                  inu1=nu1+shift_nu
-                  do rho1    = 1,rho_range
-                     irho1=rho1+shift_rho
-                     do sigma1  = 1,sigma_range
-                        i=i+1
-                        isigma1=sigma1+shift_sigma
-c     (isigma1,irho1|inu1, imu1)
-                        ipos1=(((imu1-1)*nalength(azone1)+inu1-1)*
-     1                       nalength(azone4)+irho1-1)*nalength(azone3)
-     2                       +isigma1
-                        dbl_mb(k_4a+ipos1-1)=dbl_mb(k_work1+i-1)
-                     enddo
-                  enddo
-               enddo
-            enddo
+            call n4ind_transp(dbl_mb(k_4a),dbl_mb(k_work1),nalength,
+     M           mu_range,nu_range,rho_range,sigma_range,
+     S           shift_mu,shift_nu,shift_rho,shift_sigma,
+     A           azone1,azone3,azone4)
+            
             end if !schwarz  screening
          shift_sigma = shift_sigma + sigma_range
          enddo !sigma
+          if (on4indps) call pstat_off(ps_int2e0)
          shift_rho   = shift_rho + rho_range
          enddo !rho
          shift_nu    = shift_nu + nu_range
@@ -300,8 +356,18 @@ c     (isigma1,irho1|inu1, imu1)
          enddo !mu
 c
 c fixing offsets and sf_writing
-        call ga_put(d_4af,offset_4af+1,offset_4af+size_4a,1,1,
-     1    dbl_mb(k_4a),1)
+      if (on4indps) call pstat_on(ps_comm0)
+cc      if(ga_nodeid().lt.2) write(6,4691) ga_nodeid(),' gaput0',
+cc     A     offset_4af+1,offset_4af+size_4a,1,1
+c avoid overlapping ga_put
+      ilo_put=max(offset_4af+1,ilo)
+      ihi_put=min(offset_4af+size_4a,ihi)
+      size_put=ihi_put-ilo_put+1
+      k_4a_ptr=k_4a+ilo_put-(offset_4af+1)
+        call ga_put(d_4af,
+     E     ilo_put,ihi_put,1,1,
+     1    dbl_mb(k_4a_ptr),size_put)
+      if (on4indps) call pstat_off(ps_comm0)
 c closing l_4a file
         if (.not.ma_pop_stack(l_4a))
      1   call errquit('tcc_mo2e_4af2: l_4a',15,MA_ERR)
@@ -316,16 +382,15 @@ cold      next = NXTASK(nprocs, 1)
       endif
 c
 cold      next = NXTASK(-nprocs, 1)
+      if (.not.ma_pop_stack(l_work2))
+     1  call errquit('tcc_ao2e: MA problem',14,MA_ERR)
+c
+      if (.not.ma_pop_stack(l_work1))
+     1  call errquit('tcc_ao2e: MA problem',15,MA_ERR)
+      if (on4indps) call pstat_on(ps_sync0)
       call ga_sync()
-c
-c
-c     open offset l_agaa
-      call tce_offset_agaa(l_offset_agaa,k_offset_agaa,size_agaa)  
-c     open offset l_ggaa
-      call tce_offset_ggaa(l_offset_ggaa,k_offset_ggaa,size_ggaa)
-c     open offset l_ggga
-      call tce_offset_ggga(l_offset_ggga,k_offset_ggga,size_ggga)
-c
+      if (on4indps) call pstat_off(ps_sync0)
+#endif
       max_na=0
       do i=1,atpart
        if(nalength(i).gt.max_na) max_na=nalength(i)
@@ -343,67 +408,98 @@ c
 c     step1
 c
 c     open ga d_agaa (size_agaa)
+       d4af_min= int(1d10)
+       d4af_max=-99999
        if(nodezero) then
           write(6,'(A,F20.2,A)') ' starting step 1 at ',
      C         util_wallsec(), ' secs '
           call util_flush(6)
        endif
        
+      if (on4indps) call pstat_on(ps_comm1)
        call tce_gacreate_sloc(d_agaa, size_agaa,
-     S      size_loc_agaa, 'd_agaa')
+     S     mxsize_loc_agaa, 'd_agaa',int_mb(k_offset_agaa),.false.)
+      if (on4indps) call pstat_off(ps_comm1)
 
       call  ga_distribution(d_agaa,ga_nodeid(),ilo,ihi,jlo,jhi)
+cdbg      write(6,4691) ga_nodeid(),' d_agaa distr ',ilo,ihi,jlo,jhi
       if(jlo.gt.0) then
-       if (.not.ma_push_get(mt_dbl,size_loc_agaa,'loc_agaa',
+       if (.not.ma_push_get(mt_dbl,mxsize_loc_agaa,'loc_agaa',
      1 l_loc_agaa,k_loc_agaa))
-     1 call errquit('step1:1',0,MA_ERR)
-        if (.not.ma_push_get(mt_dbl,size_loc_aaaa,'loc_aaaa',
+     1 call errquit('step1:1',mxsize_loc_agaa,MA_ERR)
+        if (.not.ma_push_get(mt_dbl,mxsize_loc_aaaa,'loc_aaaa',
      1  l_loc_aaaa,k_loc_aaaa))
-     1  call errquit('step1:2',0,MA_ERR)
+     1  call errquit('step1:2',mxsize_loc_aaaa,MA_ERR)
          if (.not.ma_push_get(mt_dbl,
-     M   max(size_loc_aaaa,size_loc_agaa),'auxaaaa',
+     M   max(mxsize_loc_aaaa,mxsize_loc_agaa),'auxaaaa',
      1   l_aux,k_aux))
-     1   call errquit('step1:3',0,MA_ERR)
+     1   call errquit('step1:3',mxsize_loc_agaa,MA_ERR)
 
       nprocs = GA_NNODES()
       count = 0
-cold      next = NXTASK(nprocs, 1)
-c do parallel 
-      DO azone2 = 1,atpart
-      DO azone1 = 1,azone2
-      DO g3b = 1,noa+nva
-      DO azone3 = 1,atpart
-       size_loc_agaa= nalength(azone1)*nalength(azone2)*
-     1 nalength(azone3)*int_mb(k_range_alpha+g3b-1)
-       key_agaa=azone3-1+atpart*(g3b-1+
-     1  (noa+nva)*(azone1-1+atpart*(azone2-1)))
-       call tce_hash_n(int_mb(k_offset_agaa),key_agaa,offset_agaa)
-       if((ilo.le.offset_agaa+size_loc_agaa).and.
-     A      (ihi.ge.offset_agaa+1)) then
-cold      IF (next.eq.count) THEN
-       call dfill(size_loc_agaa,0.0d0, dbl_mb(k_loc_agaa), 1)
-c open k_aux (
-c     declare (k_aux) ( all-az4 az3 | az1 az2)
-      size_aux2=nbf*nalength(azone3)*nalength(azone1)
-     1         *nalength(azone2)
-       if (.not.ma_push_get(mt_dbl,size_aux2,'loc_qm2',
+       if (.not.ma_push_get(mt_dbl,mxsize_aux2,'loc_qm2',
      1 l_aux2,k_aux2))
      1 call errquit('step2:1m4',0,MA_ERR)
+       if (.not.ma_push_get(mt_dbl,
+     M     max(mxsize_aux3,mxsize_loc_agaa),'loc_qm3',
+     1 l_aux3,k_aux3))
+     1 call errquit('Xtep2:1m4',0,MA_ERR)
+      call n4cache_init()
+       
+cold      next = NXTASK(nprocs, 1)
+c do parallel 
+c      DO azone2 = 1,atpart
+cstag to avoid congestion
+
+      DO azone2 = 1,atpart
+      DO azone1 = 1,azone2
+      DO azone3 = 1,atpart
+         doget3=.false.
+      DO g3b = 1,noa+nva
+       size_loc_agaa= nalength(azone1)*nalength(azone2)*
+     1 nalength(azone3)*int_mb(k_range_alpha+g3b-1)
+       key_agaa=
+     =     key_agaa_off(azone1,azone2,azone3,g3b,noa,nva,atpart) 
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_agaa(azone1,azone2,azone3,g3b,noa,nva,atpart) 
+       call tce_addr2off(int_mb(k_offset_agaa),addr_n,offset_agaa)
+#else
+       call tce_hash_n(int_mb(k_offset_agaa),key_agaa,offset_agaa)
+#endif
+       if((ilo.le.offset_agaa+size_loc_agaa).and.
+     A      (ihi.ge.offset_agaa+1)) doget3=.true.
+      enddo
+      if(doget3) then
+c open k_aux (
+c     declare (k_aux) ( all-az4 az3 | az1 az2)
       istart=0
 c
        DO azone4=1,atpart
         size_aux3=nalength(azone1)*nalength(azone2)*
      1  nalength(azone3)*nalength(azone4)
-       if (.not.ma_push_get(mt_dbl,size_aux3,'loc_qm3',
-     1 l_aux3,k_aux3))
-     1 call errquit('Xtep2:1m4',0,MA_ERR)
         if(azone4.le.azone3) then ! azone4 <= azone3
          key_aaaa=azone3-1+atpart*(azone4-1+
      &          atpart*(azone2-1+atpart*(azone1-1)))
-         call tce_hash(int_mb(k_4af_offset),key_aaaa,offset_aaaa)
+         call tce_hash_n(int_mb(k_4af_offset),key_aaaa,offset_aaaa)
 c k_aux3: (az4 az3| az1 az2) -> (az2 az3|az1 az4)
-         call ga_get(d_4af,offset_aaaa+1,offset_aaaa+size_aux3,1,1,
-     1    dbl_mb(k_aux3),1)
+cdbg      if(ga_nodeid().lt.2) write(6,4691) ga_nodeid(),' gaget11',
+cdbg     1   offset_aaaa+1,offset_aaaa+size_aux3,1,1
+      d4af_min=min(d4af_min,offset_aaaa+1)
+      d4af_max=max(d4af_max,offset_aaaa+size_aux3)
+      d4af_min=offset_aaaa+1
+      d4af_max=offset_aaaa+size_aux3
+#if 0
+      if (on4indps) call pstat_on(ps_get1)
+      call n4cache_get4af(offset_aaaa+1,offset_aaaa+size_aux3,
+     D     d_4af,dbl_mb(k_aux3))
+      if (on4indps) call pstat_off(ps_get1)
+#else
+      if (on4indps) call pstat_on(ps_int2e0)
+      call n4ind_2e4c(azone1,azone2,azone4,azone3,dbl_mb(k_aux3))
+      if (on4indps) call pstat_off(ps_int2e0)
+#endif
+
 c transposition (az4 az3|az1 az2) --> (az2 az3|az1 az4)
         call TCE_SORT_4KG_(dbl_mb(k_aux3),dbl_mb(k_aux2+istart),
      1   nalength(azone4),nalength(azone3),
@@ -412,22 +508,53 @@ c transposition (az4 az3|az1 az2) --> (az2 az3|az1 az4)
         else    ! azone4 > azone3
          key_aaaa=azone4-1+atpart*(azone3-1+
      &          atpart*(azone2-1+atpart*(azone1-1)))
-         call tce_hash(int_mb(k_4af_offset),key_aaaa,offset_aaaa)
-         call ga_get(d_4af,offset_aaaa+1,offset_aaaa+size_aux3,1,1,
-     1    dbl_mb(k_aux3),1)
+         call tce_hash_n(int_mb(k_4af_offset),key_aaaa,offset_aaaa)
+
+#if 1
+c         call ga_get(d_4af,offset_aaaa+1,offset_aaaa+size_aux3,1,1,
+c     1    dbl_mb(k_aux3),size_aux3)
+c         load get & int2e4c and cfrt
+      if (on4indps) call pstat_on(ps_int2e0)
+      call n4ind_2e4c(azone1,azone2,azone3,azone4,dbl_mb(k_aux3))
+      if (on4indps) call pstat_off(ps_int2e0)
+#else
+      if (on4indps) call pstat_on(ps_get1)
+cdbg      if(ga_nodeid().lt.2) write(6,4691) ga_nodeid(),' gaget12',
+cdbg     1    offset_aaaa+1,offset_aaaa+size_aux3,1,1
+      d4af_min=min(d4af_min,offset_aaaa+1)
+      d4af_max=max(d4af_max,offset_aaaa+size_aux3)
+      call n4cache_get4af(offset_aaaa+1,offset_aaaa+size_aux3,
+     D     d_4af,dbl_mb(k_aux3))
+      if (on4indps) call pstat_off(ps_get1)
+#endif
 c        k_aux3: (az3 az4|az1 az2) -> (az2 az3|az1 az4)
         call TCE_SORT_4KG_(dbl_mb(k_aux3),dbl_mb(k_aux2+istart),
      1   nalength(azone3),nalength(azone4),
      1   nalength(azone1),nalength(azone2),4,1,3,2,1.0d0)
         istart=istart+size_aux3
         end if  ! azone4 <= azone3
-        if (.not.ma_pop_stack(l_aux3))
-     1  call errquit('f4ind:QA1',15,MA_ERR)
        ENDDO  !azone4
 c big dgemm here (az2 az3|az1 all-az4)(all-az4 g3)=(az2 az3|az1 g3)
-       if (.not.ma_push_get(mt_dbl,size_loc_agaa,'loc_qm3',
-     1 l_aux3,k_aux3))
-     1 call errquit('Xtep2:1m4',0,MA_ERR)
+      DO g3b = 1,noa+nva
+       size_loc_agaa= nalength(azone1)*nalength(azone2)*
+     1 nalength(azone3)*int_mb(k_range_alpha+g3b-1)
+       key_agaa=
+     =     key_agaa_off(azone1,azone2,azone3,g3b,noa,nva,atpart)
+
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_agaa(azone1,azone2,azone3,g3b,noa,nva,atpart) 
+       call tce_addr2off(int_mb(k_offset_agaa),addr_n,offset_agaa)
+#else
+       call tce_hash_n(int_mb(k_offset_agaa),key_agaa,offset_agaa)
+#endif
+       if((ilo.le.offset_agaa+size_loc_agaa).and.
+     A      (ihi.ge.offset_agaa+1)) then
+cold      IF (next.eq.count) THEN
+       call dfill(size_loc_agaa,0.0d0, dbl_mb(k_loc_agaa), 1)
+c open k_aux (
+c     declare (k_aux) ( all-az4 az3 | az1 az2)
+      if (on4indps) call pstat_on(ps_comp1)
        call dgemm('N','N',
      1  nalength(azone2)*nalength(azone3)*nalength(azone1),
      2  int_mb(k_range_alpha+g3b-1),
@@ -439,26 +566,43 @@ c big dgemm here (az2 az3|az1 all-az4)(all-az4 g3)=(az2 az3|az1 g3)
      8  nbf,0.0d0,
      9  dbl_mb(k_aux3),
      1  nalength(azone2)*nalength(azone3)*nalength(azone1))
+      if (on4indps) call pstat_off(ps_comp1)
 c TRANSPOSITION
        CALL TCE_SORT_4KG_(dbl_mb(k_aux3),dbl_mb(k_loc_agaa),
      &  nalength(azone2),nalength(azone3),
      &  nalength(azone1),int_mb(k_range_alpha+g3b-1),
      &  2,4,3,1,1.0d0)
-        if (.not.ma_pop_stack(l_aux3))
-     1  call errquit('f4ind:QA1',15,MA_ERR)
-       call ga_put(d_agaa,offset_agaa+1,offset_agaa+size_loc_agaa,1,1,
-     1  dbl_mb(k_loc_agaa),1)
+      if (on4indps) call pstat_on(ps_put1)
+cdbg      if(ga_nodeid().lt.2) write(6,4691) ga_nodeid(),' gaput1',
+cdbg     1    offset_agaa+1,offset_agaa+size_loc_agaa,1,1
+      ilo_put=max(offset_agaa+1,ilo)
+      ihi_put=min(offset_agaa+size_loc_agaa,ihi)
+      size_put=ihi_put-ilo_put+1
+      k_4a_ptr=k_loc_agaa+ilo_put-(offset_agaa+1)
+        if(k_4a_ptr+size_put-k_loc_agaa.gt.mxsize_loc_agaa) then
+           call errquit(' wrong size for put ',-123,
+     *          0)
+        endif
+       call ga_put(d_agaa,ilo_put,ihi_put,1,1,
+     1  dbl_mb(k_4a_ptr),size_loc_agaa)
+c       call ga_put(d_agaa,offset_agaa+1,offset_agaa+size_loc_agaa,1,1,
+c     1  dbl_mb(k_loc_agaa),size_loc_agaa)
+      if (on4indps) call pstat_off(ps_put1)
 c
-        if (.not.ma_pop_stack(l_aux2))
-     1  call errquit('g4ind:QA1',15,MA_ERR)
 c
 cold      next = NXTASK(nprocs, 1)
       END IF
       count = count + 1
-      ENDDO !azone3
       ENDDO !g3b
+      endif
+      ENDDO !azone3
       ENDDO !azone1
       ENDDO !azone2
+      call n4cache_stop()
+        if (.not.ma_pop_stack(l_aux3))
+     1  call errquit('f4ind:QA1',15,MA_ERR)
+        if (.not.ma_pop_stack(l_aux2))
+     1  call errquit('g4ind:QA1',15,MA_ERR)
         if (.not.ma_pop_stack(l_aux))
      1  call errquit('g4ind:MA1',15,MA_ERR)
         if (.not.ma_pop_stack(l_loc_aaaa))
@@ -467,9 +611,14 @@ cold      next = NXTASK(nprocs, 1)
      1 call errquit('g4ind:MA1',15,MA_ERR)
 cold      next = NXTASK(-nprocs, 1)
       endif
-      call ga_sync()      
+      if (on4indps) call pstat_on(ps_comm1)
+cedo      call ga_sync()      
 c     delete d_4af
+cdbg      write(6,1973) ga_nodeid(), ' d4af min max ',d4af_min,d4af_max,
+cdbg     C     d4af_max-d4af_min+1
+ 1973 format(i6,a,3i20)
       call deletefile(d_4af)
+      if (on4indps) call pstat_off(ps_comm1)
 c
 c
 c
@@ -485,68 +634,115 @@ c     open ga d_ggaa (size_ggaa)
      C         util_wallsec(), ' secs '
           call util_flush(6)
        endif
+      if (on4indps) call pstat_on(ps_comm2)
+#if 0
       call tce_gacreate_sloc(d_ggaa, size_ggaa,
-     S     size_loc_ggaa, 'd_ggaa')
+     S     mxsize_loc_ggaa, 'd_ggaa',int_mb(k_offset_ggaa),.true.)
+#else
+      call tce_gacreate_sloc(d_ggaa, size_ggaa,
+     S     mxsize_loc_ggga, 'd_ggaa',int_mb(k_offset_ggga),.false.)
+#endif
+      if (on4indps) call pstat_off(ps_comm2)
 c
       nprocs = GA_NNODES()
       count = 0
 cold      next = NXTASK(nprocs, 1)
       call  ga_distribution(d_ggaa,ga_nodeid(),ilo,ihi,jlo,jhi)
       if(jlo.gt.0) then
+#ifdef DBG
+      if(ga_nodeid().eq.0) write(6,*) ' size_loc_ggaa ',mxsize_loc_ggaa,
+     A ' size_ggaa ',size_ggaa
+      write(6,4691) ga_nodeid(),' d_ggaa distr ',ilo,ihi,jlo,jhi
+      write(6,*) ga_nodeid(),' atpart ',atpart
+      write(6,*) ga_nodeid(),' noanva ',noa+nva
+#endif
+       if (.not.ma_push_get(mt_dbl,mxsize_loc_ggaa,'loc_ggaa',
+     1 l_loc_ggaa,k_loc_ggaa))
+     1 call errquit('step2:1',0,MA_ERR)
+       if (.not.ma_push_get(mt_dbl,mxsize_aux,'loc_all-a-gaa',
+     1 l_aux,k_aux))
+     1 call errquit('step2:1m4',0,MA_ERR)
+cbaaad200
+       if (.not.ma_push_get(mt_dbl,max(mxsize_loc_agaa,
+     M      mxsize_loc_ggaa),
+     L      'loc_agaa',
+     1      l_aux2,k_aux2))
+     1  call errquit('step2:1m4uu',0,MA_ERR)
 c do parallel
       DO azone2 = 1,atpart
       DO azone1 = 1,azone2
       DO g3b = 1,noa+nva
-      DO g4b = g3b,noa+nva
 cold      IF (next.eq.count) THEN
-       key_ggaa=g4b-1+(noa+nva)*(g3b-1+
-     &  (noa+nva)*(azone1-1+atpart*(azone2-1)))
+         doget3=.false.
+      DO g4b = g3b,noa+nva
+       key_ggaa= key_ggaa_off(azone1,azone2,g3b,g4b,noa,nva,atpart)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_ggaa(azone1,azone2,g3b,g4b,noa,nva,atpart) 
+       call tce_addr2off(int_mb(k_offset_ggaa),addr_n,offset_ggaa)
+#else
        call tce_hash_n(int_mb(k_offset_ggaa),key_ggaa,offset_ggaa)
+#endif
        size_loc_ggaa= nalength(azone1)*nalength(azone2)*
      1 int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
        if((ilo.le.offset_ggaa+size_loc_ggaa).and.
-     A      (ihi.ge.offset_ggaa+1)) then
-       if (.not.ma_push_get(mt_dbl,size_loc_ggaa,'loc_ggaa',
-     1 l_loc_ggaa,k_loc_ggaa))
-     1 call errquit('step2:1',0,MA_ERR)
-      call dfill(size_loc_ggaa,0.0d0, dbl_mb(k_loc_ggaa), 1)
+     A      (ihi.ge.offset_ggaa+1)) doget3=.true.
+       enddo ! g4b
+      if(doget3) then
 c
 c     declare (k_aux) ( nbf(az3) g3b | az1 az2)
       size_aux=nbf*int_mb(k_range_alpha+g3b-1)*nalength(azone1)
      1         *nalength(azone2)
-       if (.not.ma_push_get(mt_dbl,size_aux,'loc_all-a-gaa',
-     1 l_aux,k_aux))
-     1 call errquit('step2:1m4',0,MA_ERR)
       istart=0
 c
        DO azone3=1,atpart
         size_loc_agaa=nalength(azone1)*nalength(azone2)*
      1  int_mb(k_range_alpha+g3b-1)*nalength(azone3)
-        key_agaa=azone3-1+atpart*(g3b-1+
-     1   (noa+nva)*(azone1-1+atpart*(azone2-1)))
+       key_agaa=
+     =     key_agaa_off(azone1,azone2,azone3,g3b,noa,nva,atpart)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_agaa(azone1,azone2,azone3,g3b,noa,nva,atpart) 
+       call tce_addr2off(int_mb(k_offset_agaa),addr_n,offset_agaa)
+#else
         call tce_hash_n(int_mb(k_offset_agaa),key_agaa,offset_agaa)
-       if (.not.ma_push_get(mt_dbl,size_loc_agaa,'loc_agaa',
-     1  l_aux2,k_aux2))
-     1  call errquit('step2:1m4uu',0,MA_ERR)
+#endif
+      if (on4indps) call pstat_on(ps_get2)
+        if(size_loc_agaa.gt.mxsize_loc_agaa) then
+           call errquit(' wrong size for loc_gggg ',-123,
+     *          0)
+        endif
         call ga_get(d_agaa,offset_agaa+1,offset_agaa+size_loc_agaa,1,1,
-     1   dbl_mb(k_aux2),1)
+     1   dbl_mb(k_aux2),size_loc_agaa)
+      if (on4indps) call pstat_off(ps_get2)
         call TCE_SORT_4KG_(dbl_mb(k_aux2),dbl_mb(k_aux+istart),
      1   nalength(azone3),int_mb(k_range_alpha+g3b-1),
      1   nalength(azone1),nalength(azone2),4,2,3,1,1.0d0)
         istart=istart+size_loc_agaa
-        if (.not.ma_pop_stack(l_aux2))
-     1  call errquit('g4ind:MA1xo',16,MA_ERR)
 c stored as (az2 g3b az1 all-az3)
 c
        ENDDO
+      DO g4b = g3b,noa+nva
+cold      IF (next.eq.count) THEN
+       key_ggaa= key_ggaa_off(azone1,azone2,g3b,g4b,noa,nva,atpart)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_ggaa(azone1,azone2,g3b,g4b,noa,nva,atpart) 
+       call tce_addr2off(int_mb(k_offset_ggaa),addr_n,offset_ggaa)
+#else
+       call tce_hash_n(int_mb(k_offset_ggaa),key_ggaa,offset_ggaa)
+#endif
+       size_loc_ggaa= nalength(azone1)*nalength(azone2)*
+     1 int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
+       if((ilo.le.offset_ggaa+size_loc_ggaa).and.
+     A      (ihi.ge.offset_ggaa+1)) then
+      call dfill(size_loc_ggaa,0.0d0, dbl_mb(k_loc_ggaa), 1)
 c 
 c   do global dgemm (az2 g3b az1 all-az3) C(all-az3 g4) => 
 c      (az2 g3b az1 g4)
 c
-       if (.not.ma_push_get(mt_dbl,size_loc_ggaa,'aux2',
-     1  l_aux2,k_aux2))
-     1 call errquit('step2:1m4z5',0,MA_ERR)
 c
+      if (on4indps) call pstat_on(ps_comp2)
        call dgemm('N','N',
      1  nalength(azone2)*int_mb(k_range_alpha+g3b-1)*nalength(azone1),
      2  int_mb(k_range_alpha+g4b-1),
@@ -558,35 +754,45 @@ c
      8  nbf,0.0d0,
      9  dbl_mb(k_aux2),
      1  nalength(azone2)*int_mb(k_range_alpha+g3b-1)*nalength(azone1))
+      if (on4indps) call pstat_off(ps_comp2)
 c
         call TCE_SORT_4KG_(dbl_mb(k_aux2),dbl_mb(k_loc_ggaa),
      1   nalength(azone2),int_mb(k_range_alpha+g3b-1),
      1   nalength(azone1),int_mb(k_range_alpha+g4b-1),
      1   4,2,3,1,1.0d0)
 c
-        if (.not.ma_pop_stack(l_aux2))
-     1  call errquit('g4ind:MA1x9',16,MA_ERR)
-c
-c   delete k_aux
-       if (.not.ma_pop_stack(l_aux))
-     1 call errquit('g4ind:MAu3',15,MA_ERR)
+
 c     
-       call ga_put(d_ggaa,offset_ggaa+1,offset_ggaa+size_loc_ggaa,1,1,
-     1  dbl_mb(k_loc_ggaa),1)
-       if (.not.ma_pop_stack(l_loc_ggaa))
-     1 call errquit('g4ind:MA1',15,MA_ERR)
+      if (on4indps) call pstat_on(ps_put2)
+      ilo_put=max(offset_ggaa+1,ilo)
+      ihi_put=min(offset_ggaa+size_loc_ggaa,ihi)
+      size_put=ihi_put-ilo_put+1
+      k_4a_ptr=k_loc_ggaa+ilo_put-(offset_ggaa+1)
+       call ga_put(d_ggaa,ilo_put,ihi_put,1,1,
+     1  dbl_mb(k_4a_ptr),size_put)
+      if (on4indps) call pstat_off(ps_put2)
 cold      next = NXTASK(nprocs, 1)
       END IF
       count = count + 1
       ENDDO !g4b
-      ENDDO !g3b
+      endif ! doget3
       ENDDO !azone1
+      ENDDO !g3b
       ENDDO !azone2
 cold      next = NXTASK(-nprocs, 1)
+        if (.not.ma_pop_stack(l_aux2))
+     1  call errquit('g4ind:MA1xo',16,MA_ERR)
+cc   delete k_aux
+       if (.not.ma_pop_stack(l_aux))
+     1 call errquit('g4ind:MAu3',15,MA_ERR)
+       if (.not.ma_pop_stack(l_loc_ggaa))
+     1 call errquit('g4ind:MA1',15,MA_ERR)
       endif
-      call ga_sync()
+      if (on4indps) call pstat_on(ps_comm2)
+cedo      call ga_sync()
 c     delete d_agaa
       call deletefile(d_agaa)
+      if (on4indps) call pstat_off(ps_comm2)
 c
 c
 c
@@ -604,9 +810,15 @@ c     open ga d_ggga (size_ggga)
           call util_flush(6)
        endif
 
+      if (on4indps) call pstat_on(ps_comm3)
+
+
       call tce_gacreate_sloc(d_ggga, size_ggga,
-     S     size_loc_ggga, 'd_ggga')
+     S     mxsize_loc_ggga, 'd_ggga',int_mb(k_offset_ggga),.false.)
+      if (on4indps) call pstat_off(ps_comm3)
 c
+       d4af_min= int(1d10)
+       d4af_max=-99999
       nprocs = GA_NNODES()
       count = 0
 cold      next = NXTASK(nprocs, 1)
@@ -618,17 +830,135 @@ cold      next = NXTASK(nprocs, 1)
           call util_flush(6)
 #endif
       if(jlo.gt.0) then
+      if (.not.ma_push_get(mt_dbl,mxsize_loc_ggga,'loc_qyaa',
+     1     l_aux,k_aux))
+     1     call errquit('step3:1ma',0,MA_ERR)
+      if (.not.ma_push_get(mt_dbl,mxsize_aux2,'loc_all-a-gaa',
+     1 l_aux2,k_aux2))
+     1 call errquit('step2:1m4',0,MA_ERR)
+c open k_aux3
+         if (.not.ma_push_get(mt_dbl,mxsize_loc_ggaa,'auxaaaa',
+     1   l_aux3,k_aux3))
+     1   call errquit('step3:3',0,MA_ERR)
+       if (.not.ma_push_get(mt_dbl,mxsize_loc_ggga,'loc_ggga',
+     1 l_loc_ggga,k_loc_ggga))
+     1 call errquit('step3:1',0,MA_ERR)
+
 c do parallel
       DO azone2 = 1,atpart
-      DO g2b = 1,noa+nva
       DO g3b = 1,noa+nva
       DO g4b = g3b,noa+nva
+         doget3=.false.
+      DO g2b = 1,noa+nva
 cold      IF (next.eq.count) THEN
        size_loc_ggga= nalength(azone2)*int_mb(k_range_alpha+g2b-1)*
      1 int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
-       key_ggga=g4b-1+(noa+nva)*(g3b-1+
-     &  (noa+nva)*(g2b-1+(noa+nva)*(azone2-1)))
+        key_ggga=
+     =     key_ggga_off(azone2,g2b,g3b,g4b,noa,nva)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_ggga(azone2,g2b,g3b,g4b,noa,nva) 
+       call tce_addr2off(int_mb(k_offset_ggga),addr_n,offset_ggga)
+#else
        call tce_hash_n(int_mb(k_offset_ggga),key_ggga,offset_ggga)
+#endif
+c     do only if ilo <= offset_ggga+size_loc_ggga & ihi>=offset_ggga+1
+       if((ilo.le.offset_ggga+size_loc_ggga).and.
+     A      (ihi.ge.offset_ggga+1)) doget3=.true.
+#ifdef DBG
+          write(6,'(A,I3,A,I9,A,I9,A,I9,A,I9)') 
+     M         ' me ',ga_nodeid(),' ilo ',ilo,' ihi ',ihi,
+     A         ' olo ',offset_ggga+1,' ohi ',offset_ggga+size_loc_ggga
+          call util_flush(6)
+#endif
+       enddo
+       if (doget3) then
+c     declare (k_aux) ( g4 g3 |  az2 all-az1)
+      size_aux2=int_mb(k_range_alpha+g4b-1)*
+     1         int_mb(k_range_alpha+g3b-1)*
+     1         nalength(azone2)*
+     1         nbf
+cedo      if(size_aux2.gt.mxsize_aux2) then
+cedo         
+cedo      endif
+      istart=0
+c
+
+       DO azone1=1,atpart ! azone1
+        if(azone2.lt.azone1) then ! azone2 <= azone1
+         size_loc_ggaa= nalength(azone1)*nalength(azone2)*
+     1   int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
+       key_ggaa= key_ggaa_off(azone2,azone1,g3b,g4b,noa,nva,atpart)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_ggaa(azone2,azone1,g3b,g4b,noa,nva,atpart) 
+       call tce_addr2off(int_mb(k_offset_ggaa),addr_n,offset_ggaa)
+#else
+         call tce_hash_n(int_mb(k_offset_ggaa),key_ggaa,offset_ggaa)
+#endif
+#ifdef DBG
+      if(ga_nodeid().lt.2) write(6,4693) ga_nodeid(),' gaget31',
+     c     offset_ggaa+1,offset_ggaa+size_loc_ggaa,
+     C     azone2,g2b,g3b,g4b,azone1,'    k ',key_ggaa
+ 4693 format(i6,a,7i8,a,i5)
+#endif
+      if (on4indps) call pstat_on(ps_get3)
+      d4af_min=min(d4af_min,offset_ggaa+1)
+      d4af_max=max(d4af_max,offset_ggaa+size_loc_ggaa)
+        if(istart+size_loc_ggaa-1.gt.mxsize_aux2) then
+           call errquit(' wrong size for aux2 ',istart+size_loc_ggaa-1,
+     *          0)
+        endif
+      call ga_get(d_ggaa,offset_ggaa+1,offset_ggaa+size_loc_ggaa,1,1,
+     1     dbl_mb(k_aux2+istart),size_loc_ggaa)
+         istart=istart+size_loc_ggaa
+      if (on4indps) call pstat_off(ps_get3)
+c k_aux accumulates (g4 g3 |az2 az1)
+        else ! azone2 <= azone1
+         size_loc_ggaa= nalength(azone1)*nalength(azone2)*
+     1   int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
+         key_ggaa= key_ggaa_off(azone1,azone2,g3b,g4b,noa,nva,atpart)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_ggaa(azone1,azone2,g3b,g4b,noa,nva,atpart) 
+       call tce_addr2off(int_mb(k_offset_ggaa),addr_n,offset_ggaa)
+#else
+         call tce_hash_n(int_mb(k_offset_ggaa),key_ggaa,offset_ggaa)
+#endif
+      if (on4indps) call pstat_on(ps_get3)
+      d4af_min=min(d4af_min,offset_ggaa+1)
+      d4af_max=max(d4af_max,offset_ggaa+size_loc_ggaa)
+        if(size_loc_ggaa.gt.mxsize_aux3) then
+           call errquit(' wrong size for aux3 ',size_loc_ggaa,
+     *          0)
+        endif
+      call ga_get(d_ggaa,offset_ggaa+1,offset_ggaa+size_loc_ggaa,1,1,
+     1     dbl_mb(k_aux3),size_loc_ggaa)
+      if (on4indps) call pstat_off(ps_get3)
+c k_aux3: (g4 g3|az1 az2) => (g4 g3|az2 az1-all)
+         CALL TCE_SORT_4KG_(dbl_mb(k_aux3),dbl_mb(k_aux2+istart),
+     &   int_mb(k_range_alpha+g4b-1),int_mb(k_range_alpha+g3b-1),
+     &   nalength(azone1),nalength(azone2),
+     &   1,2,4,3,1.0d0)
+         istart=istart+size_loc_ggaa
+c 
+        end if ! azone2 <= azone1
+       ENDDO ! azone1
+c ([g4]=>[g3]|[azone2]all-azone1])*C_(all-azone1[g2])
+c
+      DO g2b = 1,noa+nva
+cold      IF (next.eq.count) THEN
+       size_loc_ggga= nalength(azone2)*int_mb(k_range_alpha+g2b-1)*
+     1 int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
+        key_ggga=
+     =     key_ggga_off(azone2,g2b,g3b,g4b,noa,nva)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_ggga(azone2,g2b,g3b,g4b,noa,nva) 
+       call tce_addr2off(int_mb(k_offset_ggga),addr_n,offset_ggga)
+#else
+       call tce_hash_n(int_mb(k_offset_ggga),key_ggga,offset_ggga)
+#endif
 c     do only if ilo <= offset_ggga+size_loc_ggga & ihi>=offset_ggga+1
        if((ilo.le.offset_ggga+size_loc_ggga).and.
      A      (ihi.ge.offset_ggga+1)) then
@@ -638,59 +968,21 @@ c     do only if ilo <= offset_ggga+size_loc_ggga & ihi>=offset_ggga+1
      A         ' olo ',offset_ggga+1,' ohi ',offset_ggga+size_loc_ggga
           call util_flush(6)
 #endif
-       if (.not.ma_push_get(mt_dbl,size_loc_ggga,'loc_ggga',
-     1 l_loc_ggga,k_loc_ggga))
-     1 call errquit('step3:1',0,MA_ERR)
        call dfill(size_loc_ggga,0.0d0, dbl_mb(k_loc_ggga), 1)
 c     declare (k_aux) ( g4 g3 |  az2 all-az1)
       size_aux2=int_mb(k_range_alpha+g4b-1)*
      1         int_mb(k_range_alpha+g3b-1)*
      1         nalength(azone2)*
      1         nbf
-      if (.not.ma_push_get(mt_dbl,size_aux2,'loc_all-a-gaa',
-     1 l_aux2,k_aux2))
-     1 call errquit('step2:1m4',0,MA_ERR)
-      istart=0
-c
-       DO azone1=1,atpart ! azone1
-        if(azone2.le.azone1) then ! azone2 <= azone1
-         size_loc_ggaa= nalength(azone1)*nalength(azone2)*
-     1   int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
-         key_ggaa=g4b-1+(noa+nva)*(g3b-1+
-     &   (noa+nva)*(azone2-1+atpart*(azone1-1)))
-         call tce_hash(int_mb(k_offset_ggaa),key_ggaa,offset_ggaa)
-         call ga_get(d_ggaa,offset_ggaa+1,offset_ggaa+size_loc_ggaa,1,1,
-     1   dbl_mb(k_aux2+istart),1)
-         istart=istart+size_loc_ggaa
-c k_aux accumulates (g4 g3 |az2 az1)
-        else ! azone2 <= azone1
-         size_loc_ggaa= nalength(azone1)*nalength(azone2)*
-     1   int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
-         key_ggaa=g4b-1+(noa+nva)*(g3b-1+
-     &   (noa+nva)*(azone1-1+atpart*(azone2-1)))
-         call tce_hash(int_mb(k_offset_ggaa),key_ggaa,offset_ggaa)
-c open k_aux3
-         if (.not.ma_push_get(mt_dbl,size_loc_ggaa,'auxaaaa',
-     1   l_aux3,k_aux3))
-     1   call errquit('step3:3',0,MA_ERR)
-         call ga_get(d_ggaa,offset_ggaa+1,offset_ggaa+size_loc_ggaa,1,1,
-     1   dbl_mb(k_aux3),1)
-c k_aux3: (g4 g3|az1 az2) => (g4 g3|az2 az1-all)
-         CALL TCE_SORT_4KG_(dbl_mb(k_aux3),dbl_mb(k_aux2+istart),
-     &   int_mb(k_range_alpha+g4b-1),int_mb(k_range_alpha+g3b-1),
-     &   nalength(azone1),nalength(azone2),
-     &   1,2,4,3,1.0d0)
-         istart=istart+size_loc_ggaa
-c 
-         if (.not.ma_pop_stack(l_aux3))
-     1   call errquit('g4Znd:MA1',15,MA_ERR)
-        end if ! azone2 <= azone1
-       ENDDO ! azone1
-c ([g4]=>[g3]|[azone2]all-azone1])*C_(all-azone1[g2])
-        if (.not.ma_push_get(mt_dbl,size_loc_ggga,'loc_qyaa',
-     1   l_aux,k_aux))
-     1  call errquit('step3:1ma',0,MA_ERR)
-c
+      if (on4indps) call pstat_on(ps_comp3)
+      size_aux2=int_mb(k_range_alpha+g4b-1)*
+     1         int_mb(k_range_alpha+g3b-1)*
+     1         nalength(azone2)*
+     1         nbf
+      if(size_aux2.gt.mxsize_aux2) then
+cedo         
+         write(6,*) ' @@@  sizeaux2> mxs ',size_aux2,mxsize_aux2
+      endif
          call dgemm('N','N',
      1   int_mb(k_range_alpha+g4b-1)*int_mb(k_range_alpha+g3b-1)*
      1   nalength(azone2),                                        !m
@@ -703,32 +995,42 @@ c
      7   0.0d0,dbl_mb(k_aux),
      8   int_mb(k_range_alpha+g4b-1)*int_mb(k_range_alpha+g3b-1)*
      8   nalength(azone2))
+      if (on4indps) call pstat_off(ps_comp3)
 C TRANSPOSITION HERE (g4=>g3|az2 g2) => (g4=>g3|g2 az2)
        CALL TCE_SORT_4KG_(dbl_mb(k_aux),dbl_mb(k_loc_ggga),
      & int_mb(k_range_alpha+g4b-1),int_mb(k_range_alpha+g3b-1),
      & nalength(azone2),int_mb(k_range_alpha+g2b-1),
      & 1,2,4,3,1.0d0)
+      if (on4indps) call pstat_on(ps_put3)
        call ga_put(d_ggga,offset_ggga+1,offset_ggga+size_loc_ggga,1,1,
-     1  dbl_mb(k_loc_ggga),1)
-       if (.not.ma_pop_stack(l_aux))
-     1  call errquit('g4ind:MA1',15,MA_ERR)
-       if (.not.ma_pop_stack(l_aux2))
-     1  call errquit('g4Pnd:MA1',15,MA_ERR)
-       if (.not.ma_pop_stack(l_loc_ggga))
-     1 call errquit('g4ind:MA1',15,MA_ERR)
+     1  dbl_mb(k_loc_ggga),size_loc_ggga)
+      if (on4indps) call pstat_off(ps_put3)
 c
 cold      next = NXTASK(nprocs, 1)
       END IF
       count = count + 1
+      ENDDO !g2b
+      endif
       ENDDO !g4b
       ENDDO !g3b
-      ENDDO !g2b
       ENDDO !azone2
+      if (.not.ma_pop_stack(l_loc_ggga))
+     1     call errquit('g4ind:MA1',15,MA_ERR)
+      if (.not.ma_pop_stack(l_aux3))
+     1     call errquit('g4Znd:MA1',15,MA_ERR)
+      if (.not.ma_pop_stack(l_aux2))
+     1     call errquit('g4Pnd:MA1',15,MA_ERR)
+      if (.not.ma_pop_stack(l_aux))
+     1     call errquit('g4ind:MA1',15,MA_ERR)
       endif
 cood      next = NXTASK(-nprocs, 1)
-      call ga_sync()
+      if (on4indps) call pstat_on(ps_sync3)
+cedo      call ga_sync()
 c     delete d_ggaa
+cdbg      write(6,1973) ga_nodeid(), ' gets min max ',d4af_min,d4af_max,
+cdbg     C     d4af_max-d4af_min+1
       call deletefile(d_ggaa)
+      if (on4indps) call pstat_off(ps_sync3)
        if(nodezero) then
           write(6,'(A,F20.2,A)') ' starting step 4 at ',
      C         util_wallsec(), ' secs '
@@ -752,8 +1054,13 @@ c
 cold      next = NXTASK(nprocs, 1)
 c do parallel
       if(jlo.gt.0) then
+#if 0
+      DO g2b = 1,noa+nva
+      DO g1b = g2b,noa+nva
+#else
       DO g1b = 1,noa+nva
       DO g2b = g1b,noa+nva
+#endif
       DO g3b = 1,noa+nva
       DO g4b = g3b,noa+nva
 c
@@ -769,10 +1076,19 @@ c
        size_loc_gggg= int_mb(k_range_alpha+g1b-1)*
      1 int_mb(k_range_alpha+g2b-1)*
      1 int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
+corg
        key_gggg=g2b - 1 + (noa+nva) *
      &(g1b - 1 + (noa+nva) * (g4b-
      & 1 + (noa+nva) * (g3b - 1)))
+c       key_gggg=g1b - 1 + (noa+nva) *
+c     &(g2b - 1 + (noa+nva) * (g4b-
+c     & 1 + (noa+nva) * (g3b - 1)))
+cc       key_gggg=
+cc     =      key_gggg_off(g1b,g2b,g3b,g4b,noa,nva)
+      if (on4indps) call pstat_on(ps_has4)
        call tce_hash_v2(int_mb(k_v2_alpha_offset),key_gggg,offset_gggg)
+      if (on4indps) call pstat_off(ps_has4)
+
        if((ilo.le.offset_gggg+size_loc_gggg).and.
      A      (ihi.ge.offset_gggg+1)) then
 cold      IF (next.eq.count) THEN
@@ -792,15 +1108,28 @@ c k_aux2: (g4 g3| g2 all-az2)
        DO azone2=1,atpart
         size_loc_ggga=nalength(azone2)*int_mb(k_range_alpha+g2b-1)*
      1  int_mb(k_range_alpha+g3b-1)*int_mb(k_range_alpha+g4b-1)
-        key_ggga=g4b-1+(noa+nva)*(g3b-1+
-     &  (noa+nva)*(g2b-1+(noa+nva)*(azone2-1)))
+        key_ggga=
+     =     key_ggga_off(azone2,g2b,g3b,g4b,noa,nva)
+#ifdef ADDR2OFF
+       addr_n=
+     =     addr_ggga(azone2,g2b,g3b,g4b,noa,nva) 
+       call tce_addr2off(int_mb(k_offset_ggga),addr_n,offset_ggga)
+#else
         call tce_hash_n(int_mb(k_offset_ggga),key_ggga,offset_ggga)
+#endif
+      if (on4indps) call pstat_on(ps_get4)
+        if(istart+size_loc_ggga-1.gt.size_aux2) then
+           call errquit(' wrong size for aux2 ',-123,
+     *          0)
+        endif
         call ga_get(d_ggga,offset_ggga+1,offset_ggga+size_loc_ggga,1,1,
-     1   dbl_mb(k_aux2+istart),1)
+     1   dbl_mb(k_aux2+istart),size_loc_ggga)
+      if (on4indps) call pstat_off(ps_get4)
         istart=istart+size_loc_ggga
 c
        ENDDO !azone2
 c
+      if (on4indps) call pstat_on(ps_comp4)
         call dgemm('N','N',
      1   int_mb(k_range_alpha+g4b-1)*int_mb(k_range_alpha+g3b-1)*
      1   int_mb(k_range_alpha+g2b-1),                             !m
@@ -814,9 +1143,12 @@ c
      7   0.0d0,dbl_mb(k_loc_gggg),
      8   int_mb(k_range_alpha+g4b-1)*int_mb(k_range_alpha+g3b-1)*
      8   int_mb(k_range_alpha+g2b-1))
+      if (on4indps) call pstat_off(ps_comp4)
 c
+      if (on4indps) call pstat_on(ps_put4)
        call ga_put(d_v2,offset_gggg+1,offset_gggg+size_loc_gggg,1,1,
-     1  dbl_mb(k_loc_gggg),1)
+     1  dbl_mb(k_loc_gggg),size_loc_gggg)
+      if (on4indps) call pstat_off(ps_put4)
 
        if (.not.ma_pop_stack(l_aux2))
      1 call errquit('g4ppq:MA1',15,MA_ERR)
@@ -834,7 +1166,9 @@ cold      next = NXTASK(nprocs, 1)
       ENDDO !g1b
 cold      next = NXTASK(-nprocs, 1)
       endif
-      call ga_sync()
+      if (on4indps) call pstat_on(ps_comm4)
+cedo      call ga_sync()
+      if (on4indps) call pstat_off(ps_comm4)
 c     delete d_ggga
       call deletefile(d_ggga)
 
@@ -850,9 +1184,15 @@ c
 c     delete l_coeff 
       if (.not.ma_pop_stack(l_coeff))
      1  call errquit('tcc_off_4a: MA problem',15,MA_ERR)
+c
+c
+      if (.not.ma_pop_stack(l_movecs_orb))
+     1  call errquit('tcc_ao2e: MA problem',15,MA_ERR)
 c     delete l_ggga
-      if (.not.ma_pop_stack(l_offset_ggga))
-     1  call errquit('ga4ind:ggga',15,MA_ERR)
+      if (.not.ma_pop_stack(l_offset_ggga)) then
+          call ma_summarize_allocated_blocks()
+         call errquit('ga4ind:ggga',15,MA_ERR)
+      endif
 c     delete l_ggaa
       if (.not.ma_pop_stack(l_offset_ggaa))
      1  call errquit('ga4ind:ggaa',15,MA_ERR)
@@ -860,19 +1200,11 @@ c     delete l_agaa
       if (.not.ma_pop_stack(l_offset_agaa))
      1  call errquit('ga4ind:agaa',15,MA_ERR)
 c
-      if (.not.ma_pop_stack(l_work2))
-     1  call errquit('tcc_ao2e: MA problem',14,MA_ERR)
-c
-      if (.not.ma_pop_stack(l_work1))
-     1  call errquit('tcc_ao2e: MA problem',15,MA_ERR)
-c
-      if (.not.ma_pop_stack(l_movecs_orb))
-     1  call errquit('tcc_ao2e: MA problem',15,MA_ERR)
-c
       if (.not.ma_pop_stack(l_4af_offset))
      1  call errquit('ga4ind:4a',15,MA_ERR)
 c
 c
+      call n4ind_pstat_print()
       RETURN
       END
 c
@@ -895,14 +1227,15 @@ c
       INTEGER k_a_offset
       INTEGER size
       INTEGER length
-      INTEGER addr
-      INTEGER g3b,azone1,azone2,azone3
+      INTEGER addr,addr_n
+c      INTEGER g3b,azone1,azone2,azone3
+#include "n4ind_offset.fh"
 c ([az3],[g3]|[az1]<=[az2])
       length = 0
       DO azone2 = 1,atpart      
       DO azone1 = 1,azone2
-      DO g3b = 1,noa+nva
       DO azone3 = 1,atpart
+      DO g3b = 1,noa+nva
       length = length + 1
       END DO
       END DO
@@ -914,12 +1247,23 @@ c ([az3],[g3]|[az1]<=[az2])
       addr = 0
       size = 0
       DO azone2 = 1,atpart      
-      DO azone1 = 1,azone2 
-      DO g3b = 1,noa+nva
+      DO azone1 = 1,azone2
       DO azone3 = 1,atpart
+      DO g3b = 1,noa+nva
       addr = addr + 1
-      int_mb(k_a_offset+addr) = azone3 - 1 + atpart * (g3b - 1 +
-     &  (noa+nva) * (azone1 - 1 + atpart * (azone2 - 1)))
+      addr_n=
+     =     addr_agaa(azone1,azone2,azone3,g3b,noa,nva,atpart) 
+      if(addr_n.ne.addr) then
+         write(6,321) ' indx ',azone1,azone2,azone3,g3b,noa,nva,atpart
+ 321     format(a,7i8)
+      write(6,123) ' agaa: addr ',addr,' addr_n ',addr_n
+ 123  format(a,i12,a,i12)
+      call errquit(' aaz ',0,0)
+      endif
+      int_mb(k_a_offset+addr) = 
+     =     key_agaa_off(azone1,azone2,azone3,g3b,noa,nva,atpart) 
+     
+c     store offset
       int_mb(k_a_offset+length+addr) = size
       size = size + nalength(azone2) * nalength(azone1) *
      &  int_mb(k_range_alpha+g3b-1) * nalength(azone3)
@@ -944,14 +1288,16 @@ c
       INTEGER k_a_offset
       INTEGER size
       INTEGER length
-      INTEGER addr
-      INTEGER g3b,g4b,azone1,azone2
+      INTEGER addr,addr_n
+c      INTEGER g3b,g4b,azone1,azone2
+#include "n4ind_offset.fh"
 c ([g4]=>[g3]|[az1]<=[az2])
       length = 0
       DO azone2 = 1,atpart
       DO azone1 = 1,azone2
       DO g3b = 1,noa+nva
       DO g4b = g3b,noa+nva
+c      DO azone1 = 1,azone2
       length = length + 1
       END DO
       END DO
@@ -966,9 +1312,19 @@ c ([g4]=>[g3]|[az1]<=[az2])
       DO azone1 = 1,azone2
       DO g3b = 1,noa+nva
       DO g4b = g3b,noa+nva
+c      DO azone1 = 1,azone2
       addr = addr + 1
-      int_mb(k_a_offset+addr) = g4b - 1 + (noa+nva) * (g3b - 1 +
-     &  (noa+nva) * (azone1 - 1 + atpart * (azone2 - 1)))
+      addr_n=
+     =     addr_ggaa(azone1,azone2,g3b,g4b,noa,nva,atpart) 
+      if(addr_n.ne.addr) then
+         write(6,321) ' indx ',azone1,azone2,g3b,g4b,noa,nva,atpart
+ 321     format(a,7i8)
+      write(6,123) ' ggaa: addr ',addr,' addr_n ',addr_n
+ 123  format(a,i12,a,i12)
+      call errquit(' aaz ',0,0)
+      endif
+      int_mb(k_a_offset+addr) = 
+     =     key_ggaa_off(azone1,azone2,g3b,g4b,noa,nva,atpart)
       int_mb(k_a_offset+length+addr) = size
       size = size + nalength(azone2) * nalength(azone1) *
      &  int_mb(k_range_alpha+g3b-1) * int_mb(k_range_alpha+g4b-1)
@@ -993,12 +1349,132 @@ c
       INTEGER k_a_offset
       INTEGER size
       INTEGER length
-      INTEGER addr
-      INTEGER g3b,g4b,g2b,azone2
+      INTEGER addr,addr_n
+c      INTEGER g3b,g4b,g2b,azone2
+#include "n4ind_offset.fh"
 c ([g4]=>[g3]|[g2][az2])
       length = 0
       DO azone2 = 1,atpart
+      DO g3b = 1,noa+nva
+      DO g4b = g3b,noa+nva
       DO g2b = 1,noa+nva
+      length = length + 1
+      END DO
+      END DO
+      END DO
+      END DO
+      IF (.not.MA_PUSH_GET(mt_int,2*length+1,'noname',l_a_offset,k_a_off
+     &set)) CALL ERRQUIT('tce_t2_offset',0,MA_ERR)
+      int_mb(k_a_offset) = length
+      addr = 0
+      size = 0
+      DO azone2 = 1,atpart
+      DO g3b = 1,noa+nva
+      DO g4b = g3b,noa+nva
+      DO g2b = 1,noa+nva
+      addr = addr + 1
+      addr_n=
+     =     addr_ggga(azone2,g2b,g3b,g4b,noa,nva) 
+      if(addr_n.ne.addr) then
+         write(6,321) ' indx ',azone2,g2b,g3b,g4b,noa,nva,0
+ 321     format(a,7i8)
+      write(6,123) ' ggga: addr ',addr,' addr_n ',addr_n
+ 123  format(a,i12,a,i12)
+      call errquit(' aaz ',0,0)
+      endif
+      int_mb(k_a_offset+addr) = 
+     =     key_ggga_off(azone2,g2b,g3b,g4b,noa,nva)
+      int_mb(k_a_offset+length+addr) = size
+#if 0
+         write(6,321) ' indx ',azone2,g2b,g3b,g4b,noa,nva,atpart
+      write(6,123) ' ggga: addr ',addr, ' key ',int_mb(k_a_offset+addr)
+#endif
+c      if(addr_n.ne.addr) then
+c      call errquit(' aaz ',0,0)
+c      endif
+      size = size + nalength(azone2) * int_mb(k_range_alpha+g2b-1) *
+     &  int_mb(k_range_alpha+g3b-1) * int_mb(k_range_alpha+g4b-1)
+      END DO
+      END DO
+      END DO
+      END DO
+      RETURN
+      END
+      SUBROUTINE tce_4af_offset(l_a_offset,k_a_offset,size)
+C     $Id$
+C     This is a Fortran77 program generated by Tensor Contraction Engine v.1.0
+C     Copyright (c) Battelle & Pacific Northwest National Laboratory (2002)
+      IMPLICIT NONE
+#include "global.fh"
+#include "mafdecls.fh"
+#include "sym.fh"
+#include "errquit.fh"
+#include "tce.fh"
+#include "tce_main.fh"
+      INTEGER l_a_offset
+      INTEGER k_a_offset
+      INTEGER size
+      INTEGER length
+      INTEGER addr,addr_n
+#include "n4ind_offset.fh"
+      length = 0
+      DO azone1 = 1,atpart      !nu
+      DO azone2 = azone1,atpart !mu
+      DO azone3 = 1,atpart      !sigma
+      DO azone4 = azone3,atpart !rho
+      length = length + 1
+      END DO
+      END DO
+      END DO
+      END DO
+      IF (.not.MA_PUSH_GET(mt_int,2*length+1,'noname',l_a_offset,k_a_off
+     &set)) CALL ERRQUIT('tce_t2_offset',0,MA_ERR)
+      int_mb(k_a_offset) = length
+      addr = 0
+      size = 0
+      DO azone1 = 1,atpart      !nu
+      DO azone2 = azone1,atpart !mu
+      DO azone3 = 1,atpart      !sigma
+      DO azone4 = azone3,atpart !rho
+      addr = addr + 1
+      addr_n=
+     =     addr_4af(azone1,azone2,azone3,azone4,atpart)
+      if(addr_n.ne.addr) then
+         write(6,321) ' indx ',azone1,azone2,azone3,azone4,atpart,0,0
+ 321     format(a,7i8)
+      write(6,123) ' 4af: addr ',addr,' addr_n ',addr_n
+ 123  format(a,i12,a,i12)
+      call errquit(' aaz ',0,0)
+      endif
+      int_mb(k_a_offset+addr) =
+     =     key_4af_off(azone1,azone2,azone3,azone4,atpart)
+      int_mb(k_a_offset+length+addr) = size
+      size = size + nalength(azone1) * nalength(azone2) * 
+     &  nalength(azone3) * nalength(azone4)
+      END DO
+      END DO
+      END DO
+      END DO
+      RETURN
+      END
+      SUBROUTINE tce_offset_gggg(l_a_offset,k_a_offset,size)
+      IMPLICIT NONE
+#include "global.fh"
+#include "mafdecls.fh"
+#include "sym.fh"
+#include "errquit.fh"
+#include "tce.fh"
+#include "tce_main.fh"
+      INTEGER l_a_offset
+      INTEGER k_a_offset
+      INTEGER size
+      INTEGER length
+      INTEGER addr
+      INTEGER g3b,g4b,g2b,g1b
+c ([g4]=>[g3]|[g2][az2])
+      length = 0
+      DO g1b = 1,noa+nva
+      DO g2b = g1b,noa+nva
       DO g3b = 1,noa+nva
       DO g4b = g3b,noa+nva
       length = length + 1
@@ -1011,15 +1487,16 @@ c ([g4]=>[g3]|[g2][az2])
       int_mb(k_a_offset) = length
       addr = 0
       size = 0
-      DO azone2 = 1,atpart
-      DO g2b = 1,noa+nva
+      DO g1b = 1,noa+nva
+      DO g2b = g1b,noa+nva
       DO g3b = 1,noa+nva
       DO g4b = g3b,noa+nva
       addr = addr + 1
       int_mb(k_a_offset+addr) = g4b - 1 + (noa+nva) * (g3b - 1 +
-     &  (noa+nva) * (g2b - 1 + (noa+nva) * (azone2 - 1)))
+     &  (noa+nva) * (g2b - 1 + (noa+nva) * (g1b - 1)))
       int_mb(k_a_offset+length+addr) = size
-      size = size + nalength(azone2) * int_mb(k_range_alpha+g2b-1) *
+      size = size + int_mb(k_range_alpha+g1b-1) * 
+     X     int_mb(k_range_alpha+g2b-1) *
      &  int_mb(k_range_alpha+g3b-1) * int_mb(k_range_alpha+g4b-1)
       END DO
       END DO
@@ -1027,7 +1504,8 @@ c ([g4]=>[g3]|[g2][az2])
       END DO
       RETURN
       END
-      subroutine tce_gacreate_sloc(g_a, size, size_loc, gname)
+      subroutine tce_gacreate_sloc(g_a, size, size_loc, gname,hash,
+     C     do_irreg)
       implicit none
 #include "global.fh"
 #include "mafdecls.fh"
@@ -1037,14 +1515,577 @@ c ([g4]=>[g3]|[g2][az2])
       character*(*) gname
       integer size
       integer size_loc
+      integer hash(*)
+      logical do_irreg ! [in]
 c
-      if (.not.ga_create(mt_dbl,size,1,gname,
-     1     size_loc,1,g_a)) then
+      integer l_map,k_map
+      integer nblocks
+      integer block_size
+      logical n4ind_gmap_stop
+      external n4ind_gmap_stop
+      logical ga_create_failed
+c
+      call ga_mask_sync(.true.,.false.)
+      if(.not.do_irreg) then
+         ga_create_failed=.not.ga_create(mt_dbl,size,1,gname,
+     1        size_loc,1,g_a)
+      else
+         call n4ind_gmap_get(size,size_loc,
+     A        nblocks,block_size,hash,
+     K        k_map,l_map)
+         ga_create_failed=.not.ga_create_irreg(mt_dbl, size, 1, gname,
+     $        int_mb(k_map), nblocks, 
+     $        1, 1, g_a)
+      endif
+      if(ga_create_failed) then
          write(LuOut,*) ' available GA memory ',
      1        ga_memory_avail(),' bytes'
          call errquit ('tce_gacreate: failed ga_create size/nproc bytes'
-     S      ,   (size*ma_sizeof(mt_dbl,1,mt_byte))/ga_nnodes(),
+     S        ,   (size*ma_sizeof(mt_dbl,1,mt_byte))/ga_nnodes(),
      1        GA_ERR)
       endif
+      if(do_irreg) then
+         if (.not.n4ind_gmap_stop(l_map))
+     1  call errquit('create sloc',0,MA_ERR)
+      endif
+c      call ga_zero(g_a)
+      return
+      end
+      subroutine n4ind_gmap_get(size,size_loc,
+     A     nblocks,block_size,hash,
+     K     k_map,l_map)
+      implicit none
+      integer size,size_loc ! [in]
+      integer hash(*) ![in]
+      integer nblocks,block_size ! [out]
+      integer k_map,l_map ! [out]
+#include "global.fh"
+#include "mafdecls.fh"
+#include "errquit.fh"
+#include "stdio.fh"
+c     
+      integer size_factor
+      integer i,lgt_hash
+      double precision kfac
+      integer block_indx,mapval,offs_0,offst,i0,i1,mapmax
+c
+      size_factor=size/size_loc
+      if(size_factor.gt.ga_nnodes()) then
+         kfac=size/(ga_nnodes()*size_loc*1d0)
+         block_size=anint(kfac)*size_loc
+         nblocks=(1d0*size)/(1d0*block_size)
+      else
+         nblocks=size_factor+1
+         block_size=size_loc
+      endif
+#ifdef DEBUG
+      if(ga_nodeid().eq.0) then
+         write(6,*) ' size ',size, ' size_loc ',size_loc
+         write(6,*) ' kfac ',kfac,anint(kfac)
+         write(6,*) ' nblocks ',nblocks,' block_si ',block_size
+      endif
+#endif
+      nblocks=max(1,nblocks)
+      i0=nblocks-1
+      i1=-99
+      if(nblocks.gt.ga_nnodes()) then
+         if(ga_nodeid().eq.0) then
+            write(6,*) ' size ',size, ' size_loc ',size_loc
+            write(6,*) ' kfac ',kfac,anint(kfac)
+            write(6,*) ' nblocks ',nblocks,' block_si ',block_size
+         endif
+         i1=ga_nnodes()-1
+c     old      i0=i1-(nblocks-ga_nnodes())+2
+         i0=i1-(nblocks-ga_nnodes())+1
+         nblocks=ga_nnodes()
+#ifdef DEBUG
+         if(ga_nodeid().eq.0) write(6,*) 'mm32_0',int_mb(k_map+32-1)
+#endif
+      endif
+cold      i0=i0-1
+c      call ga_sync()
+c         call errquit(
+c     B     'gcreatesloc: wrong mapping ',nblocks,0)
+
+      IF (.not.MA_PUSH_GET(mt_int,nblocks,'mappps',l_map,k_map))
+     &     CALL ERRQUIT('gcreate sloc',0,MA_ERR)
+cold      do i=0,nblocks-1
+      do i=0,i0
+         int_mb(k_map+i)=1+i*block_size
+#if 0
+         if(ga_nodeid().eq.0) write(6,*) 'mm',i+1,int_mb(k_map+i)
+#endif
+      enddo
+c     double size of extra blocks
+      if(i0+1.le.i1) then
+         mapmax=size
+         do i=i1,i0+1,-1
+            mapmax=mapmax-2*block_size
+            int_mb(k_map+i)=mapmax
+#if 0
+            if(ga_nodeid().eq.0) write(6,*) 'mm',i+1,int_mb(k_map+i)
+#endif
+         enddo
+      endif
+#define REALIGN_BOUNDR 1
+#ifdef REALIGN_BOUNDR
+      lgt_hash=hash(1)
+      block_indx=2
+      mapval=int_mb(k_map+block_indx-1)-1
+      offs_0=hash(lgt_hash+1+1)
+      do i =2,lgt_hash
+         offst=hash(lgt_hash+i+1)
+         if(mapval.gt.offs_0.and.mapval.le.offst) then
+c     got it
+#ifdef DBG
+            if(ga_nodeid().eq.0) then
+               write(6,*) block_indx,' map_old ',mapval,
+     A             ' map_new ',offst
+            endif
+#endif
+            int_mb(k_map+block_indx-1)=offst+1
+            block_indx=block_indx+1
+            mapval=int_mb(k_map+block_indx-1)-1
+         endif
+         offs_0=offst
+      enddo
+#endif
+#ifdef DBG
+      if(ga_nodeid().eq.0) then
+         do i=0,nblocks-1
+            write(6,*) 'mm_f',i+1,int_mb(k_map+i)
+         enddo
+      endif
+#endif
+      return
+      end
+      logical function n4ind_gmap_stop(l_map)
+      implicit none
+      integer l_map
+#include "global.fh"
+#include "mafdecls.fh"
+#include "errquit.fh"
+c
+      n4ind_gmap_stop=ma_pop_stack(l_map)
+      return
+      end
+      subroutine n4ind_pstat_init(rtdb)
+      implicit none
+#include "pstat.fh"
+#include "rtdb.fh"
+#include "mafdecls.fh"
+#include "n4ind_ps.fh"
+      integer rtdb
+      integer junk
+c
+      if (.not. rtdb_get(rtdb, 'n4ind:pstat',
+     $     MT_LOG, 1, on4indps)) on4indps = .false.
+c
+      call util_flush(6)
+      if (.not. on4indps) return
+c
+      if (.not. pstat_allocate('tce:comp0', pstat_qstat, 0, junk,
+     $     ps_comp0)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:sync0', pstat_qstat, 0, junk,
+     $     ps_sync0)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:transp0', pstat_qstat, 0, junk,
+     $     ps_transp0)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:int2e0', pstat_qstat, 0, junk,
+     $     ps_int2e0)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comm0', pstat_qstat, 0, junk,
+     $     ps_comm0)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comp1', pstat_qstat, 0, junk,
+     $     ps_comp1)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comm1', pstat_qstat, 0, junk,
+     $     ps_comm1)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:put1', pstat_qstat, 0, junk,
+     $     ps_put1)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:get1', pstat_qstat, 0, junk,
+     $     ps_get1)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comp2', pstat_qstat, 0, junk,
+     $     ps_comp2)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:put2', pstat_qstat, 0, junk,
+     $     ps_put2)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:get2', pstat_qstat, 0, junk,
+     $     ps_get2)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comm2', pstat_qstat, 0, junk,
+     $     ps_comm2)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comp3', pstat_qstat, 0, junk,
+     $     ps_comp3)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comm3', pstat_qstat, 0, junk,
+     $     ps_comm3)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:get3', pstat_qstat, 0, junk,
+     $     ps_get3)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:put3', pstat_qstat, 0, junk,
+     $     ps_put3)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:sync3', pstat_qstat, 0, junk,
+     $     ps_sync3)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comp4', pstat_qstat, 0, junk,
+     $     ps_comp4)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:get4', pstat_qstat, 0, junk,
+     $     ps_get4)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:put4', pstat_qstat, 0, junk,
+     $     ps_put4)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:comm4', pstat_qstat, 0, junk,
+     $     ps_comm4)) call errquit('tce: tce_pstat_init', 0,0)
+      if (.not. pstat_allocate('tce:hash4', pstat_qstat, 0, junk,
+     $     ps_has4)) call errquit('tce: tce_pstat_init', 0,0)
+c       
+c
+      end
+      subroutine n4ind_pstat_print()
+      implicit none
+#include "pstat.fh"
+#include "n4ind_ps.fh"
+c     
+      if (on4indps) then
+         call pstat_off(ps_n4ind)
+         call pstat_print_all
+         on4indps = .false.
+c
+c     delete the TCE timers
+c
+         if (.not. pstat_free(ps_comm0))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_sync0))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_transp0))call errquit('dft_pstat?',0,0)
+         if (.not. pstat_free(ps_comp0))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comm1))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_get1))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_put1))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comp1))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comm2))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comp2))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comm3))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_put3))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_get3))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_sync3))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comp3))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_put4))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_get4))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comm4))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_comp4))call errquit('dft_pstat?', 0,0)
+         if (.not. pstat_free(ps_has4))call errquit('dft_pstat?', 0,0)
+c
+      endif
+c
+      end
+c $Id$
+      subroutine n4ind_fdist_init()
+      implicit none
+#include "dist.fh"
+#include "n4ind_ps.fh"
+#include "rtdb.fh"
+      if (.not. on4indps) return
+c
+#if 0
+      fdist_comp1 = getdist( 'n4ind_comp1')
+      fdist_comm1 = getdist( 'n4ind_comm1')
+#endif
+c
+      end
+      subroutine n4ind_transp(k_4a,k_work1,nalength,
+     M     mu_range,nu_range,rho_range,sigma_range,
+     S     shift_mu,shift_nu,shift_rho,shift_sigma,
+     A     azone1,azone3,azone4)
+      implicit none
+      double precision k_4a(*),k_work1(*)
+      integer nalength(*)
+      integer mu_range,nu_range,rho_range,sigma_range
+      integer shift_mu,shift_nu,shift_rho,shift_sigma
+      integer azone1,azone3,azone4
+c
+      integer i
+      integer mu1,nu1,rho1,sigma1
+      integer imu1,inu1,irho1,isigma1
+      integer ipos1
+c      
+      i=0
+c      i=1
+      do imu1     = shift_mu+1,shift_mu+mu_range
+         do inu1     = shift_nu+1,shift_nu+nu_range
+            do irho1    = shift_rho+1,shift_rho+rho_range
+               ipos1=(((imu1-1)*nalength(azone1)+inu1-1)*
+     1                 nalength(azone4)+irho1-1)*nalength(azone3)+
+     +              shift_sigma
+cold               do isigma1  = shift_sigma+1,shift_sigma+sigma_range
+               do isigma1  = 1,sigma_range
+cold                  i=i+1
+c     (isigma1,irho1|inu1, imu1)
+c     2                 +isigma1
+                  k_4a(ipos1+isigma1)=k_work1(i+isigma1)
+               enddo
+               i=i+sigma_range
+            enddo
+         enddo
+      enddo
+      return
+      end
+      subroutine n4cache_init()
+      implicit none
+#include "n4cache.fh"
+      integer i
+c
+      cache_hits=0
+      n4caches=0
+#if 0
+      do i=1,max_n4caches
+         n4cache_indx(1,i)=-1
+         n4cache_indx(2,i)=-1
+      enddo
+#endif
+      return
+      end
+      logical function n4cache_found(indx_lo,indx_hi,no_cache)
+      implicit none
+      integer indx_lo,indx_hi ! [in]
+      integer no_cache       ! [out]
+#include "n4cache.fh"
+#include "global.fh"
+      integer i
+      logical oprint
+c
+      n4cache_found=.false.
+      no_cache=0
+      oprint=ga_nodeid().eq.0
+#ifdef DBG
+      if(oprint) write(6,'(i5,a,2i15)') ga_nodeid(),'n4cache_found in ',
+     C     indx_lo,indx_hi
+#else
+      oprint=.false.
+#endif
+      if(n4caches.eq.0) return
+      do i=1,n4caches
+      if(oprint) write(6,'(i5,a,2i15)') i,'n4cache_found indx ',
+     C     n4cache_indx(1,i),n4cache_indx(2,i)
+         n4cache_found=indx_lo.eq.n4cache_indx(1,i).and.
+     A        indx_hi.eq.n4cache_indx(2,i)
+         if(n4cache_found) then
+            no_cache=i
+            return
+         endif
+      enddo
+      return
+      end
+      integer function n4cache_newentry(indx_lo,indx_hi)
+      implicit none
+      integer indx_lo,indx_hi ! [in]
+#include "n4cache.fh"
+#include "mafdecls.fh"
+c
+      integer l_a,k_a
+c
+      n4cache_newentry=0
+c     can't store any longer
+      if(n4caches+1.gt.max_n4caches) return
+      IF(ma_push_get(mt_dbl,indx_hi-indx_lo+1,'n4cache',l_a,k_a)) then
+         n4caches=n4caches+1
+         n4cache_indx(1,n4caches)=indx_lo
+         n4cache_indx(2,n4caches)=indx_hi
+c     store with ma_push
+	 n4cache_hndl(1,n4caches)=l_a
+	 n4cache_hndl(2,n4caches)=k_a
+         n4cache_newentry=n4caches
+      endif
+      return
+      end
+      subroutine n4cache_stop()
+      implicit none
+#include "n4cache.fh"
+#include "mafdecls.fh"
+#include "errquit.fh"
+#include "global.fh"
+c
+      integer i
+c
+      if(n4caches.eq.0) return
+      if(ga_nodeid().lt.2) then
+         write(6,'(i9,a,i8,a,i8,a,f6.2)') ga_nodeid(),
+     N        ' n4caches ',n4caches,
+     V        ' cache_hits ',cache_hits,
+     R        ' ratio cache_hits/n4caches',
+     1        1d0*cache_hits/n4caches
+         endif
+      do i=n4caches,1,-1
+c     deallocate MAs
+      if (.not.ma_pop_stack(n4cache_hndl(1,i))) then
+         call ma_summarize_allocated_blocks()
+         call errquit('n4cache_stop: pop_stack failure',i,MA_ERR)
+      endif
+      enddo
+      n4caches=0
+      cache_hits=0
+      return
+      end
+      subroutine n4cache_storentry(buf_in,no_cache)
+      implicit none
+      integer no_cache            ! [in]
+      double precision buf_in(*)  ! [in]
+#include "n4cache.fh"
+#include "mafdecls.fh"
+#include "global.fh"
+c
+      call dcopy(n4cache_indx(2,no_cache)-n4cache_indx(1,no_cache)+1,
+     c     buf_in,1,
+     C     dbl_mb(n4cache_hndl(2,no_cache)),1)
+#ifdef DBG
+      if(ga_nodeid().eq.0) then
+      write(6,*) ' Stored cache no ',no_cache
+      write(6,'(a,2i20)') ' indx ',n4cache_indx(1,no_cache),
+     C     n4cache_indx(2,no_cache)
+      write(6,*) ' first elem ',buf_in(1)
+      write(6,*) ' last elem ',buf_in(
+     N     n4cache_indx(2,no_cache)-n4cache_indx(1,no_cache)+1)
+      write(6,*) '=========='
+      endif
+#endif
+      return
+      end
+      subroutine n4cache_getentry(buf_out,no_cache)
+      implicit none
+      integer no_cache             ! [in]
+      double precision buf_out(*)  ! [out]
+#include "n4cache.fh"
+#include "mafdecls.fh"
+#include "global.fh"
+c
+c
+      cache_hits=cache_hits+1
+      call dcopy(n4cache_indx(2,no_cache)-n4cache_indx(1,no_cache)+1,
+     C     dbl_mb(n4cache_hndl(2,no_cache)),1,
+     c     buf_out,1)
+#ifdef DBG
+      if(ga_nodeid().eq.0) then
+      write(6,*) ' Fetched cache no ',no_cache
+      write(6,'(a,2i20)') ' indx ',n4cache_indx(1,no_cache),
+     C     n4cache_indx(2,no_cache)
+      write(6,*) ' first elem ',buf_out(1)
+      write(6,*) ' last elem ',buf_out(
+     N     n4cache_indx(2,no_cache)-n4cache_indx(1,no_cache)+1)
+      write(6,*) '=========='
+      endif
+#endif
+      return
+      end
+      subroutine n4cache_get4af(ilo,ihi,d_4af,aux3)
+      implicit none
+      integer d_4af
+      integer ilo,ihi          ! [in]
+      double precision aux3(*) ! [out]
+c
+      integer no_cache
+      logical n4cache_found
+      integer n4cache_newentry
+      external n4cache_found,n4cache_newentry
+c
+      if(.not.n4cache_found(ilo,ihi, no_cache)) then
+         call ga_get(d_4af,ilo,ihi,1,1, aux3,ihi-ilo+1)
+         no_cache=n4cache_newentry(ilo,ihi)
+         if(no_cache.ne.0)
+     c        call n4cache_storentry(aux3,no_cache)
+      else
+         call n4cache_getentry(aux3,no_cache)
+      endif
+      return
+      end
+      subroutine n4ind_2e4c(azone1,azone2,azone3,azone4,buf)
+      implicit none
+c
+      integer azone1,azone2,azone3,azone4 ! [in]
+      double precision buf ! [out]
+c
+      integer mu,nu,rho,sigma
+      integer shift_mu,shift_nu,shift_rho,shift_sigma
+      integer mu_range,nu_range,rho_range,sigma_range
+      integer mu_hi,mu_lo,nu_hi,nu_lo,rho_hi,rho_lo,sigma_hi,sigma_lo
+      integer work1,work2          ! Work array sizes
+      integer l_work1,k_work1      ! Work array 1
+      integer l_work2,k_work2      ! Work array 2
+#include "bas.fh"
+#include "errquit.fh"
+#include "tce_main.fh"
+#include "schwarz.fh"
+#include "mafdecls.fh"
+c
+      call int_mem_2e4c(work1,work2)
+      if (.not.ma_push_get(mt_dbl,work1,'work1',l_work1,k_work1))
+     1  call errquit('tce_ao2e: MA problem work1',0,MA_ERR)
+      if (.not.ma_push_get(mt_dbl,work2,'work2',l_work2,k_work2))
+     1  call errquit('tce_ao2e: MA problem work2',1,MA_ERR)
+        call dfill(nalength(azone1)*nalength(azone2)*nalength(azone3)*
+     T     nalength(azone4), 0.0d0, buf, 1)
+
+      shift_mu = 0
+      do mu    = a2length(azone2)+1,a2length(azone2+1)
+         if (.not.bas_cn2bfr(ao_bas_han,mu,mu_lo,mu_hi))
+     1        call errquit('tce_ao2e: basis fn range problem 1',0,
+     2        BASIS_ERR)
+         mu_range = mu_hi - mu_lo + 1
+         shift_nu = 0
+         do nu    = a2length(azone1)+1,a2length(azone1+1)
+            if (.not.bas_cn2bfr(ao_bas_han,nu,nu_lo,nu_hi))
+     1           call errquit('tce_ao2e: basis fn range problem 1',0,
+     2           BASIS_ERR)
+            nu_range = nu_hi - nu_lo + 1
+            shift_rho = 0
+            do rho   = a2length(azone4)+1,a2length(azone4+1)
+               if (.not.bas_cn2bfr(ao_bas_han,rho,rho_lo,rho_hi))
+     1              call errquit('tce_ao2e: basis fn range problem 1',0,
+     2              BASIS_ERR)
+               rho_range = rho_hi - rho_lo + 1
+               shift_sigma = 0
+               do sigma = a2length(azone3)+1,a2length(azone3+1)
+                  if (.not.bas_cn2bfr(ao_bas_han,sigma,
+     S                 sigma_lo,sigma_hi))
+     1                 call errquit('tce_ao2e: basis fn range prob1',0,
+     2                 BASIS_ERR)
+                  sigma_range = sigma_hi - sigma_lo + 1
+                  if (schwarz_shell(rho,sigma)*schwarz_shell(mu,nu)
+     1                 .ge. tol2e) then
+                     call int_2e4c(ao_bas_han,mu,nu,ao_bas_han,rho,
+     S                    sigma,
+     1                    work2,dbl_mb(k_work2),work1,dbl_mb(k_work1))
+c     
+                     call n4ind_transp(buf,dbl_mb(k_work1),nalength,
+     M                    mu_range,nu_range,rho_range,sigma_range,
+     S                    shift_mu,shift_nu,shift_rho,shift_sigma,
+     A                    azone1,azone3,azone4)
+                     
+                  end if        !schwarz  screening
+                  shift_sigma = shift_sigma + sigma_range
+               enddo            !sigma
+               shift_rho   = shift_rho + rho_range
+            enddo               !rho
+            shift_nu    = shift_nu + nu_range
+         enddo !nu
+         shift_mu    = shift_mu + mu_range
+         enddo !mu
+c
+      if (.not.ma_pop_stack(l_work2))
+     1  call errquit('tcc_ao2e: MA problem',14,MA_ERR)
+c
+      if (.not.ma_pop_stack(l_work1))
+     1  call errquit('tcc_ao2e: MA problem',15,MA_ERR)
+         return
+         end
+      subroutine tce_addr2off(hash,addr,offset)
+c
+      implicit none
+#include "util.fh"
+#include "stdio.fh"
+#include "errquit.fh"
+#include "mafdecls.fh"
+      integer hash(*) ! [in]
+      integer addr    ! [in]
+      integer offset  ! [out]
+c
+      integer length
+      integer i
+c
+      if (.not.ma_verify_allocator_stuff()) stop ' ma ck 2b'
+      length = hash(1)
+      i=addr
+      offset=hash(length+i+1)
+      if (.not.ma_verify_allocator_stuff()) stop ' ma ck 2b'
+c
       return
       end

@@ -31,7 +31,7 @@ c         parts have been added, indicated by suffix "_im"
 #include "cuhf.fh"
 #include "stdio.fh"
 #include "cosmo.fh"
-#include "dimqm.fh"
+c#include "dimqm.fh"
 c!!! BGJ
 #include "bgj.fh"
 c!!! BGJ
@@ -51,8 +51,7 @@ c
       logical ga_iter_lsolve
       external ga_iter_lsolve
       logical oprint_solve
-c$$$  logical ga_it_ls_mrhs
-c$$$  external ga_it_ls_mrhs
+      
 c ... jochen: modified the definition of some of the externals
 c     here
       external rohf_hessv_precond3,rohf_hessv,rohf_hessv3
@@ -99,6 +98,7 @@ c
       logical hf_job, debug, limag, lstatic
       integer ipm,ncomp,ndata,m1,m2,shift
       double precision small
+      logical use_dimqm,lrsp,ldimqm,lfirst,dimqm_go
       parameter (small = 1d-8)
 c
 c     ==================================================================
@@ -108,6 +108,7 @@ c     ==================================================================
 c     debug = .true. ! to allow debugging printouts
 
       lstatic = (abs(omega).lt.small)
+      use_dimqm=util_module_avail("dimqm")
 
       hf_job = .not. bgj_have_xc()      
 c
@@ -272,7 +273,7 @@ c
        enddo ! end-loop-ipm
       endif 
 c
-      pflg=2
+      pflg = 2 ! this variable is used in rohf_hessv_xx
       if (oprint) then
          write(luout,170) scftype
  170     format('    scftype = ',a)
@@ -285,6 +286,7 @@ c
  172        format('     nalpha = ', i4/
      $             '      nbeta = ', i4)
          endif
+          
 c ... jochen: no. of variables is 2*vlen in dynamic case,
 c        and 4*vlen if dampling is applied
          if (lifetime) then
@@ -302,9 +304,9 @@ c        and 4*vlen if dampling is applied
 c
 *ga:1:0
 c
-c ... jochen here we read the CPKS rhs vector generated elsewhere
+c ... jochen: here we read the CPKS rhs vector generated elsewhere
 c     (A- or U-matrices, not yet divided by orbital energy diffs)
-c ====== Reading (g_b,g_rhs_sol) ========= START
+
       do ipm=1,ncomp
        if(.not.file_read_ga(cphf_rhs(ipm),g_grad(ipm)))
      $     call errquit('cphf_solve3: could not read cphf_rhs 1',1,
@@ -317,25 +319,6 @@ c ====== Reading (g_b,g_rhs_sol) ========= START
      &       UNKNOWN_ERR)
       enddo ! end-loop-ipm
       endif ! end-if-lifetime
-c ====== Reading (g_b,g_rhs_sol) ========= END
-           if (debug) then
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_grad-re-AFTreadga(',ipm,')-----START'
-             call ga_print(g_grad(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_grad-re-AFTreadga(',ipm,')-----END'
-            enddo ! end-loop-ipm
-            if (lifetime) then
-             do ipm=1,ncomp
-              if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_grad-im-AFTreadga(',ipm,')-----START'
-               call ga_print(g_grad_im(ipm))
-              if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_grad-im-AFTreadga(',ipm,')-----END'
-             enddo ! end-loop-ipm
-            endif ! end-if-lifetime
-          endif ! end-if-debug    
 
       if(.not.ga_create(mt_dbl,vlen,1,'cphf_solve3: work1',
      $   0,0,g_work(1)))
@@ -364,9 +347,18 @@ c     Get the cosmo contribution
          cosmo_phase = 2
       endif
 c     DIM/QM JEM
+      if (use_dimqm) then
+         call dimqm_used(ldimqm)
+         call dimqm_getlrsp(lrsp)
+      else
+         ldimqm=.false.
+         lrsp=.false.
+      endif
       if (ldimqm .and. lrsp) then
         lfirst = .true.
+        call dimqm_setlfirst(lfirst)
         dimqm_go = .false.
+        call dimqm_setgo(dimqm_go)
       end if
 
       if(scftype .eq. 'UHF')then
@@ -429,7 +421,7 @@ c !!! BGJ
      $     call errquit('cphf_solve3: rtdb_put of j_derfit failed',0,
      &       RTDB_ERR)
 c !!! BGJ
-c 000000000000000 prepare guess 000000000000 START
+
           do ipm = 1,ncomp
            call ga_copy_patch('n',g_grad(ipm),1,vlen,1,nvec, 
      $                            g_work(ipm),1,vlen,1,nvec)
@@ -438,14 +430,16 @@ c 000000000000000 prepare guess 000000000000 START
      $                            g_work_im(ipm),1,vlen,1,nvec)
            endif
           enddo ! end-loop-ipm
-c Note.- en-scl*g_b is unpropertly called "preconditioning"
-c 000000000000000 prepare guess 000000000000 END
+c 
+
       if (scftype .eq. 'UHF') then
+
 c        For property related CPHF. NMR has imaginary perturbation
 c        which makes matrices skew symmetric. Setting noskew to .false.
 c        enforces that.
          if (.not. rtdb_get(rtdb, 'cphf:skew', mt_log, 1, 
      $        noskew_uhf)) noskew_uhf = .true.
+
 c        the dynamic density matrix builder needs to know if the perturbation
 c        is imaginary (or antisymmetric). This should have been written
 c        to the rtdb at some time (e.g. in aoresponse)
@@ -461,23 +455,7 @@ c        to the rtdb at some time (e.g. in aoresponse)
            endif
          endif
 
-c         debug=.true. ! to see entering vectors
-
-         if (debug) then
-          if (ga_nodeid().eq.0)
-     &     write(*,*) 'FA-BEF-uhf-precond3 ...'
-           if (ga_nodeid().eq.0)
-     &      write(*,*) '------ g_work-BEF-precond-uhf---START'
-            do ipm=1,ncomp
-            call ga_print(g_work(ipm))
-            if (lifetime)
-     &       call ga_print(g_work_im(ipm))
-            enddo
-           if (ga_nodeid().eq.0)
-     &      write(*,*) '------ g_work-BEF-precond-uhf----END'
-         endif ! end-if-debug
          
-c -------- precond ----------- START
           solveshift= 0.0d0
           omg(1)=-omega
           omg(2)= omega
@@ -498,39 +476,11 @@ c -------- precond ----------- START
      &                     gam(ipm))
            enddo ! end-loop-ipm
           endif
-c -------- precond ----------- END
 
-         if (debug) then
-          if (ga_nodeid().eq.0)
-     &    write(*,*) 'FA-AFT-uhf-precond3 ...'
-           if (ga_nodeid().eq.0)
-     &      write(*,*) '------ g_work-AFT-precond-uhf---START'
-            do ipm=1,ncomp
-            call ga_print(g_work(ipm))
-            if (lifetime)
-     &       call ga_print(g_work_im(ipm))
-            enddo
-           if (ga_nodeid().eq.0)
-     &      write(*,*) '------ g_work-AFT-precond-uhf----END'
-           if (ga_nodeid().eq.0)
-     &      write(*,*) '--- g_grad-BEF-lkain_2cpl3-rhf---START'
-            do ipm=1,ncomp
-            call ga_print(g_grad(ipm))
-            if (lifetime)
-     &       call ga_print(g_grad_im(ipm))
-            enddo
-           if (ga_nodeid().eq.0)
-     &      write(*,*) '--- g_grad-BEF-lkain_2cpl3-rhf---END'
-         endif ! end-if-debug
-
-c         debug=.false. ! to see entering vectors
 
          if (.not.lifetime) then
            if (debug) write (6,*) 'calling ga_lkain_2cpl3_ext'
 
-          if (ga_nodeid().eq.0)
-     &      write(*,*) 'FA-BEF-uhf-ga_lkain_2cpl3_ext'
-c
            call ga_lkain_2cpl3_ext(
      &                      rtdb,
      &                      g_work   , g_grad, 
@@ -548,16 +498,13 @@ c
      &                      gamwidth, 
      &                      ncomp)
 
-          if (ga_nodeid().eq.0)
-     &      write(*,*) 'FA-AFT-uhf-ga_lkain_2cpl3_ext'
 
            if (debug) write (6,*) 'exiting ga_lkain_2cpl3_ext'
+
          else
+
            if (debug) write (6,*) 'calling ga_lkain_2cpl3_damp'
 
-c --- Transfer (g_work,g_work_im) --> g_work_cmplx
-c              (g_grad,g_grad_im) --> g_grad_cmplx
-c ----- Create complex GA arrays ----------- START
       do ipm = 1,ncomp
         if(.not.ga_create(mt_dcpl,vlen,nvec,'cphf_solve3: work_cmplx',
      $     0, 0, g_work_cmplx(ipm)))
@@ -581,23 +528,6 @@ c ----- Create complex GA arrays ----------- END
      &                       vlen,        ! in : n    rows
      &                       nvec,        ! in : nvec columns
      &                       ncomp)       ! in : nr. components
-           if (debug) then
-            do ipm=1,ncomp
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_work_cmplx(',ipm,')----START'
-             call ga_print(g_work_cmplx(ipm))
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_work_cmplx(',ipm,')----END'
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_grad_cmplx(',ipm,')----START'
-             call ga_print(g_grad_cmplx(ipm))
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_grad_cmplx(',ipm,')----END'
-            enddo ! end-loop-ipm
-           endif ! end-if-debug
-
-           if (ga_nodeid().eq.0)  
-     &       write (*,*) 'FA BEF ga_lkain_2cpl3_damp_cmplx_redmem1'
 
            nocc1(1)=nalpha
            nocc1(2)=nbeta
@@ -611,7 +541,7 @@ c ----- Create complex GA arrays ----------- END
      &              uhf_hessv3_cmplx1,         ! in: product routine: gen Az
      &              uhf_hessv_precond3_damp,  ! in: routines
      &              precond_tol,
-     &              11*nvec,  ! why is this 11*nvec ?
+     &              max_precond_sub, ! jochen changed this from 11*nvec
      &              maxiter, 
      &              .false., 
      &              oprint_solve,
@@ -624,8 +554,6 @@ c ----- Create complex GA arrays ----------- END
      &              nvir1, 
      &              nocc1)
 
-           if (ga_nodeid().eq.0)  
-     &       write (*,*) 'FA AFT ga_lkain_2cpl3_damp_cmplx_redmem1'
 
            call conv2reim(g_work,      ! out : real      arr
      &                    g_work_im,   ! out : imaginary arr
@@ -633,29 +561,6 @@ c ----- Create complex GA arrays ----------- END
      &                    vlen,        ! in  : n    rows
      &                    nvec,        ! in  : nvec columns
      &                    ncomp)       ! in  : nr. components
-           if (debug) then
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-cmplx-SOL(',ipm,')-----START'
-             call ga_print(g_work_cmplx(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-cmplx-SOL(',ipm,')-----END'
-            enddo ! end-loop-ipm
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-SOL(',ipm,')-----START'
-             call ga_print(g_work(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-SOL(',ipm,')-----END'
-            enddo ! end-loop-ipm
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-SOL(',ipm,')-----START'
-             call ga_print(g_work_im(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-SOL(',ipm,')-----END'
-            enddo ! end-loop-ipm
-           endif ! end-if-debug
 
            do ipm=1,ncomp
             if(.not.ga_destroy(g_work_cmplx(ipm))) call errquit(
@@ -669,8 +574,6 @@ c ----- Create complex GA arrays ----------- END
          noskew_uhf = .true.
 
        else 
-
-c        debug=.true.
 
 c        -----------------------
 c        RHF section starts here
@@ -713,74 +616,27 @@ c        conditioner twice, once with a shift of -omega, once with
 c        +omega. That should yield the correct A(+/-) matrices
 c ... jochen: added preconditioner that takes care of damping
 
-         if (debug) then
-           write (6,*) 'cphf_solve3: before preconditioner:'
-           do ipm = 1,ncomp
-             call ga_print(g_work(ipm))
-             if (lifetime) then
-               call ga_print(g_work_im(ipm))
-             endif
-           enddo
-         endif
-         if (debug) then
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-BEFprecond(',ipm,')-----START'
-             call ga_print(g_work(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-BEFprecond(',ipm,')-----END'
-            enddo ! end-loop-ipm
-            if (lifetime) then
-             do ipm=1,ncomp
-              if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-BEFprecond(',ipm,')-----START'
-               call ga_print(g_work_im(ipm))
-              if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-BEFprecond(',ipm,')-----END'
-             enddo ! end-loop-ipm
-            endif ! end-if-lifetime
-         endif ! end-if-debug
 
           omg(1)=-omega
           omg(2)= omega
+          gam(1) = -gamwidth
+          gam(2) = gamwidth
+          
           if (.not.lifetime) then
            do ipm=1,ncomp
             call rohf_hessv_precond3(g_work(ipm),omg(ipm))
            enddo ! end-loop-ip
           else
-           do ipm=1,ncomp
-            call rohf_hessv_precond3_damp(
-     &           g_work(ipm),g_work_im(ipm),omg(ipm),gam(ipm))
-           enddo ! end-loop-ipm
+            do ipm=1,ncomp
+              if (debug) write (luout,*) 'cphf_solve3: calling'//
+     &          'precond3_damp with ipm, omega, gamma',
+     &          ipm, omg(ipm), gam(ipm)
+              call rohf_hessv_precond3_damp(
+     &          g_work(ipm),g_work_im(ipm),omg(ipm),gam(ipm))
+            enddo ! end-loop-ipm
           endif
 
-           if (debug) then
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-AFTprecond(',ipm,')-----START'
-             call ga_print(g_work(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-AFTprecond(',ipm,')-----END'
-            enddo ! end-loop-ipm
-            if (lifetime) then
-             do ipm=1,ncomp
-              if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-AFTprecond(',ipm,')-----START'
-               call ga_print(g_work_im(ipm))
-              if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-AFTprecond(',ipm,')-----END'
-             enddo ! end-loop-ipm
-            endif ! end-if-lifetime
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '--- g_grad-BEF-lkain_2cpl3-rhf---START'
-            do ipm=1,ncomp
-            call ga_print(g_grad(ipm))
-            if (lifetime)
-     &       call ga_print(g_grad_im(ipm))
-            enddo
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '--- g_grad-BEF-lkain_2cpl3-rhf---END'
-           endif ! end-if-debug       
+        
 c ... jochen: note: ga_lkain* is the equation solver. the
 c        Fock matrix builder is in the rohf_hessv? piece, the
 c        precoditioner is rohf_hessv_precon?. We should use
@@ -797,8 +653,6 @@ c       DIM/QM JEM
          if (.not.lifetime) then
            if (debug) write (6,*) 'calling ga_lkain_2cpl3'
 
-          if (ga_nodeid().eq.0)
-     &      write(*,*) 'FA-BEF-rhf-ga_lkain_2cpl3_ext'
 
 c           call ga_lkain_2cpl3(rtdb,
            call ga_lkain_2cpl3_ext(rtdb,
@@ -811,15 +665,10 @@ c           call ga_lkain_2cpl3(rtdb,
      &                         limag, lifetime, 
      &                         gamwidth, ncomp)
 
-          if (ga_nodeid().eq.0)
-     &      write(*,*) 'FA-AFT-rhf-ga_lkain_2cpl3_ext'
-     
            if (debug) write (6,*) 'exiting ga_lkain_2cpl3'
 
          else
 
-          if (ga_nodeid().eq.0)  
-     &       write (*,*) 'FA BEF ga_lkain_2cpl3_damp_cmplx_redmem'
 c --- Transfer (g_work,g_work_im) --> g_work_cmplx
 c              (g_grad,g_grad_im) --> g_grad_cmplx
 c ----- Create complex GA arrays ----------- START
@@ -847,20 +696,6 @@ c ----- Create complex GA arrays ----------- END
      &                       nvec,       ! in : nvec columns
      &                       ncomp)       ! in : nr. components
 
-           if (debug) then
-            do ipm=1,ncomp
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_work_cmplx(',ipm,')----START'
-             call ga_print(g_work_cmplx(ipm))
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_work_cmplx(',ipm,')----END'
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_grad_cmplx(',ipm,')----START'
-             call ga_print(g_grad_cmplx(ipm))
-            if (ga_nodeid().eq.0)
-     &       write(*,*) '------g_grad_cmplx(',ipm,')----END'
-            enddo ! end-loop-ipm
-           endif ! end-if-debug
 
            nocc1(1)=nclosed
            nvir1(1)=nmo-nocc1(1)
@@ -872,7 +707,7 @@ c ----- Create complex GA arrays ----------- END
      &              rohf_hessv3_cmplx,        ! in: product routine: gen Az
      &              rohf_hessv_precond3_damp, ! in: routines
      &              precond_tol,
-     &              11*nvec,
+     &              max_precond_sub, ! jochen: changed this from 11*nvec,
      &              maxiter, 
      &              .false., oprint_solve,
      &              omega, 
@@ -890,29 +725,6 @@ c ----- Create complex GA arrays ----------- END
      &                    vlen,        ! in  : n    rows
      &                    nvec,        ! in  : nvec columns
      &                    ncomp)       ! in  : nr. components
-           if (debug) then
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-cmplx-SOL(',ipm,')-----START'
-             call ga_print(g_work_cmplx(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-cmplx-SOL(',ipm,')-----END'
-            enddo ! end-loop-ipm
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-SOL(',ipm,')-----START'
-             call ga_print(g_work(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-re-SOL(',ipm,')-----END'
-            enddo ! end-loop-ipm
-            do ipm=1,ncomp
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-SOL(',ipm,')-----START'
-             call ga_print(g_work_im(ipm))
-             if (ga_nodeid().eq.0)
-     &        write(*,*) '-----g_work-im-SOL(',ipm,')-----END'
-            enddo ! end-loop-ipm
-           endif ! end-if-debug
 
            do ipm=1,ncomp
             if(.not.ga_destroy(g_work_cmplx(ipm))) call errquit(
@@ -920,9 +732,6 @@ c ----- Create complex GA arrays ----------- END
             if(.not.ga_destroy(g_grad_cmplx(ipm))) call errquit(
      $     'cphf_solve3: could not destroy grad_cmplx',ipm, GA_ERR)
            enddo ! end-loop-ipm
-          if (ga_nodeid().eq.0)  
-     &       write (*,*) 'FA AFT ga_lkain_2cpl3_damp_cmplx_redmem'
- 201       continue
 
            if (debug) write (6,*) 'exiting ga_lkain_2cpl3_damp'
          endif

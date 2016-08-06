@@ -13,6 +13,7 @@
 #include "basP.fh"
 #include "bas.fh"
 #include "rtdb.fh"
+#include "util.fh"
       integer rtdb   ! [in]
       integer natoms ! [in]
       integer npol ! [in]
@@ -28,9 +29,10 @@
       integer dft_n3cint
       external dft_n3cint
       double precision dft_n3cdbl
-      external dft_n3cdbl
-      double precision n3c_dbl_r
-      integer nao2_max,batch_max
+      integer dft_nao2_max
+      external dft_n3cdbl,dft_nao2_max
+      double precision n3c_dbl_r,n3c_dbl_max
+      integer nao2_max
       integer nshpair_sum
       integer me,nproc,icount
       integer maxg,scrmx
@@ -58,6 +60,9 @@ c     either read no. of batches or make it at least 1000
       if(.not.rtdb_get(rtdb,'dft:n3c_dbl',mt_int,1,n3c_dbl_in))
      N     n3c_dbl_in=1000
       n3c_dbl_r=max(n3c_dbl_r,1d0*n3c_dbl_in)
+      n3c_dbl_max=n3c_dbl_r
+c     need to find max among all procs since n3cdbl might be different
+      call ga_dgop(19641964, n3c_dbl_max, 1, 'max')
 c     
 c     find - (minimum)amount local available memory on all nodes
 c     
@@ -109,10 +114,10 @@ c
          availm = 0
       endif
       availm_r = dble(availm)
-      availm_r = min(availm_r,n3c_dbl_r)
+      availm_r = min(availm_r,n3c_dbl_max)
       deficit=0
-      if (availm_r.lt.n3c_dbl_r)then
-         deficit=nint(n3c_dbl_r)-availm_r
+      if (availm_r.lt.n3c_dbl_max)then
+         deficit=nint(n3c_dbl_max)-availm_r
 c
 c     get amount of local MA in Mbytes need to get incore done
 c
@@ -127,45 +132,18 @@ c     check if availm_r is big enough for max batch
 c
       call int_mem_2e3c(maxg, scrmx)
 
-      n3c_dbl = nint(availm_r)
+      n3c_dbl = min(availm_r,n3c_dbl_r)
       if (me.eq.0 .and. oprint_parm)
-     &     write(LuOut,3228)avail, availm, n3c_dbl,n3c_int
+     &     write(LuOut,3228)avail, availm, 
+     N     n3c_dbl,nint(n3c_dbl_max),n3c_int
       
       if(deficit.ne.0.and.me.eq.0) write(luout,3230) deficit
 c     
 c     Loops are parallelized over the products of atoms
 c     (check for zero ... must be at least 1).
 c     
-      icount = (natoms + mod(natoms,2))/(2*nproc)
-      icount = max(icount,1)
-      if (nproc.eq.1)icount = 1
-c     
-      nao2_max = nbf_ao_mxnbf_ce**2
-      spherical_ao=bas_spherical(ao_bas_han)
-c     hack for spherical since there is always a cartesian internal bit
-      nao2_max=0
-      do atom_c=1,natoms
-         if (.not. bas_ce2cnr( ao_bas_han, atom_c, sh_lo_c, sh_hi_c)) 
-     &        call errquit('Exiting in dft_fitcd',110, BASIS_ERR)
-         nshpair_sum=0
-         do ishc=sh_lo_c,sh_hi_c
-            if(.not.bas_continfo(ao_bas_han,ishc,
-     &           itype,nprimo,nshbfc,isphere))
-     &           call errquit('Exiting in fitcd.',44, CALC_ERR)
-            
-            nshpair_sum = nshpair_sum +
-     P           ((itype+1)*(itype+2))/2*nshbfc
-         enddo
-         nao2_max=max(nao2_max,nshpair_sum)
-      enddo
-      nao2_max=nao2_max**2
 
-c     
-c     compute size of largest block of integrals computed
-c     
-      batch_max = nao2_max*nbf_cd*icount
-c     
-      if ((n3c_dbl.lt.batch_max).or.direct)then
+      if (direct.or.(deficit.ne.0))then
          dft_mem3c = .false.
          n3c_dbl = 1
          n3c_int = 1
@@ -186,7 +164,8 @@ c     if(me.eq.0) call MA_summarize_allocated_blocks()
          return
  3228 format(10x,'Minimum dble words available (all nodes) is: ',i15,
      &     /,10x,'         This is reduced (for later use) to: ',i15,
-     &     /,10x,'                   Suggested buffer size is: ',i15,
+     &     /,10x,'            proc 0 Suggested buffer size is: ',i15,
+     &     /,10x,'               Max Suggested buffer size is: ',i15,
      &     /,10x,'                    no. integral batches is: ',i15)
 
  3230 format(/7x,
@@ -195,3 +174,34 @@ c     if(me.eq.0) call MA_summarize_allocated_blocks()
  3229 format(/,6x,f10.3,' MW buffer allocated for incore 3-center '
      &     /,10x,'2e- integral storage on stack. ')
          end
+c     hack for spherical since there is always a cartesian internal bit
+      integer function dft_nao2_max(basis,natoms)
+      implicit none
+#include "bas.fh"
+#include "errquit.fh"
+      integer basis
+      integer natoms
+c
+      integer atom_c,atom_d
+      integer ishc,itype,nprimo,nshbfc,isphere
+      integer sh_lo_c, sh_hi_c
+      integer nshpair_sum
+c
+      dft_nao2_max=0
+      do atom_c=1,natoms
+         if (.not. bas_ce2cnr( basis, atom_c, sh_lo_c, sh_hi_c)) 
+     &        call errquit('Exiting in dft_fitcd',110, BASIS_ERR)
+         nshpair_sum=0
+         do ishc=sh_lo_c,sh_hi_c
+            if(.not.bas_continfo(basis,ishc,
+     &           itype,nprimo,nshbfc,isphere))
+     &           call errquit('Exiting in fitcd.',44, CALC_ERR)
+            
+            nshpair_sum = nshpair_sum +
+     P           ((itype+1)*(itype+2))/2*nshbfc
+         enddo
+         dft_nao2_max=max(dft_nao2_max,nshpair_sum)
+      enddo
+      dft_nao2_max=dft_nao2_max**2
+      return
+      end

@@ -97,7 +97,8 @@ c
 c     
       if (.not.rtdb_get(rtdb, 'mp2:skeleton',MT_LOG, 1, oskel))
      $     oskel = sym_number_ops(geom) .gt. 0
-      osym = oskel .and. sym_abelian_group(geom)
+      if (.not.rtdb_get(rtdb, 'mp2:osym',MT_LOG, 1, osym))
+     $     osym = oskel .and. sym_abelian_group(geom)
 c
       otrace = util_print('matrix trace',print_debug)
       omatrix = util_print('matrix debug', print_debug)
@@ -176,6 +177,7 @@ c
          noa=nocc
          nob=nocc
       else
+         if(ga_nodeid().eq.0)  write(6,*)  ' SCFTYPE = ',SCFTYPE
          call errquit('mp2_grad: unknown SCFTYPE ', 0, INPUT_ERR)
       end if
       nva=nmo-noa

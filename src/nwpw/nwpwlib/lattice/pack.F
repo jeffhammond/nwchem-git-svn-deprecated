@@ -16,17 +16,17 @@
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
-      integer nwave_all(0:1)
+      integer nwave_all(0:3)
       common / pack_blk3x / nwave_all
 
 *     **** common block for G_pack ****
-      integer G_pack(3,0:1),G_pack_hndl
+      integer G_pack(3,0:3),G_pack_hndl
       common / G_pack_blk / G_pack,G_pack_hndl
 
 
@@ -39,13 +39,13 @@
       integer nb,nsize,tmp(2)
       integer nx,ny,nz
       integer nxh,nyh,nzh      
-      integer nwave_in(0:1),nwave_out(0:1)
+      integer nwave_in(0:3),nwave_out(0:3)
 
 *     **** external functions ****
       logical  control_balance
-      integer  G_indx
+      integer  G_indx,Gsmall_indx
       external control_balance
-      external G_indx
+      external G_indx,Gsmall_indx
 
 
 *     **** allocate pack memory ****
@@ -68,7 +68,7 @@
       nyh = ny/2
       nzh = nz/2
       
-!$OMP SINGLE
+!$OMP MASTER
       do nb=0,1
          nida(nb) = 0
          nidb(nb) = 0
@@ -123,7 +123,6 @@
          end do
          end do
 
-
 *        **** k=(k1,k2,k3) **** 
          do k=(-nzh+1),(nzh-1)
          do j=(-nyh+1),(nyh-1)
@@ -147,29 +146,161 @@
          end do
          end do
 
-         
+      end do
+!$OMP END MASTER
+!$OMP BARRIER
+
+
+
+*     ********************************************
+*     ***** set up packing for small lattice *****
+*     ********************************************
+      if (has_small) then
+*     **** allocate pack memory ****
+      call D3dB_nfft3d(3,nfft3d)
+
+      value = BA_alloc_get(mt_int,nfft3d,
+     >                     'pack',pack(2,2),pack(1,2))
+      value = value.and.
+     >        BA_alloc_get(mt_int,nfft3d,
+     >                     'pack',pack(2,3),pack(1,3))
+      if (.not. value)
+     > call errquit('Pack_init: out of heap memory',1,MA_ERR)
+
+
+      call Parallel2d_taskid_i(taskid)
+      call D3dB_nx(3,nx)
+      call D3dB_ny(3,ny)
+      call D3dB_nz(3,nz)
+      nxh = nx/2
+      nyh = ny/2
+      nzh = nz/2
+!$OMP MASTER
+      do nb=2,3
+         nida(nb) = 0
+         nidb(nb) = 0
+
+*        **** k=(0,0,0)  ****
+         k1=0
+         k2=0
+         k3=0
+         !call D3dB_ktoqp(3,k3+1,q,p)
+         call D3dB_ijktoindexp(3,k1+1,k2+1,k3+1,indx,p)
+         if (p.eq.taskid) then
+            !indx = (q-1)*(nxh+1)*ny + k2*(nxh+1) + k1 + 1
+            if (.not.log_mb(masker(1,nb)+indx-1)) then
+               nida(nb) = nida(nb) + 1
+               int_mb(pack(1,nb)+nida(nb)-1) = indx
+            end if
+         end if
+
+*        **** k=(0,0,k3) **** - neglect (0,0,-k3) points
+         do k=1,(nzh-1)
+            k1=0
+            k2=0
+            k3=k
+            !call D3dB_ktoqp(3,k3+1,q,p)
+            call D3dB_ijktoindexp(3,k1+1,k2+1,k3+1,indx,p)
+            if (p.eq.taskid) then
+               !indx = (q-1)*(nxh+1)*ny + k2*(nxh+1) + k1 + 1
+               if (.not.log_mb(masker(1,nb)+indx-1)) then
+                  nidb(nb) = nidb(nb) + 1
+                  int_mb(pack(1,nb)+nida(nb)+nidb(nb)-1) = indx
+               end if
+            end if
+         end do
+
+*        **** k=(0,k2,k3) **** - neglect (0,-k2, -k3) points
+         do k=(-nzh+1),(nzh-1)
+         do j=1,(nyh-1)
+            k1=0
+            k2=j
+            k3=k
+            if (k3.lt.0) k3 = k3 + nz
+
+            !call D3dB_ktoqp(3,k3+1,q,p)
+            call D3dB_ijktoindexp(3,k1+1,k2+1,k3+1,indx,p)
+            if (p.eq.taskid) then
+               !indx = (q-1)*(nxh+1)*ny + k2*(nxh+1) + k1 + 1
+               if (.not.log_mb(masker(1,nb)+indx-1)) then
+                  nidb(nb) = nidb(nb) + 1
+                  int_mb(pack(1,nb)+nida(nb)+nidb(nb)-1) = indx
+               end if
+            end if
+         end do
+         end do
+
+*        **** k=(k1,k2,k3) **** 
+         do k=(-nzh+1),(nzh-1)
+         do j=(-nyh+1),(nyh-1)
+         do i=1,(nxh-1)
+            k1=i
+            k2=j
+            k3=k
+            if (k2.lt.0) k2 = k2 + ny
+            if (k3.lt.0) k3 = k3 + nz
+
+            !call D3dB_ktoqp(3,k3+1,q,p)
+            call D3dB_ijktoindexp(3,k1+1,k2+1,k3+1,indx,p)
+            if (p.eq.taskid) then
+               !indx = (q-1)*(nxh+1)*ny + k2*(nxh+1) + k1 + 1
+               if (.not.log_mb(masker(1,nb)+indx-1)) then
+                  nidb(nb) = nidb(nb) + 1
+                  int_mb(pack(1,nb)+nida(nb)+nidb(nb)-1) = indx
+               end if
+            end if
+         end do
+         end do
+         end do
 
       end do
-!$OMP END SINGLE
+!$OMP END MASTER
+!$OMP BARRIER
+
+      end if !*has_small*
 
 
       nwave_in(0) = nida(0) + nidb(0)
       nwave_in(1) = nida(1) + nidb(1)
+      if (has_small) then
+         nwave_in(2) = nida(2) + nidb(2)
+         nwave_in(3) = nida(3) + nidb(3)
+      end if
       if (control_balance()) then
-        call Balance_Init(2,nwave_in,nwave_out)
+        if (has_small) then
+           call Balance_Init(4,nwave_in,nwave_out)
+        else
+           call Balance_Init(2,nwave_in,nwave_out)
+        end if
       else
         nwave_out(0) = nwave_in(0)
         nwave_out(1) = nwave_in(1)
+        if (has_small) then
+           nwave_out(2) = nwave_in(2)
+           nwave_out(3) = nwave_in(3)
+        end if
       end if
       nidb2(0) = nidb(0) + (nwave_out(0)-nwave_in(0))
       nidb2(1) = nidb(1) + (nwave_out(1)-nwave_in(1))
+      if (has_small) then
+         nidb2(2) = nidb(2) + (nwave_out(2)-nwave_in(2))
+         nidb2(3) = nidb(3) + (nwave_out(3)-nwave_in(3))
+      end if
 
       nwave_all(0) = nida(0) + nidb(0)
       nwave_all(1) = nida(1) + nidb(1)
+      if (has_small) then
+         nwave_all(2) = nida(2) + nidb(2)
+         nwave_all(3) = nida(3) + nidb(3)
+      end if
       ! write(*,*) "nwave_all=",nwave_all
 
       call D3dB_ISumAll(nwave_all(0))
       call D3dB_ISumAll(nwave_all(1)) 
+      if (has_small) then
+         call D3dB_ISumAll(nwave_all(2)) 
+         call D3dB_ISumAll(nwave_all(3)) 
+      end if
 
 c      call Parallel2d_taskid_i(taskid)
 c      write(*,*) taskid," nida=",nida
@@ -182,13 +313,17 @@ c     >                                      nidb(1),nidb2(1)
 
 *     **** allocate and define G_pack ****
       nsize = 3*((nida(0)+nidb2(0)) + (nida(1)+nidb2(1)))
+      if (has_small) 
+     >   nsize = nsize + 3*((nida(2)+nidb2(2)) + (nida(3)+nidb2(3)))
+
+      call D3dB_nfft3d(1,nfft3d)
       value = BA_push_get(mt_dbl,nfft3d,'tmp',tmp(2),tmp(1))
       value = value.and.
      >        BA_alloc_get(mt_dbl,nsize,
      >                     'G_pack',G_pack_hndl,G_pack(1,0))
       if (.not. value) 
      > call errquit('Pack_init:error pushing stack',0,MA_ERR)
-!$OMP SINGLE
+
       G_pack(2,0) = G_pack(1,0) + (nida(0)+nidb2(0))
       G_pack(3,0) = G_pack(2,0) + (nida(0)+nidb2(0))
       G_pack(1,1) = G_pack(3,0) + (nida(0)+nidb2(0))
@@ -201,7 +336,23 @@ c     >                                      nidb(1),nidb2(1)
             call Pack_t_Copy(nb,dbl_mb(tmp(1)),dbl_mb(G_pack(i,nb)))
          end do
       end do
-!$OMP END SINGLE
+
+      if (has_small) then
+         G_pack(1,2) = G_pack(3,1) + (nida(1)+nidb2(1))
+         G_pack(2,2) = G_pack(1,2) + (nida(2)+nidb2(2))
+         G_pack(3,2) = G_pack(2,2) + (nida(2)+nidb2(2))
+         G_pack(1,3) = G_pack(3,2) + (nida(2)+nidb2(2))
+         G_pack(2,3) = G_pack(1,3) + (nida(3)+nidb2(3))
+         G_pack(3,3) = G_pack(2,3) + (nida(3)+nidb2(3))
+         do nb=2,3
+            do i=1,3
+               call D3dB_t_Copy(3,dbl_mb(Gsmall_indx(i)),dbl_mb(tmp(1)))
+               call Pack_t_pack(nb,dbl_mb(tmp(1)))
+               call Pack_t_Copy(nb,dbl_mb(tmp(1)),dbl_mb(G_pack(i,nb)))
+            end do
+         end do
+      end if
+
       value = BA_pop_stack(tmp(2))
       if (.not. value) 
      > call errquit('Pack_init:error popping stack',0,MA_ERR)
@@ -219,7 +370,7 @@ c     >                                      nidb(1),nidb2(1)
       integer nb,i
 
 c     **** common block for G_pack ****
-      integer G_pack(3,0:1),G_pack_hndl
+      integer G_pack(3,0:3),G_pack_hndl
       common / G_pack_blk / G_pack,G_pack_hndl
 
       Pack_G_indx = G_pack(i,nb)
@@ -239,23 +390,27 @@ c     **** common block for G_pack ****
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** common block for G_pack ****
-      integer G_pack(3,0:1),G_pack_hndl
+      integer G_pack(3,0:3),G_pack_hndl
       common / G_pack_blk / G_pack,G_pack_hndl
 
       logical value
 
 *     **** external functions ****
-      logical  control_balance
-      external control_balance
+      logical  control_balance,lattice_has_small
+      external control_balance,lattice_has_small
 
       value =           BA_free_heap(pack(2,0))
       value = value.and.BA_free_heap(pack(2,1))
       value = value.and.BA_free_heap(G_pack_hndl)
+      if (lattice_has_small()) then
+         value = value.and.BA_free_heap(pack(2,2))
+         value = value.and.BA_free_heap(pack(2,3))
+      end if
       if (.not. value) 
      > call errquit('Pack_end:error freeing heap',0,MA_ERR)
       if (control_balance()) call Balance_End()
@@ -279,16 +434,16 @@ c     **** common block for G_pack ****
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
       
 *     **** local variables ****
       logical value
-      integer nfft3d,n
+      integer nfft3d,n,id
       integer tmp1(2)
 
 *     **** external functions ****
@@ -297,12 +452,21 @@ c     **** common block for G_pack ****
 
       call nwpw_timing_start(9)
 
-      call D3dB_nfft3d(1,nfft3d)
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
+
+      call D3dB_nfft3d(id,nfft3d)
       value = BA_push_get(mt_dcpl,nfft3d,'tmp1',tmp1(2),tmp1(1))
       if (.not.value) call errquit('out of stack memory',0, MA_ERR)
 
-      call dcopy(2*nfft3d,A,1,dcpl_mb(tmp1(1)),1)
-      call dcopy(2*nfft3d,0.0d0,0,A,1)
+c      call dcopy(2*nfft3d,A,1,dcpl_mb(tmp1(1)),1)
+c      call dcopy(2*nfft3d,0.0d0,0,A,1)
+      call Parallel_shared_vector_copy(.true.,2*nfft3d,A,
+     >                                 dcpl_mb(tmp1(1)))
+      call Parallel_shared_vector_zero(.true.,2*nfft3d,A)
 
 c      do i=1,(nida(nb)+nidb(nb))
 c        A(i) = dcpl_mb(tmp1(1) + int_mb(pack(1,nb)+i-1)-1)
@@ -338,16 +502,16 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
 
 *     **** local variables ****
       logical value
-      integer i,j,nfft3d,n,shift
+      integer i,j,nfft3d,n,shift,id
       integer tmp1(2)
 
 *     **** external functions ****
@@ -356,16 +520,25 @@ c      end do
 
       call nwpw_timing_start(9)
 
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
 
-      call D3dB_nfft3d(1,nfft3d)
+      call D3dB_nfft3d(id,nfft3d)
       value = BA_push_get(mt_dcpl,nfft3d,'tmp1',tmp1(2),tmp1(1))
       if (.not.value) call errquit('out of stack memory',0, MA_ERR)
 
       shift=1
       n = nida(nb)+nidb(nb)
       do j=1,m
-        call dcopy(2*nfft3d,A(shift),1,dcpl_mb(tmp1(1)),1)
-        call dcopy(2*nfft3d,0.0d0,0,A(shift),1)
+        !call dcopy(2*nfft3d,A(shift),1,dcpl_mb(tmp1(1)),1)
+        !call dcopy(2*nfft3d,0.0d0,0,A(shift),1)
+        call Parallel_shared_vector_copy(.true.,2*nfft3d,A(shift),
+     >                                   dcpl_mb(tmp1(1)))
+        call Parallel_shared_vector_zero(.true.,2*nfft3d,A(shift))
+
         call Pack_c_indexcopy(n,int_mb(pack(1,nb)),
      >                        dcpl_mb(tmp1(1)),
      >                        A(shift))
@@ -387,9 +560,11 @@ c      end do
       complex*16 A(*), B(*)
 
       integer i
+!$OMP DO
       do i=1,n
         B(i) = A(indx(i))
       end do
+!$OMP END DO
       return
       end
 
@@ -409,16 +584,16 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
       
 *     **** local variables ****
       logical value
-      integer i,nfft3d
+      integer i,nfft3d,id
       integer tmp1(2)
 
 *     **** external functions ****
@@ -427,12 +602,22 @@ c      end do
 
       call nwpw_timing_start(9)
 
-      call D3dB_nfft3d(1,nfft3d)
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
+
+      call D3dB_nfft3d(id,nfft3d)
       value = BA_push_get(mt_dbl,nfft3d,'tmp1',tmp1(2),tmp1(1))
       if (.not.value) call errquit('out of stack memory',0, MA_ERR)
 
-      call dcopy(nfft3d,A,1,dbl_mb(tmp1(1)),1)
-      call dcopy(nfft3d,0.0d0,0,A,1)
+      !call dcopy(nfft3d,A,1,dbl_mb(tmp1(1)),1)
+      !call dcopy(nfft3d,0.0d0,0,A,1)
+      call Parallel_shared_vector_copy(.true.,nfft3d,A,
+     >                                 dbl_mb(tmp1(1)))
+      call Parallel_shared_vector_zero(.true.,nfft3d,A)
+
       do i=1,(nida(nb)+nidb(nb))
         A(i) = dbl_mb(tmp1(1) + int_mb(pack(1,nb)+i-1) - 1)
       end do
@@ -463,16 +648,16 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
       
 *     **** local variables ****
       logical value
-      integer i,nfft3d
+      integer i,nfft3d,id
       integer tmp1(2)
 
 *     **** external functions ****
@@ -480,8 +665,13 @@ c      end do
       external control_balance
 
       call nwpw_timing_start(9)
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
 
-      call D3dB_nfft3d(1,nfft3d)
+      call D3dB_nfft3d(id,nfft3d)
       value = BA_push_get(mt_int,nfft3d,'tmp1',tmp1(2),tmp1(1))
       if (.not.value) call errquit('out of stack memory',0, MA_ERR)
 
@@ -521,16 +711,16 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
 
 *     **** local variables ****
       logical value
-      integer i,nfft3d,zplane_size
+      integer i,nfft3d,zplane_size,id
       integer tmp1(2)
       integer tmp2(2)
 c      integer indx1,indx2
@@ -541,19 +731,29 @@ c      integer indx1,indx2
 
 
       call nwpw_timing_start(9)
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
       if (control_balance()) call Balance_c_unbalance(nb,A)
 
-      call D3dB_nfft3d(1,nfft3d)
+      call D3dB_nfft3d(id,nfft3d)
       
       value = BA_push_get(mt_dcpl,(nida(nb)+nidb(nb)),
      >                    'tmp1',tmp1(2),tmp1(1))
       if (.not.value) call errquit('out of stack memory',0, MA_ERR)
 
-      call dcopy(2*(nida(nb)+nidb(nb)),A,1,dcpl_mb(tmp1(1)),1)
-      call dcopy(2*nfft3d,0.0d0,0,A,1)
+c      call dcopy(2*(nida(nb)+nidb(nb)),A,1,dcpl_mb(tmp1(1)),1)
+c      call dcopy(2*nfft3d,0.0d0,0,A,1)
+      call Parallel_shared_vector_copy(.true.,2*(nida(nb)+nidb(nb)),
+     >                                 A,dcpl_mb(tmp1(1)))
+      call Parallel_shared_vector_zero(.true.,2*nfft3d,A)
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         A(int_mb(pack(1,nb)+i-1)) = dcpl_mb(tmp1(1)+i-1)
       end do
+!$OMP END DO
       value = BA_pop_stack(tmp1(2))
       if (.not.value) call errquit('error popping stack',0, MA_ERR)
 
@@ -561,12 +761,12 @@ c      integer indx1,indx2
 *     **** make the kx=0 plane complete **** 
       !call D3dB_ny(1,ny)
       !call D3dB_nq(1,nq)
-      call D3dB_zplane_size(1,zplane_size)
+      call D3dB_zplane_size(id,zplane_size)
       value = BA_push_get(mt_dcpl,(zplane_size),'tmp1',tmp1(2),tmp1(1))
       value = value.and.
      >        BA_push_get(mt_dcpl,(zplane_size),'tmp2',tmp2(2),tmp2(1))
 
-      call D3dB_c_timereverse(1,A,dcpl_mb(tmp1(1)),dcpl_mb(tmp2(1)))
+      call D3dB_c_timereverse(id,A,dcpl_mb(tmp1(1)),dcpl_mb(tmp2(1)))
 
       value = BA_pop_stack(tmp2(2))
       value = value.and.
@@ -596,8 +796,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       integer npack
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
       npack = nida(nb)+nidb(nb)
@@ -618,8 +818,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       integer npack
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
       npack = nida(nb)
@@ -639,8 +839,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       integer npack
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
       npack = nidb(nb)
@@ -661,8 +861,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       integer nb
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
       Pack_nwave = nida(nb)+nidb(nb)
@@ -680,7 +880,7 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       integer nb
 
 *     **** common block for pack ****
-      integer nwave_all(0:1)
+      integer nwave_all(0:3)
       common / pack_blk3x / nwave_all
 
       Pack_nwave_all = nwave_all(nb)
@@ -700,19 +900,24 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       integer zero,pzero
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
-      integer qzero
+      integer qzero,id
 
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
 *     *********************************************************
 *     **** warning this routine assumes a specific packing ****
 *     *********************************************************
 *     index = (qzero-1)*(nx/2+1)*ny + (j-1)*(nx/2+1) + i 
       zero = 1
       !call D3dB_ktoqp(1,1,qzero,pzero)
-      call D3dB_ijktoindexp(1,1,1,1,zero,pzero)
+      call D3dB_ijktoindexp(id,1,1,1,zero,pzero)
 
       return
       end
@@ -735,8 +940,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -781,8 +986,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       real*8     matrix(n,n)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -797,13 +1002,13 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       npack2 = 2*npack
 
       do k=1,n
-        call DGEMM('T','N',k,1,npack2,
+        call DGEMM_OMP('T','N',k,1,npack2,
      >             2.0d0,
      >             A,npack2, 
      >             B(1+(k-1)*npack),npack2, 
      >             0.0d0,
      >             matrix(1,k),k)
-        call DGEMM('T','N',k,1,2*nida(nb),
+        call DGEMM_OMP('T','N',k,1,2*nida(nb),
      >             -1.0d0,
      >             A,npack2, 
      >             B(1+(k-1)*npack),npack2, 
@@ -811,11 +1016,14 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
      >             matrix(1,k),k)
       end do
 
+!$OMP MASTER
       do k=1,n
       do j=k+1,n
         matrix(j,k) = matrix(k,j)
       end do
       end do
+!$OMP END MASTER
+!$OMP BARRIER
 
       if (np.gt.1) call D3dB_Vector_SumAll(n*n,matrix)
 
@@ -838,8 +1046,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       real*8     matrix(n,n,3)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -855,38 +1063,38 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       npack2 = 2*npack
 
       do k=1,n
-        call DGEMM('T','N',k,1,npack2,
+        call DGEMM_OMP('T','N',k,1,npack2,
      >             2.0d0,
      >             A,npack2,
      >             A(1+(k-1)*npack),npack2,
      >             0.0d0,
      >             matrix(1,k,1),k)
-        call DGEMM('T','N',k,1,npack2,
+        call DGEMM_OMP('T','N',k,1,npack2,
      >             2.0d0,
      >             A,npack2,
      >             B(1+(k-1)*npack),npack2,
      >             0.0d0,
      >             matrix(1,k,2),k)
-        call DGEMM('T','N',k,1,npack2,
+        call DGEMM_OMP('T','N',k,1,npack2,
      >             2.0d0,
      >             B,npack2,
      >             B(1+(k-1)*npack),npack2,
      >             0.0d0,
      >             matrix(1,k,3),k)
 
-        call DGEMM('T','N',k,1,2*nida(nb),
+        call DGEMM_OMP('T','N',k,1,2*nida(nb),
      >             -1.0d0,
      >             A,npack2,
      >             A(1+(k-1)*npack),npack2,
      >             1.0d0,
      >             matrix(1,k,1),k)
-        call DGEMM('T','N',k,1,2*nida(nb),
+        call DGEMM_OMP('T','N',k,1,2*nida(nb),
      >             -1.0d0,
      >             A,npack2,
      >             B(1+(k-1)*npack),npack2,
      >             1.0d0,
      >             matrix(1,k,2),k)
-        call DGEMM('T','N',k,1,2*nida(nb),
+        call DGEMM_OMP('T','N',k,1,2*nida(nb),
      >             -1.0d0,
      >             B,npack2,
      >             B(1+(k-1)*npack),npack2,
@@ -894,6 +1102,7 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
      >             matrix(1,k,3),k)
       end do
 
+!$OMP MASTER
       do i=1,3
       do k=1,n
       do j=k+1,n
@@ -901,6 +1110,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       end do
       end do
       end do
+!$OMP END MASTER
+!$OMP BARRIER
 
       if (np.gt.1) call D3dB_Vector_SumAll(3*n*n,matrix)
 
@@ -925,8 +1136,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       real*8     matrix(m,m)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -941,13 +1152,13 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       npack2 = 2*npack
 
       do k=1,n
-        call DGEMM('T','N',k,1,npack2,
+        call DGEMM_OMP('T','N',k,1,npack2,
      >             2.0d0,
      >             A,npack2, 
      >             B(1+(k-1)*npack),npack2, 
      >             0.0d0,
      >             matrix(1,k),k)
-        call DGEMM('T','N',k,1,2*nida(nb),
+        call DGEMM_OMP('T','N',k,1,2*nida(nb),
      >             -1.0d0,
      >             A,npack2, 
      >             B(1+(k-1)*npack),npack2, 
@@ -955,11 +1166,14 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
      >             matrix(1,k),k)
       end do
 
+!$OMP MASTER
       do k=1,n
       do j=k+1,n
         matrix(j,k) = matrix(k,j)
       end do
       end do
+!$OMP END MASTER
+!$OMP BARRIER
 
       if (np.gt.1) call D3dB_Vector_SumAll(m*m,matrix)
 
@@ -983,8 +1197,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       real*8     matrix(n,n)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -996,13 +1210,13 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
 
       npack = 2*(nida(nb)+nidb(nb))
 
-        call DGEMM('T','N',n,n,npack,
+        call DGEMM_OMP('T','N',n,n,npack,
      >             2.0d0,
      >             A,npack, 
      >             B,npack, 
      >             0.0d0,
      >             matrix,n)
-        call DGEMM('T','N',n,n,2*nida(nb),
+        call DGEMM_OMP('T','N',n,n,2*nida(nb),
      >             -1.0d0,
      >             A,npack, 
      >             B,npack, 
@@ -1029,8 +1243,8 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
       real*8     matrix(m,n)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1042,13 +1256,13 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
 
       npack = 2*(nida(nb)+nidb(nb))
 
-        call DGEMM('T','N',m,n,npack,
+        call DGEMM_OMP('T','N',m,n,npack,
      >             2.0d0,
      >             A,npack, 
      >             B,npack, 
      >             0.0d0,
      >             matrix,m)
-        call DGEMM('T','N',m,n,2*nida(nb),
+        call DGEMM_OMP('T','N',m,n,2*nida(nb),
      >             -1.0d0,
      >             A,npack, 
      >             B,npack, 
@@ -1080,22 +1294,23 @@ c     call Check_Real(nx,ny,nz,nfft3d,A)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer n,np
 c     integer npack, shift
-      integer npack2
+      integer npack2,npack,shift
 
 *     **** external functions ****
-c     real*8   ddot
-c     external ddot
+      real*8   ddot
+      external ddot
 
       call nwpw_timing_start(2)
       call Parallel2d_np_i(np)
-      npack2= 2*(nida(nb)+nidb(nb))
+      npack = (nida(nb)+nidb(nb))
+      npack2= 2*npack
 
 c     do n=1,ne
 c       shift = (n-1)*npack
@@ -1106,20 +1321,25 @@ c    >                           A(nida(nb)+1+shift),1,
 c    >                           B(nida(nb)+1),      1)
 c     end do
 
-      call DGEMM('T','N',ne,1,(npack2),
+      call DGEMM_OMP('T','N',ne,1,(npack2),
      >           (2.0d0),
      >           A,npack2,
      >           B,npack2,
      >           (0.0d0),
      >           sum,ne)
-      call DGEMM('T','N',ne,1,(2*nida(nb)),
-     >           (-1.0d0),
-     >           A,npack2,
-     >           B,npack2,
-     >           (1.0d0),
-     >           sum,ne)
+c      call DGEMM_OMP('T','N',ne,1,(2*nida(nb)),
+c     >           (-1.0d0),
+c     >           A,npack2,
+c     >           B,npack2,
+c     >           (1.0d0),
+c     >           sum,ne)
+!$OMP DO
+      do n=1,ne
+         shift = (n-1)*npack
+         sum(n) = sum(n) - ddot(2*nida(nb),A(1+shift),1,B,1)
+      end do
+!$OMP END DO
 
-   
 
       call nwpw_timing_end(2)
       return
@@ -1142,27 +1362,38 @@ c     end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer n,np,i,k,npack
       real*8 sa,sb
+      common /pack_conjg_tcc_indot_sasb/ sa,sb
 
       npack = nida(nb)+nidb(nb)
       do i=1,ne
+!$OMP MASTER
          sa = 0.0d0
+         sb = 0.0d0
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO REDUCTION(+:sa)
          do k=1,nida(nb)
             sa = sa + dimag(A(k)*B(k+(i-1)*npack)*dconjg(C(k)))
          end do
+!$OMP END DO
 
-         sb = 0.0d0
+!$OMP DO REDUCTION(+:sb)
          do k=nida(nb)+1,nida(nb)+nidb(nb)
             sb = sb + 2.0d0*dimag(A(k)*B(k+(i-1)*npack)*dconjg(C(k)))
          end do
+!$OMP END DO
+!$OMP MASTER
          sm(i) = sa + sb
+!$OMP END MASTER
       end do
+!$OMP BARRIER
       return
       end
 
@@ -1178,27 +1409,44 @@ c     end do
       subroutine Pack_cc_idot(nb,A,B,sum)
       implicit none
       integer    nb
-      complex*16 A(*)
-      complex*16 B(*)
+      real*8 A(*)
+      real*8 B(*)
       real*8     sum
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
-      integer np
+c      integer np
+       integer i
 
 *     **** external functions ****
-      real*8   ddot
-      external ddot
+c      real*8   ddot
+c      external ddot
 
       call nwpw_timing_start(2)
 c      call Parallel2d_np_i(np)
 
-      sum = ddot(2*nida(nb),A,1,B,1)
-      sum = sum + 2*ddot(2*nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+c      sum = ddot(2*nida(nb),A,1,B,1)
+c      sum = sum + 2*ddot(2*nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+
+!$OMP MASTER
+      sum = 0.0d0
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO REDUCTION(+:sum)
+      do i=1,2*nida(nb)
+         sum = sum + A(i)*B(i)
+      end do
+!$OMP END DO
+
+!$OMP DO REDUCTION(+:sum)
+      do i=1,2*nidb(nb)
+         sum = sum + 2.0d0*A(2*nida(nb)+i)*B(2*nida(nb)+i)
+      end do
+!$OMP END DO
 
 c     if (np.gt.1) call D3dB_SumAll(sum)
 
@@ -1216,8 +1464,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8     summer
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1262,8 +1510,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 
@@ -1291,17 +1539,17 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       subroutine Pack_cc_dot(nb,A,B,sum)
       implicit none
       integer    nb
-      complex*16 A(*)
-      complex*16 B(*)
+      real*8     A(*)
+      real*8     B(*)
       real*8     sum
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
-      integer np
+      integer np,i
 
 *     **** external functions ****
       real*8   ddot
@@ -1310,14 +1558,30 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       call nwpw_timing_start(2)
       call Parallel2d_np_i(np)
 
-      sum = ddot(2*nida(nb),A,1,B,1)
-      sum = sum + 2*ddot(2*nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+c      sum = ddot(2*nida(nb),A,1,B,1)
+c      sum = sum + 2*ddot(2*nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+!$OMP MASTER
+      sum = 0.0d0
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO REDUCTION(+:sum)
+      do i=1,2*nida(nb)
+         sum = sum + A(i)*B(i)
+      end do
+!$OMP END DO
+
+!$OMP DO REDUCTION(+:sum)
+      do i=1,2*nidb(nb)
+         sum = sum + 2.0d0*A(2*nida(nb)+i)*B(2*nida(nb)+i)
+      end do
+!$OMP END DO
 
       if (np.gt.1) call D3dB_SumAll(sum)
 
       call nwpw_timing_end(2)
       return
       end 
+
 
 
 *     ***********************************
@@ -1334,24 +1598,41 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8  sum
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 
+*     **** local variables ****
+      integer i
+
 *     **** external functions ****
-      real*8   ddot
-      external ddot
+c      real*8   ddot
+c      external ddot
 
       call nwpw_timing_start(2)
 
-      sum =         ddot(nida(nb),A,1,B,1)
-      sum = sum + 2*ddot(nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+c      sum =         ddot(nida(nb),A,1,B,1)
+c      sum = sum + 2*ddot(nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+!$OMP MASTER
+      sum = 0.0d0
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO REDUCTION(+:sum)
+      do i=1,nida(nb)
+         sum = sum + A(i)*B(i)
+      end do
+!$OMP END DO
+
+!$OMP DO REDUCTION(+:sum)
+      do i=1,nidb(nb)
+         sum = sum + 2.0d0*A(nida(nb)+i)*B(nida(nb)+i)
+      end do
+!$OMP END DO
 
       call nwpw_timing_end(2)
       return
       end 
-
 
 
 
@@ -1370,22 +1651,37 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8  sum
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
-      integer np
+      integer np,i
 
 *     **** external functions ****
-      real*8   ddot
-      external ddot
+c      real*8   ddot
+c      external ddot
 
       call nwpw_timing_start(2)
       call Parallel2d_np_i(np)
 
-      sum =         ddot(nida(nb),A,1,B,1)
-      sum = sum + 2*ddot(nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+c      sum =         ddot(nida(nb),A,1,B,1)
+c      sum = sum + 2*ddot(nidb(nb),A(nida(nb)+1),1,B(nida(nb)+1),1)
+!$OMP MASTER
+      sum = 0.0d0
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO REDUCTION(+:sum)
+      do i=1,nida(nb)
+         sum = sum + A(i)*B(i)
+      end do
+!$OMP END DO
+
+!$OMP DO REDUCTION(+:sum)
+      do i=1,nidb(nb)
+         sum = sum + 2.0d0*A(nida(nb)+i)*B(nida(nb)+i)
+      end do
+!$OMP END DO
 
       if (np.gt.1) call D3dB_SumAll(sum)
 
@@ -1408,8 +1704,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8  sum
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1432,6 +1728,55 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       return
       end
 
+*     ***********************************
+*     *					*
+*     *	         Pack_c_Copy1		*	
+*     *					*
+*     ***********************************
+
+      subroutine Pack_c_Copy1(nb,A,B)
+      implicit none
+      integer    nb
+      complex*16 A(*)
+      complex*16 B(*)
+
+*     **** common block for pack ****
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
+      common / pack_blk / pack,nida,nidb
+
+
+c      call dcopy(2*(nida(nb)+nidb(nb)),A,1,B,1)
+      call Parallel_shared_vector_copy(.true.,2*(nida(nb)+nidb(nb)),A,B)
+      return
+      end
+
+*     ***********************************
+*     *					*
+*     *	         Pack_c_Copy0		*	
+*     *					*
+*     ***********************************
+
+      subroutine Pack_c_Copy0(nb,A,B)
+      implicit none
+      integer    nb
+      complex*16 A(*)
+      complex*16 B(*)
+
+*     **** common block for pack ****
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
+      common / pack_blk / pack,nida,nidb
+
+
+      call dcopy(2*(nida(nb)+nidb(nb)),A,1,B,1)
+
+      return
+      end
+
+
+
+
 
 
 *     ***********************************
@@ -1447,15 +1792,17 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       complex*16 B(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 
-      call dcopy(2*(nida(nb)+nidb(nb)),A,1,B,1)
+c      call dcopy(2*(nida(nb)+nidb(nb)),A,1,B,1)
+      call Parallel_shared_vector_copy(.true.,2*(nida(nb)+nidb(nb)),A,B)
 
       return
       end
+
 
       subroutine Pack_c_nCopy(nb,n,A,B)
       implicit none
@@ -1464,21 +1811,14 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       complex*16 B(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
         
-#ifdef USE_OPENMP
-      integer i,indx
-!$OMP PARALLEL DO private(i,indx) shared(A,B,nida,nidb)
-      do i=1,n
-         indx = (i-1)*(nida(nb)+nidb(nb)) + 1
-         call dcopy(2*(nida(nb)+nidb(nb)),A(indx),1,B(indx),1)
-      end do
-!OMP END PARALLEL DO
-#else
-      call dcopy(n*2*(nida(nb)+nidb(nb)),A,1,B,1)
-#endif
+c      call dcopy(n*2*(nida(nb)+nidb(nb)),A,1,B,1)
+      call Parallel_shared_vector_copy(.true.,
+     >                                 n*2*(nida(nb)+nidb(nb)),
+     >                                 A,B)
         
       return 
       end
@@ -1498,12 +1838,13 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 
-      call dcopy((nida(nb)+nidb(nb)),A,1,B,1)
+      !call dcopy((nida(nb)+nidb(nb)),A,1,B,1)
+      call Parallel_shared_vector_copy(.true.,(nida(nb)+nidb(nb)),A,B)
 
       return
       end
@@ -1521,12 +1862,13 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 
-      call dcopy(2*(nida(nb)+nidb(nb)),0.0d0,0,A,1)
+      !call dcopy(2*(nida(nb)+nidb(nb)),0.0d0,0,A,1)
+      call Parallel_shared_vector_zero(.true.,2*(nida(nb)+nidb(nb)),A)
 
       return
       end
@@ -1548,16 +1890,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = A(i) + B(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1578,16 +1922,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         B(i) = B(i) + A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1607,16 +1953,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8 C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = A(i) + B(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1636,16 +1984,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8 B(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         B(i) = B(i) + A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1667,16 +2017,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = A(i) - B(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1696,16 +2048,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         B(i) = B(i) - A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1727,8 +2081,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8 C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1754,8 +2108,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8   C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1781,8 +2135,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8   A(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1809,8 +2163,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8     C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1840,16 +2194,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = alpha*A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1868,16 +2224,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       complex*16 A(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         A(i) = alpha*A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -1898,8 +2256,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1929,8 +2287,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1957,8 +2315,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
       real*8 A(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -1988,12 +2346,18 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
+      integer i
 
-      call daxpy(2*(nida(nb)+nidb(nb)),alpha,A,1,B,1)
+      !call daxpy(2*(nida(nb)+nidb(nb)),alpha,A,1,B,1)
+!$OMP DO
+      do i=1,(nida(nb)+nidb(nb))
+         B(i) = B(i) + alpha*A(i)
+      end do
+!$OMP END DO
 
       return
       end
@@ -2015,8 +2379,8 @@ c     if (np.gt.1) call D3dB_SumAll(sum)
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -2047,16 +2411,17 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
-
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = C(i) + alpha*A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2077,16 +2442,18 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = B(i)*A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2105,16 +2472,18 @@ c      end do
       complex*16 B(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         B(i) = B(i)*A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2137,8 +2506,8 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -2167,8 +2536,8 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -2197,16 +2566,18 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = C(i) + A(i)*B(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2228,16 +2599,18 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = A(i) * dcmplx(-dimag(B(i)),dble(B(i)))
       end do
+!$OMP END DO
 
       return
       end
@@ -2261,16 +2634,18 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = A(i)*B(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2289,16 +2664,18 @@ c      end do
       complex*16 B(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         B(i) = B(i)*A(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2317,16 +2694,18 @@ c      end do
       real*8     C(*)
  
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)         
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)         
       common / pack_blk / pack,nida,nidb
               
 *     **** local variables ****
       integer i                  
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = dble(A(i)*B(i))
       end do 
+!$OMP END DO
             
       return 
       end 
@@ -2347,16 +2726,18 @@ c      end do
       real*8     C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = dble(dconjg(A(i))*B(i))
       end do
+!$OMP END DO
 
       return
       end
@@ -2374,16 +2755,18 @@ c      end do
       real*8     C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = dimag(dconjg(A(i))*B(i))
       end do
+!$OMP END DO
 
       return
       end
@@ -2401,16 +2784,18 @@ c      end do
       real*8     C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = C(i) + dimag(dconjg(A(i))*B(i))
       end do
+!$OMP END DO
 
       return
       end
@@ -2429,16 +2814,18 @@ c      end do
       real*8     C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = C(i) + alpha*dimag(A(i)*dconjg(B(i)))
       end do
+!$OMP END DO
 
       return
       end
@@ -2456,16 +2843,18 @@ c      end do
       real*8     C(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = dimag(A(i))*dble(B(i)) - dble(A(i))*dimag(B(i))
       end do
+!$OMP END DO
 
       return
       end
@@ -2488,16 +2877,18 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = dconjg(A(i))*B(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2515,16 +2906,18 @@ c      end do
       complex*16 C(*),D(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
          D(i) = (A(i)+B(i))*C(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2546,16 +2939,18 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
       integer i
 
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         C(i) = dcmplx(0.0d0,A(i)) * B(i)
       end do
+!$OMP END DO
 
       return
       end
@@ -2576,8 +2971,8 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -2608,8 +3003,8 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -2637,8 +3032,8 @@ c      end do
       real*8   D(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -2666,8 +3061,8 @@ c      end do
       real*8     B(*)
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
@@ -2696,16 +3091,21 @@ c      end do
 
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb
 
 *     **** local variables ****
-      integer indx,p,q,taskid
+      integer indx,p,q,taskid,id
 
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
       call Parallel2d_taskid_i(taskid)
       !call D3dB_ktoqp(1,1,q,p)
-      call D3dB_ijktoindexp(1,1,1,1,indx,p)
+      call D3dB_ijktoindexp(id,1,1,1,indx,p)
       if (p.eq.taskid) A(indx) = dcmplx(vzero,0.0d0)
 
       return
@@ -2734,27 +3134,34 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
       
 *     **** local variables ****
       logical value
-      integer nfft3d,n
+      integer nfft3d,n,id
 
 *     **** external functions ****
       logical  control_balance
       external control_balance
 
       call nwpw_timing_start(9)
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
 
-      call D3dB_nfft3d(1,nfft3d)
+      call D3dB_nfft3d(id,nfft3d)
 
-      call dcopy(2*nfft3d,A,1,tmp1,1)
-      call dcopy(2*nfft3d,0.0d0,0,A,1)
+      !call dcopy(2*nfft3d,A,1,tmp1,1)
+      !call dcopy(2*nfft3d,0.0d0,0,A,1)
+      call Parallel_shared_vector_copy(.true.,2*nfft3d,A,tmp1)
+      call Parallel_shared_vector_zero(.true.,2*nfft3d,A)
 
       n = nida(nb)+nidb(nb)
       call Pack_c_indexcopy(n,int_mb(pack(1,nb)),tmp1,A)
@@ -2788,10 +3195,10 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
 
@@ -2836,10 +3243,10 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
 *     **** external functions ****
@@ -2847,9 +3254,7 @@ c      end do
       external control_balance
 
       call nwpw_timing_start(9)
-!$OMP SINGLE
       call Pack_c_Copy(nb,A,tmp1)
-!$OMP END SINGLE
       if (control_balance())
      >   call Balance_c_unbalance_start(nb,tmp1,request,reqcnt,msgtype)
 
@@ -2882,40 +3287,52 @@ c      end do
 #include "errquit.fh"
 
 *     **** common block for pack ****
-      integer nida(0:1),nidb2(0:1)
-      integer pack(2,0:1)
+      integer nida(0:3),nidb2(0:3)
+      integer pack(2,0:3)
       common / pack_blk / pack,nida,nidb2
-      integer nidb(0:1)
+      integer nidb(0:3)
       common / pack2_blk / nidb
 
 
 *     **** local variables ****
       logical value
-      integer i,nfft3d
+      integer i,nfft3d,id
 
 *     **** external functions ****
       logical  control_balance
       external control_balance
 
-
       call nwpw_timing_start(9)
+
+      if (nb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
+
       if (control_balance()) 
      >  call Balance_c_unbalance_end(nb,tmp1,request,reqcnt)
 
       
-      call D3dB_nfft3d(1,nfft3d)
+      call D3dB_nfft3d(id,nfft3d)
 
-!$OMP SINGLE
-      call dcopy(2*(nida(nb)+nidb(nb)),tmp1,1,tmp2,1)
-      call dcopy(2*nfft3d,0.0d0,0,tmp1,1)
+c      call dcopy(2*(nida(nb)+nidb(nb)),tmp1,1,tmp2,1)
+c      call dcopy(2*nfft3d,0.0d0,0,tmp1,1)
+c      do i=1,(nida(nb)+nidb(nb))
+c        tmp1(int_mb(pack(1,nb)+i-1)) = tmp2(i)
+c      end do
+      call Parallel_shared_vector_copy(.true.,2*(nida(nb)+nidb(nb)),
+     >                                 tmp1,tmp2)
+      call Parallel_shared_vector_zero(.true.,2*nfft3d,tmp1)
+!$OMP DO
       do i=1,(nida(nb)+nidb(nb))
         tmp1(int_mb(pack(1,nb)+i-1)) = tmp2(i)
       end do
-!$OMP END SINGLE
+!$OMP END DO
 
 
 *     **** make the kx=0 plane complete **** 
-      call D3dB_c_timereverse_start(1,tmp1,tmp1z,tmp2z,
+      call D3dB_c_timereverse_start(id,tmp1,tmp1z,tmp2z,
      >                              request,reqcnt,msgtype)
 
       call nwpw_timing_end(9)
@@ -2942,7 +3359,11 @@ c      end do
 
       call nwpw_timing_start(9)
 
-      call D3dB_c_timereverse_end(1,tmp1,tmp1z,tmp2z,request,reqcnt)
+      if (nb.lt.2) then
+         call D3dB_c_timereverse_end(1,tmp1,tmp1z,tmp2z,request,reqcnt)
+      else
+         call D3dB_c_timereverse_end(3,tmp1,tmp1z,tmp2z,request,reqcnt)
+      end if
 
       call nwpw_timing_end(9)
   

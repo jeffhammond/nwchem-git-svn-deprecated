@@ -29,6 +29,7 @@ c     pass  napex, nface, error =   4    1026    2048    2728    0.0451
 c     pass  napex, nface, error =   5    4098    8192   10920    0.0116
 c     pass  napex, nface, error =   6   16386   32768   43688    0.0029
 c
+#include "cosmo_params.fh"
 #include "errquit.fh"
 #include "global.fh"
 #include "rtdb.fh"
@@ -41,14 +42,6 @@ c
       double precision c(3,nat)    !< [Input] The atomic coordinates
       double precision radius(nat) !< [Input] The atomic radii
 c
-      double precision dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      double precision adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      integer          do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                 cosmo_sccor
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
 c
       integer   mxface, mxapex
       parameter (mxface=43688)
@@ -92,26 +85,32 @@ c     if(.not.ma_push_get(mt_dbl,need,'mem init:cosmo:hnd_cosset:1',
 c    &    i_init,init))
 c    & call errquit('hnd_cosset, malloc of init  failed',911,MA_ERR)
 c
-      stat = .true.
-      stat = stat.and.ma_push_get(mt_dbl,3*nat,"xyzatm",l_i10,i10)
-      stat = stat.and.ma_push_get(mt_dbl,  nat,"ratm",l_i20,i20)
-      stat = stat.and.ma_push_get(mt_int,  nat,"nspa",l_i30,i30)
-      stat = stat.and.ma_push_get(mt_int,  nat,"nppa",l_i40,i40)
-      stat = stat.and.ma_push_get(mt_int,3*mxface,"ijkfac",l_i50,i50)
-      stat = stat.and.ma_push_get(mt_dbl,3*mxface,"xyzseg",l_i60,i60)
-      stat = stat.and.ma_push_get(mt_int,  mxface,"ijkseg",l_i70,i70)
-      stat = stat.and.ma_push_get(mt_log,  mxface*nat,"insseg",
-     &                                                l_i80,i80)
-      stat = stat.and.ma_push_get(mt_dbl,3*mxface*nat,"xyzspa",
-     &                                                l_i90,i90)
-      stat = stat.and.ma_push_get(mt_int,  mxface*nat,"ijkspa",
-     &                                                l_i100,i100)
-      stat = stat.and.ma_push_get(mt_int,  mxface*nat,"numpps",
-     &                                                l_i110,i110)
-      stat = stat.and.ma_push_get(mt_dbl,3*mxapex    ,"apex",
-     &                                                l_i120,i120)
-      stat = stat.and.ma_push_get(mt_dbl,  mxface*nat,"xyzff",
-     &                                                l_i130,i130)
+      if(.not.ma_push_get(mt_dbl,3*nat,"xyzatm",l_i10,i10))
+     c     call errquit('hndcosset: not enuf mem',0,MA_ERR)
+      if(.not.ma_push_get(mt_dbl,  nat,"ratm",l_i20,i20))
+     c     call errquit('hndcosset: not enuf mem',1,MA_ERR)
+      if(.not.ma_push_get(mt_int,  nat,"nspa",l_i30,i30))
+     c     call errquit('hndcosset: not enuf mem',2,MA_ERR)
+      if(.not.ma_push_get(mt_int,  nat,"nppa",l_i40,i40))
+     c     call errquit('hndcosset: not enuf mem',3,MA_ERR)
+      if(.not.ma_push_get(mt_int,3*mxface,"ijkfac",l_i50,i50))
+     c     call errquit('hndcosset: not enuf mem',4,MA_ERR)
+      if(.not.ma_push_get(mt_dbl,3*mxface,"xyzseg",l_i60,i60))
+     c     call errquit('hndcosset: not enuf mem',5,MA_ERR)
+      if(.not.ma_push_get(mt_int,  mxface,"ijkseg",l_i70,i70))
+     c     call errquit('hndcosset: not enuf mem',6,MA_ERR)
+      if(.not.ma_push_get(mt_log,  mxface*nat,"insseg",l_i80,i80))
+     c     call errquit('hndcosset: not enuf mem',7,MA_ERR)
+      if(.not.ma_push_get(mt_dbl,3*mxface*nat,"xyzspa",l_i90,i90))
+     c     call errquit('hndcosset: not enuf mem',8,MA_ERR)
+      if(.not.ma_push_get(mt_int,  mxface*nat,"ijkspa",l_i100,i100))
+     c     call errquit('hndcosset: not enuf mem',9,MA_ERR)
+      if(.not.ma_push_get(mt_int,  mxface*nat,"numpps",l_i110,i110))
+     c     call errquit('hndcosset: not enuf mem',10,MA_ERR)
+      if(.not.ma_push_get(mt_dbl,3*mxapex    ,"apex",l_i120,i120))
+     c     call errquit('hndcosset: not enuf mem',11,MA_ERR)
+      if(.not.ma_push_get(mt_dbl,  mxface*nat,"xyzff",l_i130,i130))
+     c     call errquit('hndcosset: not enuf mem',12,MA_ERR)
 c     i10 =init                    ! xyzatm(3,nat)
 c     i20 =i10 +3*nat              !   ratm(  nat)
 c     i30 =i20 +  nat              !   nspa(  nat)
@@ -129,9 +128,10 @@ c     ----- get -cosmo- surface -----
 c
       call hnd_cossrf(nat,c,radius,nat,mxface,mxapex,
      1                dbl_mb(i10),dbl_mb(i20),int_mb(i30),int_mb(i40),
-     2                int_mb(i50),dbl_mb(i60),int_mb(i70),
-     3                log_mb(i80),dbl_mb(i90),int_mb(i100),int_mb(i110),
+     2                int_mb(i50),dbl_mb(i60),int_mb(i70),log_mb(i80),
+     3                dbl_mb(i90),int_mb(i100),int_mb(i110),
      4                dbl_mb(i120),dbl_mb(i130),rtdb)
+
 c
 c     ----- release memory block -----
 c
@@ -153,11 +153,12 @@ C>
       implicit none
 c
 #include "nwc_const.fh"
+#include "cosmo_params.fh"
 #include "rtdb.fh"
 #include "global.fh"
 #include "stdio.fh"
 #include "cosmoP.fh"
-c
+#include "mafdecls.fh"
       integer rtdb, nat
       integer mxatm
       integer mxfac
@@ -184,14 +185,6 @@ c
       logical    out
       logical    more
       logical    dbug
-      double precision dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      double precision adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      integer          do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                 cosmo_sccor
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
 c
       integer i, iat, lfac, lseg, ndiv, nfac, nseg
       integer mfac
@@ -261,6 +254,7 @@ c
 c
 c     ----- create -solvent accessible surface- of the molecule -----
 c
+
       call hnd_cossas(nat,xyzatm,ratm,mxatm,
      1                nspa,nppa,xyzspa,ijkspa,
      2                nseg,nfac,xyzseg,ijkseg,insseg,
@@ -359,6 +353,7 @@ C>
      2                      nseg,nfac,xyzseg,ijkseg,insseg,
      3                      numpps,xyzff,mxface,rtdb)
       implicit none
+#include "cosmo_params.fh"
 #include "errquit.fh"
 #include "rtdb.fh"
 #include "mafdecls.fh"
@@ -366,6 +361,7 @@ C>
 #include "stdio.fh"
 #include "bq.fh"
 #include "prop.fh"
+cnew
 #include "cosmoP.fh"
 c
       integer rtdb    !< [Input] The RTDB handle
@@ -378,14 +374,6 @@ c
       double precision bohr
       parameter  (bohr=0.529177249d+00)
       logical     dbug
-      double precision dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      double precision adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      integer do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &        cosmo_sccor
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
       double precision xyzatm(3,mxatom) !< [Input] The atom positions
       double precision   ratm(  mxatom) !< [Input] The atom radii
       integer            nspa(  mxatom) !< [Output] The number of
@@ -410,7 +398,6 @@ c
       integer          numpps(  mxface,mxatom)
       double precision  xyzff(  mxface,mxatom)
       double precision zero, one
-      data zero    /0.0d+00/
       data one     /1.0d+00/
       integer l_efcc, k_efcc, l_efcs, k_efcs, l_efcz, k_efcz
       integer l_efclb, k_efclb, k_efciat, l_efciat
@@ -464,7 +451,7 @@ c
          do i=1,mxface
             ijkspa(i,iat)=0
             numpps(i,iat)=0
-            xyzff(i,iat)=zero
+            xyzff(i,iat)=0d0
          enddo
       enddo
 c
@@ -473,7 +460,7 @@ c           belongs to the -sas- or is inside the molecule.
 c
       do iat=1,nat
 c
-         if(ratm(iat).ne.zero) then
+         if(ratm(iat).ne.0d0) then
             do iseg=1,nseg
                ijkspa(iseg,iat)=ijkseg(iseg)
                xyzff(iseg,iat)=one
@@ -515,7 +502,7 @@ c
                    enddo
                  endif
                else if (do_cosmo_model.eq.DO_COSMO_YK) then
-                 if((jat.ne.iat).and.(ratm(jat).ne.zero)
+                 if((jat.ne.iat).and.(ratm(jat).ne.0d0)
      1                        .and.(dij.lt.(ratm(iat)+rout(jat)))) then
                    do iseg=1,nseg
                      dum=dist(xyzspa(1,iseg,iat),
@@ -615,7 +602,7 @@ c    and generate memory to store them
 c
       nefc = 0
       do iat=1,nat
-         if(ratm(iat).ne.zero) then
+         if(ratm(iat).ne.0d0) then
             do iseg=1,nseg
                if(.not.insseg(iseg,iat)) nefc = nefc+1
             enddo
@@ -639,11 +626,11 @@ c     ----- save coordinates of surface points -----
 c           save segment surfaces
 c           save segment to atom mapping
 c
-      srfmol=zero
-      volmol=zero
+      srfmol=0d0
+      volmol=0d0
       ief   =0
       do iat=1,nat
-         if(ratm(iat).ne.zero) then
+         if(ratm(iat).ne.0d0) then
             if (do_cosmo_model.eq.DO_COSMO_KS) then
               ratm_real=ratm(iat)-rsolv/bohr
             else if (do_cosmo_model.eq.DO_COSMO_YK) then
@@ -720,7 +707,7 @@ c
       endif
 c
       do ief=1,nefc
-         dbl_mb(k_efcz+ief-1)=zero
+         dbl_mb(k_efcz+ief-1)=0d0
       enddo
       do ief=1,nefc
          byte_mb(k_efclb+(ief-1)*8)='        '
@@ -873,10 +860,13 @@ C>     10.1039/P29930000799</a>.
 C>
       subroutine hnd_cossph(nseg,nfac,ndiv,
      1                  ijkfac,xyzseg,ijkseg,mxface,apex,mxapex,
-     2                  dsurf,dvol,adiag)
+     2                  dsurf_in,dvol_in,adiag_in)
       implicit double precision (a-h,o-z)
+#include "cosmo_params.fh"
 #include "global.fh"
 #include "stdio.fh"
+cnew
+#include "cosmoP.fh"
 c
 c              ----- starting from -icosahedron- -----
 c
@@ -901,12 +891,6 @@ c
       dimension ijkfac(3,*)
       dimension ijkseg(  *)
       dimension xyzseg(3,*)
-      integer do_cosmo_model,cosmo_sccor
-c
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
-c
       parameter (mxpass=    7)
       dimension minfac(mxpass)
       dimension maxfac(mxpass)
@@ -1172,10 +1156,10 @@ c     ----- calculate -dsurf dvol- for the -cosmo- theory -----
 c
       if (do_cosmo_model.eq.DO_COSMO_YK) nfac =nseg
       ndiv =nfac/nseg
-      dsurf=srf/dble(nfac)
-      dvol =vol/dble(nfac)
+      dsurf_in=srf/dble(nfac)
+      dvol_in =vol/dble(nfac)
       if(some.or.out.or.dbug.and.ga_nodeid().eq.0) then
-         write(luout,9986) nseg,nfac,ndiv,dsurf,dvol
+         write(luout,9986) nseg,nfac,ndiv,dsurf_in,dvol_in
       endif
       if(out.and.ga_nodeid().eq.0) then
          write(luout,9985)
@@ -1213,17 +1197,17 @@ c
             endif
          enddo
          fac=(dble(nseg)-sum)/sqrt(dble(nseg))
-         adiag=sqrt(four*pi)*fac
+         adiag_in=sqrt(four*pi)*fac
          if(some.or.out.or.dbug.and.ga_nodeid().eq.0) then
-            write(luout,9983) mseg,adiag,fac,dble(nseg),sum
+            write(luout,9983) mseg,adiag_in,fac,dble(nseg),sum
          endif
-         avgdia=avgdia+adiag
+         avgdia=avgdia+adiag_in
          avgfac=avgfac+fac
       enddo
-      adiag=avgdia/dble(nseg)
+      adiag_in=avgdia/dble(nseg)
       fac  =avgfac/dble(nseg)
       if(some.or.out.or.dbug.and.ga_nodeid().eq.0) then
-         write(luout,9978)      adiag,fac               
+         write(luout,9978)      adiag_in,fac               
       endif
 c
       return
@@ -2039,6 +2023,7 @@ C>
 #include "prop.fh"
 #include "util.fh"
 #include "inp.fh"
+#include "cosmo_params.fh"
 #include "cosmoP.fh"
 c
       integer ndens         !< [Input] the number of density matrices
@@ -2068,12 +2053,12 @@ c
       integer istrlen
       character*255 cosmo_file
       integer fn
-      integer lineq ! 0: fast direct solver, 1: slow iterative solver
-      integer minbem 
-      integer maxbem 
-      integer do_cosmo_model 
-      integer ificos ! 0 use octahedron, 1 use icosahedron tesselation
-      integer cosmo_sccor ! do correction?
+c      integer lineq ! 0: fast direct solver, 1: slow iterative solver
+c      integer minbem 
+c      integer maxbem 
+c      integer do_cosmo_model 
+c      integer ificos ! 0 use octahedron, 1 use icosahedron tesselation
+c      integer cosmo_sccor ! do correction?
       integer iat ! counter over atoms
       integer jef ! counter over COSMO charges
       integer l_i10, i10
@@ -2101,21 +2086,6 @@ c
       integer l_epot, l_xyzpt, l_zanpt ! memory handles
       integer k_epot, k_xyzpt, k_zanpt ! memory offsets
 c
-      double precision adiag
-      double precision dsurf
-      double precision dvol
-      double precision srfmol
-      double precision volmol
-      double precision dielec    ! dielectric constant (slow component)
-      double precision dielecinf ! optical dielectric constant (fast component)
-      double precision screen ! dielectric screening factor
-      double precision rsolv
-      double precision zeta,gammas,swtol
-      double precision ptspatm
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
       double precision charge ! the total QM region charge
       double precision chgnuc ! the total nuclear charge
       integer          nelec  ! the total number of electrons
@@ -2435,7 +2405,7 @@ c
 c
          nodcmp=1
          call hnd_linequ(x(i30),nefc,x(ieq),nefc,
-     1                   x(i40),x(i50),deta,ierr,nodcmp)
+     1                   x(i40),x(i50),ierr,nodcmp)
          if (ierr.ne.0) call errquit("hnd_coschg: hnd_linequ failed",
      &                               ierr,UERR)
 c
@@ -2451,7 +2421,7 @@ c
 c
            nodcmp=1
            call hnd_linequ(x(i30),nefc,x(i80),nefc,
-     1                     x(i40),x(i50),deta,ierr,nodcmp)
+     1                     x(i40),x(i50),ierr,nodcmp)
            if (ierr.ne.0) call errquit("hnd_coschg: hnd_linequ failed",
      &                                 ierr,UERR)
 c
@@ -3141,6 +3111,7 @@ C>
       implicit none
 c
 #include "cosmoP.fh"
+#include "cosmo_params.fh"
 c
       integer nat  !< [Input] The number of electrons
       integer nefc !< [Input] The number of COSMO charges
@@ -3175,14 +3146,6 @@ c
       double precision efcefc !< [Output] The COSMO charge - COSMO
                               !< charge interaction energy
 c
-      double precision dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      double precision adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      integer          do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                 cosmo_sccor
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
 c
       integer ief, jef !< Counters over COSMO charges
       integer iat      !< Counter over atoms
@@ -3286,6 +3249,7 @@ C>
       subroutine hnd_cosmata(nat,nefc,efcc,efcs,efciat,ratm,a)
       implicit none
 #include "cosmoP.fh"
+#include "cosmo_params.fh"
       integer          nat  !< [Input] The number of atoms
       integer          nefc !< [Input] The number of surface charges
       double precision efcc(3,nefc) !< [Input] The surface charge coords
@@ -3300,14 +3264,6 @@ c
       double precision zetai, zetaj, zetaij
       parameter (one = 1.0d0)
 c
-      integer          do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                 cosmo_sccor
-      double precision dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      double precision adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
 c
       double precision util_erf
       external util_erf
@@ -3375,6 +3331,7 @@ C>
 #include "global.fh"
 #include "msgids.fh"
 #include "cosmoP.fh"
+#include "cosmo_params.fh"
 c
       integer          nat  !< [Input] The number of atoms
       integer          nefc !< [Input] The number of surface charges
@@ -3391,14 +3348,6 @@ c
       double precision zero, one
       parameter (zero=0.0d+00, one=1.0d+00)
 c
-      integer          do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                 cosmo_sccor
-      double precision dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      double precision adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      common/hnd_cospar/dielec,dielecinf,screen,rsolv,zeta,gammas,swtol
-      common/hnd_cosdat/adiag,dsurf,dvol,srfmol,volmol,ptspatm
-      common/hnd_cosmod/do_cosmo_model,lineq,minbem,maxbem,ificos,
-     &                  cosmo_sccor
 c
       double precision util_erf
       external util_erf
@@ -3631,7 +3580,7 @@ C> This is direct linear system solver, solving \f$Ax=b\f$ for \f$x\f$.
 C> On return the matrix \f$A\f$ has been destroyed, and \f$b\f$ has been
 C> overwritten with the answer \f$x\f$.
 C>
-      subroutine hnd_linequ(a,lda,b,n,ib,t,deta,ierr,nodcmp)
+      subroutine hnd_linequ(a,lda,b,n,ib,t,ierr,nodcmp)
       implicit none
       integer lda !< [Input] The leading dimension of \f$A\f$
       integer n   !< [Input] The dimension of matrix \f$A\f$
@@ -3641,7 +3590,6 @@ C>
       !< \f$b\f$; on output the solution \f$x\f$
       double precision t(n)
       integer ib(n)
-      double precision deta !< [Output] The determinant of \f$A\f$
       integer ierr !< [Output] Error code
       integer nodcmp !< [Input] Flag, if \f$\mathrm{nodcmp}\ne 1\f$
       !< then skip the LU decomposition
@@ -3652,10 +3600,7 @@ c
       ierr = 0
       if(nodcmp.ne.1) go to 20
 c
-      call hnd_ludcmp(a,lda,n,ib,t,deta,ierr)
-      do 10 j=1,n
-   10 deta=deta*a(j,j)
-c
+      call hnd_ludcmp(a,lda,n,ib,t,ierr)
    20 continue
       call hnd_lubksb(a,lda,n,ib,b)
 c
@@ -3698,15 +3643,20 @@ c
 C>
 C> \brief LU decomposition
 C>
-      subroutine hnd_ludcmp(a,lda,n,ib,vv,d,ierr)
-      implicit real*8 (a-h,o-z)
+      subroutine hnd_ludcmp(a,lda,n,ib,vv,ierr)
+      implicit none
 c
-      dimension a(lda,1),ib(n),vv(n)
+      integer n,ierr,lda
+      double precision a(lda,*),vv(*)
+      integer ib(*)
+c
+      integer i,j,k,imax
+      double precision aamax,sum,dum
+      double precision tiny,zero,one
       data tiny     /1.0d-20/
       data zero,one /0.0d+00,1.0d+00/
 c
       ierr=0
-      d=one
       do 12 i=1,n
          aamax=zero
          do 11 j=1,n
@@ -3752,7 +3702,6 @@ c
                a(imax,k)=a(j,k)
                a(j,k)=dum
    17       continue
-            d=-d
             vv(imax)=vv(j)
          endif
          ib(j)=imax

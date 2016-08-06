@@ -44,7 +44,7 @@
 *     ***** energy variables ****
       integer ispin,ne(2),ms
       real*8  E(10),en(2)
-      real*8  dipole(3)
+      real*8  dipole(3),cdipole(3)
       real*8  stress(3,3),lstress(6)
 
 *     **** gradient variables ****
@@ -154,8 +154,8 @@
       external pspw_bqext,control_fast_erf
       integer  ion_nconstraints,ion_ndof
       external ion_nconstraints,ion_ndof
-      logical  control_smooth_cutoff
-      external control_smooth_cutoff
+      logical  control_smooth_cutoff,control_periodic_dipole
+      external control_smooth_cutoff,control_periodic_dipole
       real*8   control_smooth_cutoff_values
       external control_smooth_cutoff_values
 
@@ -561,7 +561,13 @@ c     end if
       dipole(1) = 0.0d0
       dipole(2) = 0.0d0
       dipole(3) = 0.0d0
-      if (flag.gt.-1) call rho_dipole(dipole)
+      cdipole(1) = 0.0d0
+      cdipole(2) = 0.0d0
+      cdipole(3) = 0.0d0
+      if (flag.gt.-1) then
+        call rho_dipole(dipole)
+        if (control_periodic_dipole()) call psi1_crystal_dipole(cdipole)
+      end if
 
 *     ****  calculate gradient ***
       if (flag.gt.0) then
@@ -598,6 +604,9 @@ c     end if
       value = value.and.
      >        btdb_put(rtdb,'pspw:dipole',mt_dbl,
      >                 3,dipole)
+      value = value.and.
+     >        btdb_put(rtdb,'pspw:crystal_dipole',mt_dbl,
+     >                 3,cdipole)
       end if
       if (flag.gt.0) then
         value = value.and.
@@ -700,6 +709,7 @@ c      call frac_occ_end()
 
          call nwpw_timing_print_final(oprint,electron_count())
          write(luout,*)
+         call pspw_print_HFX_counters(luout)
          CALL nwpw_MESSAGE(4)
       end if 
 

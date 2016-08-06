@@ -61,6 +61,7 @@ C     == Variables ==
       integer lmoocc, imoocc
 
       character*60 outstr
+      logical lrestart
 
       double precision zjunk
       integer i, j
@@ -188,10 +189,15 @@ C
       call zfock_cs_build (params, g_zdens_ao, energies, g_zfock_ao)
       call canorg_trans (params,"F","AO->MO", g_zfock_ao, g_zfock_mo)
 
-      if (.not. mat_is_purereal (g_zfock_mo, params%tol_zero))
-     $     call errquit (pname//
-     $     "initial Fock matrix in MO basis is not pure real", 0, 0)
-C      call rt_tddft_print_notice ("Disabled init MO Fock check")
+      if (params%mocap_active) then
+         call rt_tddft_print_notice (
+     $        "MO CAP active: Disabled initial MO Fock check")
+      else
+         if (.not. mat_is_purereal (g_zfock_mo, params%tol_zero))
+     $        call errquit (pname//
+     $        "initial Fock matrix in MO basis is not pure real", 0, 0)
+      endif
+
 
       call rt_tddft_calc_Etot (params, energies)
       energies%gs = energies%tot
@@ -229,7 +235,7 @@ C      if (params%print_moocc .or. do_zora) then
          
          if (.not. mat_is_purereal (g_zfock_mo, params%tol_zero))
      $        call errquit (pname//
-     $        "initial Fock matrix in MO basis is not pure real", 0, 0)
+     $        "MO occup needs initial MO Fock mat to be pure real",0,0)
          
          call rt_tddft_movecs_gs (params, g_zfock_mo, g_movecs_mo_gs)
       endif
@@ -240,24 +246,24 @@ C     == Time propagation ==
 C     ======================
 
 C
-C     Check if we have restart data from previous run.  If so, load that
-C     data.  Note, if restarting we convert the newly imported dens mat
-C     to MO basis (emulates propagation from previous time step).
-C
-      if (.not.rtdb_get (params%rtdb, "rt_tddft:rest_it",
-     $     mt_int, 1, rest_it)) then  !clean start
-         it = 1
-         tt = params%tmin
-         call rt_tddft_print_msg (params, tt, "Propagation started")
-      else !restart
-         call rt_tddft_print_notice ("Restart information detected")
-         call rt_tddft_cs_restart_load (params, it, tt, g_zdens_ao)
-         call canorg_trans(params,"P","AO->MO",g_zdens_ao,g_zdens_mo)
+C     If user specified "load restart" then look for restart
+C     file by name runname.rt_restart.
+C     
+      if (.not.rtdb_get (params%rtdb, "rt_tddft:restart",
+     $     mt_log, 1, lrestart))
+     $     lrestart = .false.
+
+      if (lrestart) then
+         call rt_tddft_restart_load (params, it, tt, 1, g_zdens_ao) ! 1 for rks
+         call canorg_trans (params, "P", "AO->MO",
+     $        g_zdens_ao, g_zdens_mo)
          call rt_tddft_print_msg (params, tt,
      $        "Propagation successfully restarted")
+      else
+         it = 1
+         tt = params%tmin
+         call rt_tddft_print_msg(params, tt, "Propagation started")
       endif
-
-
 
       
 C
@@ -445,11 +451,9 @@ C     (quadrupole moment, calc in AO basis)
 C
 C     Dump restart information to disk.
 C
-         if (rt_tddft_atpoint(it, params%nt, params%nrestarts)) then
-            call rt_tddft_cs_restart_save (params, it, tt, g_zdens_ao)
-            call rt_tddft_print_msg (params, tt,
-     $           "Saved restart point")
-         endif
+         if (rt_tddft_atpoint(it, params%nt, params%nrestarts))
+     $        call rt_tddft_restart_save (params, it, tt, 1, g_zdens_ao)
+
 
 C     
 C     Step MO density matrix forward dt in time.

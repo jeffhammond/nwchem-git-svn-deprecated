@@ -20,7 +20,6 @@ c Note.- Modified from original aoresponse source code
 c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
-c --> Experimental (not published yet)
 
        implicit none
 #include "errquit.fh"
@@ -133,7 +132,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c         
-c --> Experimental (not published yet)
 
        implicit none
 #include "errquit.fh"
@@ -278,7 +276,9 @@ c Note.- add_fock() is defined in hnd_gshift_zora.F
        if (.not.ga_destroy(g_d2)) call 
      &    errquit('giao_b1: ga_destroy failed g_fock',0,GA_ERR)
        if (.not.ga_destroy(g_fock)) call 
-     &    errquit('giao_b1: ga_destroy failed g_fock',0,GA_ERR)
+     &   errquit('giao_b1: ga_destroy failed g_fock',0,GA_ERR)
+       if (.not.ga_destroy(g_d1)) call 
+     &   errquit('giao_b1: ga_destroy failed g_d10',0,GA_ERR)
       return
       end
 
@@ -298,7 +298,6 @@ c Note.- Modified from original aoresponse source code
 c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
-c --> Experimental (not published yet)
 
        implicit none
 #include "errquit.fh"
@@ -416,7 +415,7 @@ c     it in the LHS
        enddo ! end-loop-ifld
       enddo ! end-loop-ispin
       if (.not.ga_destroy(g_s10)) call 
-     &    errquit('giao_b1: ga_destroy failed g_s10',0,GA_ERR)
+     &  errquit('giao_b1: ga_destroy failed g_s10',0,GA_ERR)
       return
       end
 
@@ -438,7 +437,6 @@ c Note.- Modified from original aoresponse source code
 c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
-c --> Experimental (not published yet)
 
        implicit none
 #include "errquit.fh"
@@ -588,7 +586,6 @@ c Note.- Modified from original aoresponse source code
 c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
-c --> Experimental (not published yet)
 
       implicit none
 #include "errquit.fh"

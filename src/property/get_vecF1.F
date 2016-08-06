@@ -19,7 +19,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c         
-c --> Experimental (not published yet)
 
        implicit none
 #include "errquit.fh"
@@ -161,7 +160,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c         
-c --> Experimental (not published yet)
 
        implicit none
 #include "errquit.fh"
@@ -173,7 +171,6 @@ c --> Experimental (not published yet)
 #include "rtdb.fh"
 #include "bas.fh"
 #include "prop.fh"
-#include "dimqm.fh"
       integer npol,ncomp
       integer g_dipole,g_dipole1,g_rhs(2),g_rhs_im(2)
       integer rtdb,basis
@@ -186,7 +183,6 @@ c --> Experimental (not published yet)
       integer alo(3), ahi(3),
      &        blo(3), bhi(3) 
       logical lvelocity,oskel,debug
-      external giao_aotomo
       oskel = .false.
       ndir=3 ! nr directions (x,y,z)
 c     Get dipole integrals in GA and transform to MO set (virt,occ)
@@ -295,7 +291,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c                
-c --> Experimental (not published yet)
 
        implicit none
 #include "errquit.fh"

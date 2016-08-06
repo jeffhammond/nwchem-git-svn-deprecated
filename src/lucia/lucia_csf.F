@@ -6653,7 +6653,7 @@ CE        END DO
       DIMENSION IOCC_A(MXPNGAS),IOCC(MXPNGAS)
 
 *
-      NTEST = 0
+      NTEST = 00
       IF(NTEST.GE.100) THEN
          WRITE(6,*) '  MAX_NOPEN_NOCCLS... in action'
          WRITE(6,*) ' ======================'
@@ -6662,7 +6662,8 @@ CE        END DO
          CALL WRT_MINMAX_GASOCC(IGSOCC_MIN,IGSOCC_MAX,NGAS)
       END IF
 *   
-      MAXLOOP = 10000
+      MAXLOOP = 1000000
+cVOG  MAXLOOP = 10000
       NLOOP = 0
       NOCCLS = 0
       NOPEN_MAX = 0
@@ -7506,7 +7507,8 @@ C?       WRITE(6,*) ' NGAS ', NGAS
          CALL WRT_MINMAX_GASOCC(IGSOCC_MIN,IGSOCC_MAX,NGAS)
       END IF
 *   
-      MAXLOOP = 10000
+      MAXLOOP = 1000000
+cVOG  MAXLOOP = 10000
       NLOOP = 0
       NOCCLSL = 0
 *. Loop over occupation classes
@@ -8195,6 +8197,8 @@ C     WRITE(6,*) ' TEST,  NCONF_OCCLS_ALLSYM = ',  NCONF_OCCLS_ALLSYM
 *
       INCLUDE 'implicit.inc'
       INCLUDE 'mxpdim.inc'
+#include "mafdecls.fh"
+#include "global.fh"
 *. Input
       INTEGER IASPGP(MXPNGAS,NASPGP),IBSPGP(MXPNGAS,NBSPGP)
       INTEGER IGSOCC_MNMX(MXPNGAS,2)
@@ -11629,6 +11633,7 @@ C?      WRITE(6,*) '====================='
 *. Jeppe Olsen, Feb. 2012
       INCLUDE 'implicit.inc'
       INCLUDE 'mxpdim.inc'
+#include "global.fh"
 *. Input
       INTEGER IMNMX_SPC(NMNMX_SPC),MNMX_OCC(MXPNGAS,*)
       INTEGER IOCCLS_OCC(NGAS,NOCCLS)
@@ -11637,7 +11642,7 @@ C?      WRITE(6,*) '====================='
       INTEGER IOCCLS_ACT(*)
 *
       NTEST = 00
-      IF(NTEST.GE.100) THEN
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' OCCLS_IN_CISPACE reporting'
       END IF
 *
@@ -11651,7 +11656,7 @@ C?      WRITE(6,*) '====================='
         END IF
       END DO
 *
-      IF(NTEST.GE.100) THEN
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' Output from OCCLS_IN_CISPACE:'
         WRITE(6,*) 
         WRITE(6,*) ' Number of occlasses in CI-space ', NOCCLS_ACT
@@ -11776,7 +11781,7 @@ C?        WRITE(6,*) ' IAMOKAY = ', IAMOKAY
 *. Number of occupation classes per batch and offset
       INTEGER NOCCLS_BAT(*), IBOCCLS_BAT(*)
 *
-      NTEST = 000
+      NTEST = 000 !VOG 000
       NTEST = MAX(NTEST,IPRNT)
 *
       IF(NTEST.GE.10.and.ga_nodeid().eq.0) THEN
@@ -11798,7 +11803,8 @@ C       WRITE(6,*) ' ILTEST, ISIMSYM =  ', ILTEST, ISIMSYM
         IATP = IALTP_FOR_GAS(ISPC)
         IBTP = IBETP_FOR_GAS(ISPC)
       END IF
-      IF(NTEST.GE.100) WRITE(6,*) 'ZTEST: IATP, IBTP = ', IATP, IBTP
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0)
+     &    WRITE(6,*) 'ZTEST: IATP, IBTP = ', IATP, IBTP
 
       NOCTPA = NOCTYP(IATP)
       NOCTPB = NOCTYP(IBTP)

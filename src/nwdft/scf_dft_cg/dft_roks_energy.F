@@ -24,15 +24,16 @@ c
       double precision eone, etwo, enrep, exc(2)
       integer gtype, grow, gcol
 c
-      logical odbug
+      logical odebug
       logical osome
       logical xc_gotxc
       external xc_gotxc
-      double precision ecosmo
-
-      odbug=.false.
+      double precision ecosmo,gcds
+      logical do_cosmo_smd
+c
+      odebug=.false.
       osome=.false.
-      osome=osome.or.odbug
+      osome=osome.or.odebug
 c     
 c     Check
 c     
@@ -89,26 +90,50 @@ c
        call util_flush(6)
       endif 
 c
-c     ----- cosmo energy term ... -----
+c     ----- cosmo and smd energy term -----
 c
-      odbug=.false.
-      odbug=odbug.and.ga_nodeid().eq.0
+      odebug=.false.
+      odebug=odebug.and.ga_nodeid().eq.0
+c
+      do_cosmo_smd = .false.
+      gcds = 0.d0
       if(cosmo_on.and.cosmo_phase.eq.2) then
-         if (.not. rtdb_get(rtdb,'cosmo:energy',mt_dbl,1,ecosmo))
-     $     call errquit('dft_roks_energy: rtdb get failed for ecosmo',
+         if (.not. rtdb_get(
+     $     rtdb,'cosmo:energy',mt_dbl,1,ecosmo))
+     $     call errquit(
+     $     'dft_roks_energy: rtdb get failed for ecosmo',
      $                  911, RTDB_ERR)
 c
-         energy=energy+ecosmo
+         if (.not. rtdb_get(
+     $    rtdb,'cosmo:do_cosmo_smd',mt_log,1,do_cosmo_smd))
+     $    call errquit(
+     $    'dft_roks_energy: cannot get do_cosmo_smd from rtdb',
+     $    0,rtdb_err)
+c
+          energy=energy+ecosmo  ! add cosmo energy
+c
+          if (do_cosmo_smd) then
+            if (.not. rtdb_get
+     $        (rtdb,'cosmo:gcds',mt_dbl,1,gcds))
+     $      call errquit(
+     $      'dft_fockbld: cannot get gcds from rtdb',
+     $       0,rtdb_err)
+c            
+             energy=energy+gcds  ! add smd energy
+c
+          endif   ! do_cosmo_smd
 c
          osome=.false.
          osome=osome.and.ga_nodeid().eq.0
          if(osome) then
-             write(6,9999) (energy-ecosmo),ecosmo,energy
+             write(6,9999) (energy-ecosmo-gcds),ecosmo,energy
  9999 format(' energ0 = ',f20.10,/,' ecosmo = ',f20.10,/,
      $       ' energy = ',f20.10)
              call util_flush(6)
-         endif
-      endif
+         endif  ! osome
+c
+      endif   ! cosmo_on.and.cosmo_phase.eq.2
+c
       if(ga_nodeid().eq.0) call util_flush(6)
       call ga_sync()
 c

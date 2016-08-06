@@ -32,6 +32,16 @@
 
       value = value.and.BA_free_heap(dti(2))
       value = value.and.BA_free_heap(amass(2))
+
+      if (disp_on) then
+         value = value.and.BA_free_heap(iz_grimme2(2))
+         value = value.and.BA_free_heap(fion_grimme2(2))
+      end if
+      if (is_grimme2) then
+         value = value.and.BA_free_heap(indx_grimme2(2))
+         value = value.and.BA_free_heap(rion_grimme2(2))
+      end if
+
       if (.not. value) call errquit('ion_end:free heap ',0, MA_ERR)
 
       call ion_hess_end()
@@ -205,7 +215,7 @@
      >               ke_total,kg_total,ke_count
 
 *     *** local variables ***
-      integer     i,nion_mm_tmp,nion_qm_tmp
+      integer     i,ia,nion_mm_tmp,nion_qm_tmp
       double precision q,dt  !,vgx,vgy,vgz
       character*16     t
       logical value
@@ -218,18 +228,26 @@
       integer     control_code
       external    ion_aname
       external    control_code
+      logical     oprint,hmass2found
       
       logical          control_frac_coord,control_init_velocities
-      logical          parseqmmm,control_has_disp
+      logical          parseqmmm,control_has_disp,control_makehmass2
       integer          control_version
       double precision control_ion_time_step,ion_amass_geom
       external         control_frac_coord,control_init_velocities
-      external         parseqmmm,control_has_disp
+      external         parseqmmm,control_has_disp,control_makehmass2
       external         control_version
       external         control_ion_time_step,ion_amass_geom
       integer tid,Parallel_threadid
       external    Parallel_threadid
+      integer  ion_atn
+      external ion_atn
+      logical  control_is_grimme2
+      external control_is_grimme2
 
+
+      call Parallel_taskid(taskid)
+      oprint = (taskid.eq.MASTER)
       tid = Parallel_threadid()
 
       call nwpw_timing_start(50)
@@ -239,8 +257,12 @@
       periodic = .true.
       if (control_version().eq.4) periodic = .false.
 
+*     ***** set makehmass2 ****
+      makehmass2 = control_makehmass2()
+
 *     ***** set disp_on ****
       disp_on = control_has_disp()
+
 
 *     *****************************************
 *     **** seperate ions and charges       ****
@@ -280,13 +302,13 @@
      >       BA_alloc_get(mt_dbl,(nion),'amass',amass(2),amass(1))
       if (.not. value) call errquit('out of heap memory',0, MA_ERR)
 
-!$OMP SINGLE
+!$OMP MASTER
       call dcopy(3*nion,0.0d0,0,dbl_mb(r2(1)),1)
       call dcopy(3*nion,0.0d0,0,dbl_mb(r1(1)),1)
       call dcopy(3*nion,0.0d0,0,dbl_mb(r0(1)),1)
       call dcopy(3*nion,0.0d0,0,dbl_mb(v2(1)),1)
-!$OMP END SINGLE
-!$cOMP BARRIER
+!$OMP END MASTER
+!$OMP BARRIER
       nion_qm_tmp = 0
       nion_mm_tmp = 0
       do i=1,nion
@@ -300,6 +322,7 @@
       end do
       nion_mm = nion_mm_tmp
       nion_qm = nion_qm_tmp
+
 
 *     **** define atom list: nkatm,katm,natm,atom ****
       call set_katm_list(1,nion,ion_aname,nkatm,katm,natm,atom)
@@ -325,6 +348,13 @@
          dbl_mb(dti(1)  +i-1) = dt*dt/(ion_amass_geom(i))
          dbl_mb(amass(1)+i-1) = ion_amass_geom(i)
       end do
+
+*     **** turn off makehmass2 if no h atoms ****
+      hmass2found = .false.
+      do i=1,nion
+         if (ion_aname(i).eq.'H   ') hmass2found = .true.
+      end do
+      if ((.not.hmass2found).and.(makehmass2))  makehmass2 = .false.
 
 c     value = beom_destroy(geom)
 c     call ion_shift()
@@ -382,6 +412,56 @@ c         eki1=0.5d0*eki1
       call FMM_start()
       call ion_scaling_atoms_start(rtdb)
       call ion_hess_init(rtdb)
+
+
+*     **** check for grimme2 and large elements ****
+      is_grimme2 = .false.
+      if (disp_on.and.control_is_grimme2()) then
+         do ia=1,nkatm
+            if (ion_atn(ia).gt.85) is_grimme2 = .true.
+         end do
+         if (is_grimme2) then
+            value = value.and.
+     >              BA_alloc_get(mt_int,(nion),'indx_grimme2',
+     >                           indx_grimme2(2),indx_grimme2(1))
+            value = value.and.
+     >              BA_alloc_get(mt_dbl,(3*nion),'rion_grimme2',
+     >                           rion_grimme2(2),rion_grimme2(1))
+             if (.not.value) 
+     >          call errquit('ion_init:out of heap memory',2,MA_ERR)
+            nion_grimme2 = 0
+            do i=1,nion
+               ia = int_mb(katm(1)+i-1)
+               if (ion_atn(ia).le.85) then
+                  nion_grimme2 = nion_grimme2+1
+                  int_mb(indx_grimme2(1)+nion_grimme2-1) = i
+               end if
+            end do
+         end if
+      end if
+      if (disp_on) then
+         value = value.and.
+     >           BA_alloc_get(mt_int,(3*nion),'iz_grimme2',
+     >                        iz_grimme2(2),iz_grimme2(1))
+         value = value.and.
+     >           BA_alloc_get(mt_dbl,(3*nion),'fion_grimme2',
+     >                        fion_grimme2(2),fion_grimme2(1))
+         if (.not.value) 
+     >       call errquit('ion_init:out of heap memory',3,MA_ERR)
+         if (is_grimme2) then
+            do i=1,nion_grimme2
+               ia = int_mb(katm(1)+int_mb(indx_grimme2(1)+i-1)-1)
+               int_mb(iz_grimme2(1)+i-1) = ion_atn(ia)
+            end do
+         else
+            rion_grimme2(1) = r1(1)
+            nion_grimme2    = nion
+            do i=1,nion_grimme2
+               ia = int_mb(katm(1)+i-1)
+               int_mb(iz_grimme2(1)+i-1) = ion_atn(ia)
+            end do
+         end if
+      end if
 
       call nwpw_timing_end(50)
       ion_init = value
@@ -603,7 +683,7 @@ c         eki1=0.5d0*eki1
 #include "stdio.fh"
 #include "beom.fh"
 #include "errquit.fh"
-
+#include "ion.fh"
 
       integer geom
       common / ION2/ geom
@@ -611,9 +691,18 @@ c         eki1=0.5d0*eki1
 *     **** local variables ****
       real*8 mass
 
+*     **** external functions ****
+      character*4 ion_aname
+      external    ion_aname
+
       if(.not.beom_mass_get(geom,i,mass))
      >  call errquit(' beom_mass_get  failed ',i, GEOM_ERR)
 
+      !*** change mass of H to be 2.0 by default ***
+      if (makehmass2) then
+         if (ion_aname(i).eq.'H   ') mass = 2.0
+      end if
+      
       ion_amass_geom = mass*1822.89d0
       return
       end
@@ -633,6 +722,22 @@ c         eki1=0.5d0*eki1
 #include "ion.fh"
 
       ion_amass = dbl_mb(amass(1)+i-1)
+      return
+      end
+
+*     ***************************
+*     *                         *
+*     *      ion_makehmass2     *
+*     *                         *
+*     ***************************
+      logical function ion_makehmass2()
+      implicit none
+
+#include "bafdecls.fh"
+#include "errquit.fh"
+#include "ion.fh"
+
+      ion_makehmass2 = makehmass2
       return
       end
 
@@ -1749,11 +1854,13 @@ c      end do
       real*8 fion(3,nion),r1(3,nion),r2(3,nion)
       integer i,ii
 
+!$OMP DO
       do ii=1,nion
       do i=1,3
          r2(i,ii) = r1(i,ii) + dsqrt(dti(ii))*fion(i,ii)
       end do
       end do
+!$OMP END DO
       return
       end 
 
@@ -2534,10 +2641,14 @@ c      end do
 #include "bafdecls.fh"
 #include "ion.fh"
 
-!$OMP SINGLE
-      call dcopy((3*nion),dbl_mb(r1(1)),1,dbl_mb(r0(1)),1)
-      call dcopy((3*nion),dbl_mb(r2(1)),1,dbl_mb(r1(1)),1)
-!$OMP END SINGLE
+      !call dcopy((3*nion),dbl_mb(r1(1)),1,dbl_mb(r0(1)),1)
+      !call dcopy((3*nion),dbl_mb(r2(1)),1,dbl_mb(r1(1)),1)
+      call Parallel_shared_vector_copy(.false.,3*nion,
+     >                                 dbl_mb(r1(1)),
+     >                                 dbl_mb(r0(1)))
+      call Parallel_shared_vector_copy(.true.,3*nion,
+     >                                 dbl_mb(r2(1)),
+     >                                 dbl_mb(r1(1)))
       return
       end
 
@@ -2552,7 +2663,10 @@ c      end do
 #include "bafdecls.fh"
 #include "ion.fh"
               
+!$OMP MASTER
       call dcopy((3*nion),dbl_mb(r2(1)),1,dbl_mb(r1(1)),1)
+!$OMP END MASTER
+!$OMP BARRIER
       return
       end     
 
@@ -2569,7 +2683,10 @@ c      end do
 #include "bafdecls.fh"
 #include "ion.fh"
 
+!$OMP MASTER
       call dcopy((3*nion),dbl_mb(v2(1)),1,dbl_mb(v1(1)),1)
+!$OMP END MASTER
+!$OMP BARRIER
       return
       end
 
@@ -2591,7 +2708,10 @@ c      end do
 ***** ion common block ****
 #include "ion.fh"
 
+!$OMP MASTER
       call dcopy((3*nion),rion,1,dbl_mb(r1(1)),1)
+!$OMP END MASTER
+!$OMP BARRIER
 
       return
       end
@@ -2624,10 +2744,13 @@ c      end do
 
       integer dof
 
+!$OMP MASTER
       dof = 3*nion - 6 - nconstraints
       if (dof<1) dof = 1
 
       ion_ndof = dof
+!$OMP END MASTER
+!$OMP BARRIER
       return
       end
 
@@ -2643,7 +2766,10 @@ c      end do
 ***** ion common block ****
 #include "ion.fh"
 
+!$OMP MASTER
       nconstraints = nconstraints + nc
+!$OMP END MASTER
+!$OMP BARRIER
       return
       end
 
@@ -3335,12 +3461,19 @@ c
       character*80 control_options_disp
       external     control_options_disp
 
-      if (.not.BA_push_get(mt_int,nion,'iz',iz(2),iz(1)))
-     >   call errquit("ion_disp_energy:",0,MA_ERR)
+c      if (.not.BA_push_get(mt_int,nion,'iz',iz(2),iz(1)))
+c     >   call errquit("ion_disp_energy:",0,MA_ERR)
 
-      do ii=1,nion
-         int_mb(iz(1)+ii-1) = ion_atn(ion_katm(ii))
-      end do
+      if (is_grimme2) then
+!$OMP DO
+         do i=1,nion_grimme2
+            ii = int_mb(indx_grimme2(1)+i-1)
+            dbl_mb(rion_grimme2(1)+3*(i-1))   = dbl_mb(r1(1)+3*(ii-1))
+            dbl_mb(rion_grimme2(1)+3*(i-1)+1) = dbl_mb(r1(1)+3*(ii-1)+1)
+            dbl_mb(rion_grimme2(1)+3*(i-1)+2) = dbl_mb(r1(1)+3*(ii-1)+2)
+         end do
+!$OMP END DO
+      end if
 
       options1 = control_options_disp()
       l = inp_strlen(options1)
@@ -3357,11 +3490,14 @@ c
          options = options1(1:l)//' -pbc'
       end if
 
-      call nwxc_vdw3_dftd3(options,nion,int_mb(iz(1)),
-     >                     dbl_mb(r1(1)),lat,edisp,g,g_lat)
+!$OMP MASTER
+      call nwxc_vdw3_dftd3(options,nion_grimme2,int_mb(iz_grimme2(1)),
+     >                     dbl_mb(rion_grimme2(1)),lat,edisp,g,g_lat)
+!$OMP END MASTER
+!$OMP BARRIER
 
-      if (.not.BA_pop_stack(iz(2)))
-     >   call errquit("ion_disp_energy:",1,MA_ERR)
+c      if (.not.BA_pop_stack(iz(2)))
+c     >   call errquit("ion_disp_energy:",1,MA_ERR)
 
       ion_disp_energy = edisp
       return
@@ -3395,15 +3531,22 @@ c
       character*80 control_options_disp
       external     control_options_disp
 
-      if (.not.BA_push_get(mt_int,nion,'iz',iz(2),iz(1)))
-     >   call errquit("ion_disp_energy: pushstack iz",0,MA_ERR)
+c      if (.not.BA_push_get(mt_int,nion,'iz',iz(2),iz(1)))
+c     >   call errquit("ion_disp_energy: pushstack iz",0,MA_ERR)
+c
+c      if (.not.BA_push_get(mt_dbl,3*nion,'gtmp',gtmp(2),gtmp(1)))
+c     >   call errquit("ion_disp_energy: pushstack gtmp",1,MA_ERR)
 
-      if (.not.BA_push_get(mt_dbl,3*nion,'gtmp',gtmp(2),gtmp(1)))
-     >   call errquit("ion_disp_energy: pushstack gtmp",1,MA_ERR)
-
-      do ii=1,nion
-         int_mb(iz(1)+ii-1) = ion_atn(ion_katm(ii))
-      end do
+      if (is_grimme2) then
+!$OMP DO
+         do i=1,nion_grimme2
+            ii = int_mb(indx_grimme2(1)+i-1)
+            dbl_mb(rion_grimme2(1)+3*(i-1))   = dbl_mb(r1(1)+3*(ii-1))
+            dbl_mb(rion_grimme2(1)+3*(i-1)+1) = dbl_mb(r1(1)+3*(ii-1)+1)
+            dbl_mb(rion_grimme2(1)+3*(i-1)+2) = dbl_mb(r1(1)+3*(ii-1)+2)
+         end do
+!$OMP END DO
+      end if
       
       options1= control_options_disp()
       l = inp_strlen(options1)
@@ -3420,17 +3563,35 @@ c
          options = options1(1:l)//' -pbc -grad'
       end if
 
-      call dcopy(3*nion,0.0d0,0,dbl_mb(gtmp(1)),1)
+      !call dcopy(3*nion,0.0d0,0,dbl_mb(gtmp(1)),1)
+      call Parallel_shared_vector_zero(.true.,3*nion_grimme2,
+     >                                 dbl_mb(fion_grimme2(1)))
 
-      call nwxc_vdw3_dftd3(options,nion,int_mb(iz(1)),
-     >               dbl_mb(r1(1)),lat,edisp,dbl_mb(gtmp(1)),g_lat)
+!$OMP MASTER
+      call nwxc_vdw3_dftd3(options,nion_grimme2,int_mb(iz_grimme2(1)),
+     >               dbl_mb(rion_grimme2(1)),lat,edisp,
+     >               dbl_mb(fion_grimme2(1)),g_lat)
+!$OMP END MASTER
+!$OMP BARRIER
 
-      call daxpy(3*nion,-1.0d0,dbl_mb(gtmp(1)),1,fion,1)
+      if (is_grimme2) then
+!$OMP DO
+         do i=1,nion_grimme2
+            ii = int_mb(indx_grimme2(1)+i-1)
+            fion(1,ii) = fion(1,ii) - dbl_mb(fion_grimme2(1)+3*(i-1))
+            fion(2,ii) = fion(2,ii) - dbl_mb(fion_grimme2(1)+3*(i-1)+1)
+            fion(3,ii) = fion(3,ii) - dbl_mb(fion_grimme2(1)+3*(i-1)+2)
+         end do
+!$OMP END DO
+      else
+         call daxpy_omp(3*nion_grimme2,-1.0d0,
+     >                  dbl_mb(fion_grimme2(1)),1,fion,1)
+      end if
 
-      if (.not.BA_pop_stack(gtmp(2)))
-     >   call errquit("ion_disp_energy: popstak gtmp",1,MA_ERR)
-      if (.not.BA_pop_stack(iz(2)))
-     >   call errquit("ion_disp_energy: popstack iz",1,MA_ERR)
+c      if (.not.BA_pop_stack(gtmp(2)))
+c     >   call errquit("ion_disp_energy: popstak gtmp",1,MA_ERR)
+c      if (.not.BA_pop_stack(iz(2)))
+c     >   call errquit("ion_disp_energy: popstack iz",1,MA_ERR)
 
 
       return
@@ -3463,15 +3624,26 @@ c
       character*80 control_options_disp
       external     control_options_disp
 
-      if (.not.BA_push_get(mt_int,nion,'iz',iz(2),iz(1)))
-     >   call errquit("ion_disp_energy: pushstack iz",0,MA_ERR)
+c      if (.not.BA_push_get(mt_int,nion,'iz',iz(2),iz(1)))
+c     >   call errquit("ion_disp_energy: pushstack iz",0,MA_ERR)
+c
+c      if (.not.BA_push_get(mt_dbl,3*nion,'gtmp',gtmp(2),gtmp(1)))
+c     >   call errquit("ion_disp_energy: pushstack gtmp",1,MA_ERR)
 
-      if (.not.BA_push_get(mt_dbl,3*nion,'gtmp',gtmp(2),gtmp(1)))
-     >   call errquit("ion_disp_energy: pushstack gtmp",1,MA_ERR)
+c      do ii=1,nion
+c         int_mb(iz(1)+ii-1) = ion_atn(ion_katm(ii))
+c      end do
 
-      do ii=1,nion
-         int_mb(iz(1)+ii-1) = ion_atn(ion_katm(ii))
-      end do
+      if (is_grimme2) then
+!$OMP DO
+         do i=1,nion_grimme2
+            ii = int_mb(indx_grimme2(1)+i-1)
+            dbl_mb(rion_grimme2(1)+3*(i-1))   = dbl_mb(r1(1)+3*(ii-1))
+            dbl_mb(rion_grimme2(1)+3*(i-1)+1) = dbl_mb(r1(1)+3*(ii-1)+1)
+            dbl_mb(rion_grimme2(1)+3*(i-1)+2) = dbl_mb(r1(1)+3*(ii-1)+2)
+         end do
+!$OMP END DO
+      end if
 
       options1 = control_options_disp()
       l = inp_strlen(options1)
@@ -3488,19 +3660,26 @@ c
          options = options1(1:l)//' -pbc -grad'
       end if
 
-      call dcopy(3*nion,0.0d0,0,dbl_mb(gtmp(1)),1)
-      call dcopy(9,0.0d0,0,stress,1)
+      !call dcopy(3*nion_grimme2,0.0d0,0,dbl_mb(fion_grimme2(1)),1)
+      !call dcopy(9,0.0d0,0,stress,1)
+      call Parallel_shared_vector_zero(.false.,3*nion_grimme2,
+     >                                 dbl_mb(fion_grimme2(1)))
+      call Parallel_shared_vector_zero(.true.,9,stress)
 
-      call nwxc_vdw3_dftd3(options,nion,int_mb(iz(1)),
-     >               dbl_mb(r1(1)),lat,edisp,dbl_mb(gtmp(1)),stress)
+!$OMP MASTER
+      call nwxc_vdw3_dftd3(options,nion_grimme2,int_mb(iz_grimme2(1)),
+     >               dbl_mb(rion_grimme2(1)),lat,edisp,
+     >               dbl_mb(fion_grimme2(1)),stress)
+!$OMP END MASTER
+!$OMP BARRIER
 
       !call dscal(9,-1.0d0,stress,1)
 
 
-      if (.not.BA_pop_stack(gtmp(2)))
-     >   call errquit("ion_disp_stress: popstak gtmp",1,MA_ERR)
-      if (.not.BA_pop_stack(iz(2)))
-     >   call errquit("ion_disp_stress: popstack iz",1,MA_ERR)
+c      if (.not.BA_pop_stack(gtmp(2)))
+c     >   call errquit("ion_disp_stress: popstak gtmp",1,MA_ERR)
+c      if (.not.BA_pop_stack(iz(2)))
+c     >   call errquit("ion_disp_stress: popstack iz",1,MA_ERR)
 
       return
       end

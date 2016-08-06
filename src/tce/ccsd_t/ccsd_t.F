@@ -11,6 +11,7 @@ C
 #include "tce.fh"
 #include "tce_main.fh"
 #include "offl.fh"
+#include "ccsd_t_ps.fh"
       integer d_t1
       integer k_t1_offset
       integer d_t2
@@ -25,14 +26,16 @@ C
       integer t_p6b, t_p6
 #ifdef USE_F90_ALLOCATABLE
       double precision, allocatable :: f_singles(:),f_doubles(:)
+#ifdef USE_FASTMEM
       !dec$ attributes fastmem :: f_singles, f_doubles
+#endif
       integer alloc_error
 #else
       integer k_singles,l_singles
       integer k_doubles,l_doubles
 #endif
       integer size,i
-      integer nxtask
+      integer nxtask0
       integer next
       integer nprocs
       integer count
@@ -53,10 +56,11 @@ c ---------------------------------------
       integer ccsd_t_6tasks,tot_task,w_thresh,task_thresh
       integer k,iptr,k_grain
       double precision wall
+      integer tasks_skip
       integer n_progr,pct_progr
       parameter(n_progr=20)
       logical i_progr(n_progr)
-      external nxtask,ccsd_t_6tasks
+      external nxtask0,ccsd_t_6tasks
       logical offload_master
       external offload_master
 C
@@ -95,7 +99,7 @@ c     estimate triplesx size
       size=(range_p4**3)*(range_h1**3)
 
       triplesx_copyback=.false.
-c      call util_align64(size)
+      call util_align64(size)
       triplesx_mxlgth=size
 #ifdef USE_F90_ALLOCATABLE
       allocate( f_singles(1:size), stat=alloc_error)
@@ -107,10 +111,12 @@ c      call util_align64(size)
         call errquit('ccsd_t: MA error dbl',0,MA_ERR)
       endif
 #ifdef USE_OFFLOAD
+      if (otceps) call pstat_on(ps_sxoff)
       call offl_alloc(f_singles,size)
       triplesx1_alloced=.true.
       call offl_alloc(f_doubles,size)
       triplesx_alloced=.true.
+      if (otceps) call pstat_off(ps_sxoff)
 #endif
 #else // USE_F90_ALLOCATABLE
       if (.not.MA_PUSH_GET(mt_dbl,size,'(T) singles',l_singles,
@@ -155,10 +161,11 @@ c      w_thresh=10
       k_grain=min(5,nint((tot_task/15d0)/nprocs))
       k_grain=max(k_grain,1)
       if(ga_nodeid().eq.0) then
-         write(6,*) ' nxtask granularity ',k_grain
+         write(6,*) ' nxtask0 granularity ',k_grain
       endif
 #endif
-      next = nxtask(nprocs,k_grain)
+      tasks_skip=2
+      next = nxtask0(nprocs,k_grain,tasks_skip)
       do k=1,n_progr
          i_progr(k)=.true.
       enddo
@@ -196,15 +203,15 @@ c
                   call util_flush(6)
                endif
             endif
-            next = nxtask(nprocs,k_grain)
+            next = nxtask0(nprocs,k_grain,tasks_skip)
          endif
          count = count + 1
       enddo
       endif
       if(task_thresh.le.tot_task) then
-      next = nxtask(-nprocs,k_grain)
+      next = nxtask0(-nprocs,k_grain,tasks_skip)
       if(.not.offload_master()) then
-         next = nxtask(nprocs,k_grain)
+         next = nxtask0(nprocs,k_grain,tasks_skip)
          count=0
          do k=task_thresh,tot_task
             if (next.eq.count) then
@@ -224,7 +231,7 @@ c
      &                 restricted,k_evl_sorted,size)
 #endif
 c
-               next = nxtask(nprocs,k_grain)
+               next = nxtask0(nprocs,k_grain,tasks_skip)
                if(ga_nodeid().eq.2) then
                   pct_progr=(k*n_progr)/tot_task
                   if(i_progr(pct_progr)) then
@@ -262,17 +269,19 @@ c
       endif
 #else
 #ifdef USE_OFFLOAD
+      if (otceps) call pstat_on(ps_sxoff)
       call offl_free(dbl_mb(k_doubles),size)
       triplesx_alloced=.false.
       call offl_free(dbl_mb(k_singles),size)
       triplesx1_alloced=.false.
+      if (otceps) call pstat_off(ps_sxoff)
 #endif
       if (.not.MA_POP_STACK(l_doubles))
      1     call errquit('ccsd_t doubles',3,MA_ERR)
       if (.not.MA_POP_STACK(l_singles))
      1     call errquit('ccsd_t singles',4,MA_ERR)
 #endif
-      next = nxtask(-nprocs,k_grain)
+      next = nxtask0(-nprocs,k_grain,tasks_skip)
 c      call ga_sync()
       energy(1) = energy1
       energy(2) = energy2
@@ -363,6 +372,7 @@ CDIR$ OFFLOAD TARGET(mic:mic_device)
      &     restricted,k_evl_sorted,size)
       implicit none
 #include "mafdecls.fh"
+#include "ccsd_t_ps.fh"
       integer k
       double precision energy1,energy2
       integer k_list(7,*)
@@ -408,6 +418,7 @@ c zeroing ---
       call offl_zerofill(a_singles,size)
       call offl_zerofill(a_doubles,size)
 c -----------
+      if (otceps) call pstat_on(ps_cctsng)
 #ifdef USE_OFFLOAD
       call offl_ccsd_t_singles_l(a_singles,
      1                 k_t1_local,d_v2,k_t1_offset,k_v2_offset,
@@ -417,9 +428,14 @@ c -----------
      1                 k_t1_local,d_v2,k_t1_offset,k_v2_offset,
      1                 t_h1b,t_h2b,t_h3b,t_p4b,t_p5b,t_p6b,2)
 #endif
+      if (otceps) call pstat_off(ps_cctsng)
+
+
+      if (otceps) call pstat_on(ps_cctdbl)
       call ccsd_t_doubles_l(a_doubles,
      1                 d_t2,d_v2,k_t2_offset,k_v2_offset,
      1                 t_h1b,t_h2b,t_h3b,t_p4b,t_p5b,t_p6b,2)
+      if (otceps) call pstat_off(ps_cctdbl)
       call ccsd_t_esum(a_singles,a_doubles,restricted,
      &                 t_h1b,t_h2b,t_h3b,t_p4b,t_p5b,t_p6b,
      &                 dbl_mb(offset_h1+1),dbl_mb(offset_h2+1),

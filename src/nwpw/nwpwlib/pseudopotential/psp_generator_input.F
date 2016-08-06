@@ -650,9 +650,10 @@ c        *** PBE96 ***
            write(99,*) '<correlation> pbe96 <end>'
            close(unit=99)
 
-c        *** BLYP ***
+c        *** BLYP - use b3lyp gga until fixed! ***
          else if ((control_gga().eq.11).or.(control_gga().eq.115)) then
-           if (hprint) write(*,*) "+ generated using BLYP"
+           !if (hprint) write(*,*) "+ generated using PBE96 (BLYP psp)"
+           if (hprint) write(*,*) "+ generated using BLYP psp"
            open(unit=99,file=sdir_name(1:h)//'/junk.inp',status='old')
            do while(.true.)
              read(99,*,ERR=31,END=31) ch_tmp
@@ -663,6 +664,8 @@ c        *** BLYP ***
 #endif
            write(99,*) '<exchange>    becke <end>'
            write(99,*) '<correlation> lyp   <end>'
+           !write(99,*) '<exchange>    pbe96 <end>'
+           !write(99,*) '<correlation> pbe96 <end>'
            close(unit=99)
 
 c        *** revPBE ***
@@ -944,8 +947,9 @@ c        *** PBE96 ***
            write(99,*) '<correlation> pbe96 <end>'
            close(unit=99)
 
-c        *** BLYP ***
+c        *** BLYP - use until blyp vxc fixed ***
          else if (control_gga().eq.11) then
+           !if (hprint) write(*,*) "+ generated using PBE96 (BLYP psp)"
            if (hprint) write(*,*) "+ generated using BLYP"
            open(unit=99,file=sdir_name(1:h)//'/junk.inp',status='old')
            do while(.true.)
@@ -957,6 +961,8 @@ c        *** BLYP ***
 #endif
            write(99,*) '<exchange>    becke <end>'
            write(99,*) '<correlation> lyp   <end>'
+           !write(99,*) '<exchange>    pbe96 <end>'
+           !write(99,*) '<correlation> pbe96 <end>'
            close(unit=99)
 
 c        *** revPBE ***

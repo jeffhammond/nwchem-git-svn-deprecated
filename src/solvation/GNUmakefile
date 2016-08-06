@@ -3,15 +3,17 @@
 #
    OBJ = mnsol_mem.o\
          mnsol_interface.o\
-         mnsol.o \
-         solv_data.o
+         mnsol.o\
+         solv_data.o\
+         cosmo_smd_output.o\
+         cosmo_vem_output.o
 
    OBJ_OPTIMIZE = cosmo_input.o \
          cosmo_initialize.o\
          cosmo_tidy.o\
          cosmo_def_radii.o\
          cosmo_charges.o\
-         hnd_cosmo_lib.o
+         hnd_cosmo_lib.o  grad_hnd_cos.o
 
    LIBRARY = libsolvation.a
 
@@ -24,7 +26,7 @@
 
 USES_BLAS = 
 
-HEADERS = ../property/prop.fh ../property/atomdata.fh cosmoP.fh
+HEADERS = ../property/prop.fh ../property/atomdata.fh cosmoP.fh cosmo_params.fh
 
 include ../config/makefile.h
 include ../config/makelib.h

@@ -7417,26 +7417,39 @@ CNW   DIMENSION VEC(*), IBLOCK(8,NBLOCK)
 *. Output
       DIMENSION BLK_A(NBLOCK)
 *
+      CALL LUCIAQENTER('ACTBL')
       call ga_distribution(VEC,ga_nodeid(),ilo,ihi,idum,idum)
+      call ga_access(VEC, ilo, ihi, 1, 1, ivec, idum)
 C?    WRITE(6,*) ' FIND_ACTIVE... ', NBLOCK
       IOFF = 1
       DO IBLK = 1, NBLOCK
         LEN = IBLOCK(8,IBLK)
 C?      WRITE(6,*) 'ACT  IBLK, LEN = ', IBLK,LEN,IOFF
         BLK_A(IBLK) = 0.0D0
-        XBLK = ga_ddot_patch(VEC,'N',IOFF,IOFF+LEN-1,1,1,
-     &                       VEC,'N',IOFF,IOFF+LEN-1,1,1)
-        IF(XBLK.NE.0.0D0) BLK_A(IBLK) = 1.0D0
+        if ((ioff.ge.ilo).and.(ioff.le.ihi)) then
+         XBLK = INPROD(dbl_mb(ivec+ioff-ilo),dbl_mb(ivec+ioff-ilo),LEN)
+cVOG    XBLK = ga_ddot_patch(VEC,'N',IOFF,IOFF+LEN-1,1,1,
+cVOG &                       VEC,'N',IOFF,IOFF+LEN-1,1,1)
+         IF(XBLK.NE.0.0D0) BLK_A(IBLK) = 1.0D0
+        end if
 CNW     XBLK = INPROD(VEC(IOFF),VEC(IOFF),LEN)
         IOFF = IOFF + LEN
       END DO
 *
+      call ga_release(VEC,ilo,ihi,1,1)
+      call ga_sync()
+      call ga_dgop(1,BLK_A,NBLOCK,'+')
+*
       NTEST = 00
-      IF(NTEST.GE.100) THEN
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' Array of active blocks: '
         CALL WRTMAT(BLK_A,1,NBLOCK,1,NBLOCK)
+        do i = 1, nblock
+         if (BLK_A(i).eq.1.0d0) write(*,*) 'active blk', i
+        end do
       END IF
 *
+      CALL LUCIAQEXIT('ACTBL')
       RETURN
       END
       SUBROUTINE FIND_ACTIVE_BLOCKS 
@@ -10315,9 +10328,12 @@ C
 C
           PLL = 1.0D0
 CNW       CALL GSTTBL(LV(IOFF_L_BLOCK),SB(IOFF),IATP,IASM,IBTP,IBSM,
-          CALL GSTTBL(LV,SCLFAC_L(IL),IOFF_L_BLOCK,SB(IOFF),IATP,IASM,
+          if (IOFF_L_BLOCK.GE.ilo.AND.
+     &        (IOFF_L_BLOCK+IBLOCKL(8,IL)-1).LE.ihi) then
+          CALL GSTTBL(LV,RNORM(IR),IOFF_L_BLOCK,SB(IOFF),IATP,IASM,
      &         IBTP,IBSM,ISOCOC,NOCTPA,NOCTPB,NSSOA,NSSOB,PSL,ISOOSC,
      &         IDC,PLL,LUL,C2,NSMST,ISCALE,SCLFAC_L(IL))
+          endif
         END DO
 *. Loop over batches  of R vector
         IF(ICISTR.GT.1) THEN
@@ -10392,7 +10408,9 @@ C?        INTERACT = 1
           END DO
 *.          ^ End of checking whether C-block is needed
           ISCALE = 1
-          IF(INTERACT.EQ.1) THEN
+          ISLOCAL = IOFF_L_BLOCK.GE.ilo.AND.
+     &              IOFF_L_BLOCK+IBLOCKL(8,IL)-1.LE.ihi
+          IF(INTERACT.EQ.1.AND.ISLOCAL) THEN
             ISCALE = 1
 C?          WRITE(6,*) ' LUR before GSTTBL', LUR
             PLR = 1.0D0

@@ -29,7 +29,9 @@ cccx      integer offset
       double precision array(size)
 #ifdef USE_F90_ALLOCATABLE
       double precision, allocatable :: f_a(:)
+#ifdef USE_FASTMEM
       !dec$ attributes fastmem :: f_a
+#endif
       integer alloc_error
 #else
       integer l_a,k_a
@@ -269,14 +271,14 @@ c
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,size)
 #else
          IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
      1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),size)
 #endif
          do i = 1, size
            array(i) = 0.0d0
@@ -563,14 +565,14 @@ c -------------
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,size)
 #else
          IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
      1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),size)
 #endif
 c
 c
@@ -840,7 +842,9 @@ c      double precision array2(size)
 c#endif
 #ifdef USE_F90_ALLOCATABLE
       double precision, allocatable :: f_a(:)
+#ifdef USE_FASTMEM
       !dec$ attributes fastmem :: f_a
+#endif
       integer alloc_error
 #else
       integer l_a,k_a
@@ -1029,7 +1033,7 @@ c
          do i = 1, size
            array(i) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,size)
 #else
          IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
      1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
@@ -1038,7 +1042,7 @@ c --- ACHTUNG ATTENTION UWAGA BHUMAHE
 ccx           dbl_mb(k_a+i-1) = 0.0d0
            array(i) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),size)
 #endif
 c
          size1 = int_mb(k_range+g1b-1)
@@ -1308,7 +1312,7 @@ c ---
          if (alloc_error.ne.0) then
            call errquit('get-block-ind1',2,MA_ERR)
          endif
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,size)
 #else
          IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
      1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
@@ -1316,7 +1320,7 @@ c --- ACHTUNG ATTENTION UWAGA BHUMAHE
 c         do i = 1, size
 c           dbl_mb(k_a+i-1) = 0.0d0
 c         enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),size)
 #endif
 c
 c
@@ -1590,7 +1594,9 @@ c      double precision array2(size)
 c#endif
 #ifdef USE_F90_ALLOCATABLE
       double precision, allocatable :: f_a(:)
+#ifdef USE_FASTMEM
       !dec$ attributes fastmem :: f_a
+#endif
       integer alloc_error
 #else
       integer l_a,k_a
@@ -1800,14 +1806,14 @@ c
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,size)
 #else
          IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
      1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),size)
 #endif
          do i = 1, size
            array(i) = 0.0d0
@@ -2092,14 +2098,14 @@ c -------------
          do i = 1, size
            f_a(i) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,f_a,size)
 #else
          IF(.not.MA_PUSH_GET(mt_dbl,size,'noname',l_a,k_a))
      1           CALL ERRQUIT('get-block-ind1',2,MA_ERR)
          do i = 1, size
            dbl_mb(k_a+i-1) = 0.0d0
          enddo
-         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),1)
+         call ga_get(d_v2orb,off_a+1,off_a+size,1,1,dbl_mb(k_a),size)
 #endif
 c
 c

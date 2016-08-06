@@ -56,7 +56,12 @@
 *   46 - MATHIAS Exch Corr
 *   47 - MATHIAS Hpsi
 
+
 *   50 - io time
+
+*   52 - HFX localization
+*   53 - HFX DM columns
+*   54 - HFX DM Cholesky
 
 
       subroutine nwpw_timing_init()
@@ -266,6 +271,28 @@ c     **** external functions ****
          call nwpw_timing_print(
      >                 '  MATHIAS Hpsi               : ',
      >                 nwpw_timing(47),counter,ttime)
+         call nwpw_timing_print(
+     >                 '  nwpw_ugauss                : ',
+     >                 nwpw_timing(48),counter,ttime)
+         call nwpw_timing_print(
+     >                 '  nwpw_wgauss                : ',
+     >                 nwpw_timing(49),counter,ttime)
+         call nwpw_timing_print(
+     >                 '  nwpw_dwgauss               : ',
+     >                 nwpw_timing(55),counter,ttime)
+         call nwpw_timing_print(
+     >                 '  nwpw_gaunt                 : ',
+     >                 nwpw_timing(51),counter,ttime)
+         call nwpw_timing_print(
+     >                 '  HFX localization           : ',
+     >                 nwpw_timing(52),counter,ttime)
+         call nwpw_timing_print(
+     >                 '  HFX Finding DM columns     : ',
+     >                 nwpw_timing(53),counter,ttime)
+         call nwpw_timing_print(
+     >                 '  HFX DM Cholesky      s     : ',
+     >                 nwpw_timing(54),counter,ttime)
+
       end if
 
 

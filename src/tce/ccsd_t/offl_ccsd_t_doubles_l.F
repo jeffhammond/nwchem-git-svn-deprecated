@@ -91,7 +91,7 @@ c --------------
       external omp_get_wtime
 #endif
       integer h7b_in,p7b_in
-#ifdef OFFLOAD_CODE           
+#ifdef OFFLOAD_CODE
 #ifndef OPENMP_OFFLOAD
       integer util_micdev
       external util_micdev
@@ -117,6 +117,7 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_8
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_9
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7326
       mic_device=util_micdev()
 #endif
 #endif
@@ -151,13 +152,13 @@ cc Allocate memory on MIC,but no xfer data
             t0=omp_get_wtime()
          endif
       if (.not.t2sub_alloced) then
-         call offl_alloc(t2sub,l_t2sub) 
-         call offl_alloc(scratch,l_t2sub) 
+         call offl_alloc(t2sub,l_t2sub)
+         call offl_alloc(scratch,l_t2sub)
          t2sub_alloced=.true.
       endif
 
       if (.not.v2sub_alloced) then
-         call offl_alloc(v2sub,l_v2sub) 
+         call offl_alloc(v2sub,l_v2sub)
          v2sub_alloced=.true.
       endif
          if(otceps) then
@@ -170,7 +171,7 @@ cc Allocate memory on MIC,but no xfer data
 #endif
 #else
 #endif
-      
+
         a3(1,1)=t_p4b
         a3(1,2)=t_p5b
         a3(1,3)=t_p6b
@@ -248,9 +249,9 @@ c
            a3(ja6,5)=0
            a3(ja6,6)=0
           end if
-         enddo 
+         enddo
          end if
-      enddo 
+      enddo
 c
       do ia6=1,9
       p4b=a3(ia6,1)
@@ -313,8 +314,8 @@ c     figure out  cycles to work on
      I           p6b,h2b,h3b,
      O           t2sub,v2sub)) then
             k_range_h7b_1 = int_mb(k_range+h7b-1)
-        
-#ifdef OFFLOAD_CODE           
+
+#ifdef OFFLOAD_CODE
 #ifdef OPENMP_OFFLOAD
 !$omp target map(to:k_range_h3b_1,k_range_h2b_1,k_range_h1b_1)
      & map(to:k_range_p6b_1,k_range_p5b_1,k_range_p4b_1,k_range_h7b_1)
@@ -454,7 +455,7 @@ c     figure out  cycles to work on
      &3b)) THEN
          call tce_sdtime0(t0)
 #ifdef OFFLOAD_CODE
-#include "offl_l_1.fh"
+#include "offl_l_1_scratch.fh"
          call offl_sdtransp_t_d1_8(k_range_h3b_1,k_range_h2b_1,
 #else
          call sdtransp_t_d1_8(k_range_h3b_1,k_range_h2b_1,
@@ -462,7 +463,7 @@ c     figure out  cycles to work on
      1        k_range_h1b_1,k_range_p6b_1,
      2        k_range_p5b_1,k_range_p4b_1,
      3        k_range_h7b_1,
-     4        triplesx,t2sub,v2sub,
+     4        triplesx,t2sub,v2sub,scratch,
      D        deltat_mic)
          call tce_sdtime(t0,deltat_mic,
      ,        fdist_sdkrnl18,fdist_sdcomp18)
@@ -576,9 +577,9 @@ c
            a3(ja6,5)=0
            a3(ja6,6)=0
           end if
-         enddo 
+         enddo
          end if
-        enddo 
+        enddo
 c
       do ia6=1,9
       p4b=a3(ia6,1)
@@ -638,7 +639,7 @@ c     figure out  cycles to work on
      O        t2sub,v2sub)) then
 
             k_range_p7b_1 = int_mb(k_range+p7b-1)
-#ifdef OFFLOAD_CODE           
+#ifdef OFFLOAD_CODE
 #ifdef OPENMP_OFFLOAD
 !$omp target map(to:k_range_h3b_1,k_range_h2b_1,k_range_h1b_1)
      & map(to:k_range_p6b_1,k_range_p5b_1,k_range_p4b_1,k_range_p7b_1)
@@ -648,7 +649,7 @@ c     figure out  cycles to work on
 #endif
 #endif
 
-      
+
       IF ((t_p4b .eq. p4b) .and. (t_p5b .eq. p5b) .and. (t_p6b .eq. p6b)
      & .and. (t_h1b .eq. h1b) .and. (t_h2b .eq. h2b) .and. (t_h3b .eq. h
      &3b)) THEN
@@ -690,7 +691,7 @@ c     figure out  cycles to work on
      &2b)) THEN
          call tce_sdtime0(t0)
 #ifdef OFFLOAD_CODE
-#include "offl_l_2.fh"
+#include "offl_l_2_scratch.fh"
          call offl_sdtransp_t_d2_3(k_range_h3b_1,k_range_h2b_1,
 #else
          call sdtransp_t_d2_3(k_range_h3b_1,k_range_h2b_1,
@@ -698,7 +699,7 @@ c     figure out  cycles to work on
      1        k_range_h1b_1,k_range_p6b_1,
      2        k_range_p5b_1,k_range_p4b_1,
      3        k_range_p7b_1,
-     4        triplesx,t2sub,v2sub,
+     4        triplesx,t2sub,v2sub,scratch,
      D        deltat_mic)
          call tce_sdtime(t0,deltat_mic,
      ,        fdist_sdkrnl23,fdist_sdcomp23)
@@ -745,7 +746,7 @@ c     figure out  cycles to work on
      &2b)) THEN
          call tce_sdtime0(t0)
 #ifdef OFFLOAD_CODE
-#include "offl_l_2.fh"
+#include "offl_l_2_scratch.fh"
          call offl_sdtransp_t_d2_6(k_range_h3b_1,k_range_h2b_1,
 #else
          call sdtransp_t_d2_6(k_range_h3b_1,k_range_h2b_1,
@@ -753,7 +754,7 @@ c     figure out  cycles to work on
      1        k_range_h1b_1,k_range_p6b_1,
      2        k_range_p5b_1,k_range_p4b_1,
      3        k_range_p7b_1,
-     4        triplesx,t2sub,v2sub,
+     4        triplesx,t2sub,v2sub,scratch,
      D        deltat_mic)
          call tce_sdtime(t0,deltat_mic,
      ,        fdist_sdkrnl26,fdist_sdcomp26)
@@ -799,7 +800,7 @@ c     figure out  cycles to work on
      &2b)) THEN
          call tce_sdtime0(t0)
 #ifdef OFFLOAD_CODE
-#include "offl_l_2.fh"
+#include "offl_l_2_scratch.fh"
          call offl_sdtransp_t_d2_9(k_range_h3b_1,k_range_h2b_1,
 #else
          call sdtransp_t_d2_9(k_range_h3b_1,k_range_h2b_1,
@@ -807,7 +808,7 @@ c     figure out  cycles to work on
      1        k_range_h1b_1,k_range_p6b_1,
      2        k_range_p5b_1,k_range_p4b_1,
      3        k_range_p7b_1,
-     4        triplesx,t2sub,v2sub,
+     4        triplesx,t2sub,v2sub,scratch,
      D        deltat_mic)
          call tce_sdtime(t0,deltat_mic,
      ,        fdist_sdkrnl29,fdist_sdcomp29)
@@ -827,13 +828,13 @@ c
       END DO ! ia6 loop
 #ifdef OFFLOAD_CODE
 #ifndef OPENMP_OFFLOAD
+      if(triplesx_copyback) then
       if (otceps) then
          call pstat_on(ps_sxoff)
          t0=omp_get_wtime()
       endif
-      if(triplesx_copyback) then
-!DIR$ OFFLOAD_TRANSFER TARGET(mic:mic_device) 
-     O   OUT(triplesx:length(l_triplesx) 
+!DIR$ OFFLOAD_TRANSFER TARGET(mic:mic_device)
+     O   OUT(triplesx:length(l_triplesx)
      &   REUSE)
       if (otceps) then
          call pstat_off(ps_sxoff)
@@ -868,13 +869,14 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d1_1
       double precision triplesx(h3d*h2d,h1d,p6d,p5d,p4d)
       double precision t2sub(h7d,p4d,p5d,h1d)
       double precision v2sub(h3d*h2d,p6d,h7d)
-      logical loop8
 #include "sd_top.fh"
 !$omp parallel do private(p4,p5,p6,h2,h3,h1,h7) collapse(OMPCOLLAPSE)
       do p4=1,p4d
       do p5=1,p5d
       do p6=1,p6d
       do h1=1,h1d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+cz!DEC$ unroll_and_jam (2)
       do h7=1,h7d
 !DEC$ LOOP COUNT MAX=600, MIN=30
       do h2h3=1,h3d*h2d
@@ -901,44 +903,52 @@ c
       IMPLICIT NONE
 #ifdef OFFLOAD_CODE
 #ifdef OPENMP_OFFLOAD
-!$omp declare target (offl_sdtransp_t_d1_2) 
+!$omp declare target (offl_sdtransp_t_d1_2)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d1_2
-cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7326
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,h7d
       integer h3,h2,h1,p6,p5,p4,h7
       double precision triplesx(h3d,h1d,h2d,p6d,p5d,p4d)
       double precision t2sub(h7d,p4d,p5d,h1d)
-      double precision scratch(h1d,p5d,p4d,h7d)
-      double precision v2sub(h3d,h2d,p6d,h7d)
-#include "sd_top.fh"
+      double precision scratch(h7d,h3d,h2d,p6d)
+      double precision v2sub(*)
 #ifdef OFFLOAD_CODE
-      call offl_ccsd_t_transpt2(
+      external offl_ccsd_t_transpt2_7326
 #else
-      call ccsd_t_transpt2(
+      external ccsd_t_transpt2_7326
 #endif
-     T        t2sub,scratch,
-     1     h1d,p5d,p4d,h7d)
-!$omp parallel do private(p4,p5,p6,h2,h3,h1,h7) collapse(OMPCOLLAPSE)
+#include "sd_top.fh"
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7326(
+#else
+      call ccsd_t_transpt2_7326(
+#endif
+     T        v2sub,scratch,
+     1     h3d,h2d,p6d,h7d)
+c!$omp parallel do private(p4,p5,p6,h2,h3,h1,h7) collapse(OMPCOLLAPSE)
+!$omp parallel do private(p4,p5,p6,h2,h3,h1,h7) collapse(4)
       do p4=1,p4d
       do p5=1,p5d
       do p6=1,p6d
       do h2=1,h2d
-      do h7=1,h7d
-!DEC$ LOOP COUNT MAX=40, MIN=8
       do h1=1,h1d
 !DEC$ LOOP COUNT MAX=40, MIN=8
+c!DEC$ unroll_and_jam (4)
       do h3=1,h3d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+      do h7=1,h7d
        triplesx(h3,h1,h2,p6,p5,p4)=triplesx(h3,h1,h2,p6,p5,p4)
-     1   + scratch(h1,p5,p4,h7)*v2sub(h3,h2,p6,h7)
+     1   + t2sub(h7,p4,p5,h1)*scratch(h7,h3,h2,p6)
       enddo
       enddo
       enddo
       enddo
       enddo
-      enddo  
+      enddo
       enddo
 #include "sd_bottom.fh"
       return
@@ -958,34 +968,50 @@ c
 !$omp declare target (offl_sdtransp_t_d1_3)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d1_3
-cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7326
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,h7d
       integer h3,h2,h1,p6,p5,p4,h7
       integer h3h2
       double precision triplesx(h1d,h3d*h2d,p6d,p5d,p4d)
-      double precision scratch(h1d,p5d,p4d,h7d),t2sub(*)
-      double precision v2sub(h3d*h2d,p6d,h7d)
-#include "sd_top.fh"
+      double precision scratch(h7d,h3d*h2d,p6d)
+c      double precision v2sub(h3d*h2d,p6d,h7d)
+      double precision t2sub(h7d,p4d,p5d,h1d)
+      double precision v2sub(h3d,h2d,p6d,h7d)
 #ifdef OFFLOAD_CODE
-      call offl_ccsd_t_transpt2(
+      external offl_ccsd_t_transpt2_7326
 #else
-      call ccsd_t_transpt2(
+      external ccsd_t_transpt2_7326
 #endif
-     T        t2sub,scratch,
-     1     h1d,p5d,p4d,h7d)
+#include "sd_top.fh"
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7326(
+#else
+      call ccsd_t_transpt2_7326(
+#endif
+     T        v2sub,scratch,
+     1     h3d,h2d,p6d,h7d)
 !$omp parallel do private(p4,p5,p6,h3h2,h1,h7) collapse(OMPCOLLAPSE)
       do p4=1,p4d
       do p5=1,p5d
       do p6=1,p6d
-      do h7=1,h7d
 !DEC$ LOOP COUNT MAX=600, MIN=30
       do h3h2=1,h3d*h2d
 !DEC$ LOOP COUNT MAX=40, MIN=8
+c!DEC$ unroll_and_jam (4)
       do h1=1,h1d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+ccdir$ prefetch triplesx:1:4
+ccdir$ prefetch triplesx:0:1
+ccdir$ prefetch t2sub:1:4
+ccdir$ prefetch t2sub:0:1
+ccdir$ prefetch scratch:1:4
+ccdir$ prefetch scratch:0:1
+      do h7=1,h7d
        triplesx(h1,h3h2,p6,p5,p4)=triplesx(h1,h3h2,p6,p5,p4)
-     1   - scratch(h1,p5,p4,h7)*v2sub(h3h2,p6,h7)
+     1   - t2sub(h7,p4,p5,h1)*scratch(h7,h3h2,p6)
       enddo
       enddo
       enddo
@@ -1053,35 +1079,50 @@ c
 !$omp declare target (offl_sdtransp_t_d1_5)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d1_5
-cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7326
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,h7d
       integer h3,h2,h1,p6,p5,p4,h7
       double precision triplesx(h3d,h1d,h2d,p5d,p4d,p6d)
-      double precision scratch(h1d,p5d,p4d,h7d),t2sub(*)
+      double precision scratch(h7d,h3d,h2d,p6d)
+      double precision t2sub(h7d,p4d,p5d,h1d)
       double precision v2sub(h3d,h2d,p6d,h7d)
-#include "sd_top.fh"
 #ifdef OFFLOAD_CODE
-      call offl_ccsd_t_transpt2(
+      external offl_ccsd_t_transpt2_7326
 #else
-      call ccsd_t_transpt2(
+      external ccsd_t_transpt2_7326
 #endif
-     T        t2sub,scratch,
-     1     h1d,p5d,p4d,h7d)
+#include "sd_top.fh"
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7326(
+#else
+      call ccsd_t_transpt2_7326(
+#endif
+     T        v2sub,scratch,
+     1     h3d,h2d,p6d,h7d)
 !$omp parallel do private(p4,p5,p6,h3,h2,h1,h7) collapse(OMPCOLLAPSE)
       do p6=1,p6d
       do p4=1,p4d
       do p5=1,p5d
-      do h2=1,h2d
-      do h7=1,h7d
 !DEC$ LOOP COUNT MAX=40, MIN=8
-!DEC$ unroll_and_jam (4)
+      do h2=1,h2d
+!DEC$ LOOP COUNT MAX=40, MIN=8
       do h1=1,h1d
 !DEC$ LOOP COUNT MAX=40, MIN=8
+!DEC$ unroll_and_jam (2)
       do h3=1,h3d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+cdir$ prefetch triplesx:1:4
+cdir$ prefetch triplesx:0:1
+cdir$ prefetch t2sub:1:4
+cdir$ prefetch t2sub:0:1
+cdir$ prefetch scratch:1:4
+cdir$ prefetch scratch:0:1
+      do h7=1,h7d
        triplesx(h3,h1,h2,p5,p4,p6)=triplesx(h3,h1,h2,p5,p4,p6)
-     1   + scratch(h1,p5,p4,h7)*v2sub(h3,h2,p6,h7)
+     1    + t2sub(h7,p4,p5,h1)*scratch(h7,h3,h2,p6)
       enddo
       enddo
       enddo
@@ -1107,34 +1148,42 @@ c
 !$omp declare target (offl_sdtransp_t_d1_6)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d1_6
-cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7326
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,h7d
       integer h3,h2,h1,p6,p5,p4,h7
       integer h2h3
       double precision triplesx(h1d,h3d*h2d,p5d,p4d,p6d)
-      double precision scratch(h1d,p5d,p4d,h7d),t2sub(*)
-      double precision v2sub(h3d*h2d,p6d,h7d)
-#include "sd_top.fh"
+      double precision scratch(h7d,h3d*h2d,p6d)
+      double precision t2sub(h7d,p4d,p5d,h1d)
+      double precision v2sub(*)
 #ifdef OFFLOAD_CODE
-      call offl_ccsd_t_transpt2(
+      external offl_ccsd_t_transpt2_7326
 #else
-      call ccsd_t_transpt2(
+      external ccsd_t_transpt2_7326
 #endif
-     T        t2sub,scratch,
-     1     h1d,p5d,p4d,h7d)
+#include "sd_top.fh"
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7326(
+#else
+      call ccsd_t_transpt2_7326(
+#endif
+     T        v2sub,scratch,
+     1     h3d,h2d,p6d,h7d)
 !$omp parallel do private(p4,p5,p6,h2h3,h1,h7) collapse(OMPCOLLAPSE)
       do p6=1,p6d
       do p4=1,p4d
       do p5=1,p5d
-      do h7=1,h7d
 !DEC$ LOOP COUNT MAX=900, MIN=30
       do h2h3=1,h2d*h3d
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do h1=1,h1d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+      do h7=1,h7d
        triplesx(h1,h2h3,p5,p4,p6)=triplesx(h1,h2h3,p5,p4,p6)
-     1   - scratch(h1,p5,p4,h7)*v2sub(h2h3,p6,h7)
+     1   - t2sub(h7,p4,p5,h1)*scratch(h7,h2h3,p6)
       enddo
       enddo
       enddo
@@ -1194,35 +1243,52 @@ c
       subroutine sdtransp_t_d1_8(h3d,h2d,h1d,p6d,p5d,p4d,
 #endif
      1               h7d,
-     2               triplesx,t2sub,v2sub,
+     2               triplesx,t2sub,v2sub,scratch,
      3     deltat)
       IMPLICIT NONE
 #ifdef OFFLOAD_CODE
 #ifdef OPENMP_OFFLOAD
 !$omp declare target (offl_sdtransp_t_d1_8)
+!$omp declare target (offl_ccsd_t_transpt2_7326)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d1_8
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7326
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,h7d
       integer h3,h2,h1,p6,p5,p4,h7
       double precision triplesx(h3d,h1d,h2d,p5d,p6d,p4d)
       double precision t2sub(h7d,p4d,p5d,h1d)
-      double precision v2sub(h3d,h2d,p6d,h7d)
+      double precision v2sub(*)
+      double precision scratch(h7d,h3d,h2d,p6d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2_7326
+#else
+      external ccsd_t_transpt2_7326
+#endif
 #include "sd_top.fh"
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7326(
+#else
+      call ccsd_t_transpt2_7326(
+#endif
+     T        v2sub,scratch,
+     1     h3d,h2d,p6d,h7d)
 !$omp parallel do private(p4,p5,p6,h2,h3,h1,h7) collapse(OMPCOLLAPSE)
       do p4=1,p4d
       do p6=1,p6d
       do p5=1,p5d
-      do h1=1,h1d
-      do h7=1,h7d
-!DEC$ LOOP COUNT MAX=40, MIN=8
-!DEC$ unroll_and_jam (4)
       do h2=1,h2d
 !DEC$ LOOP COUNT MAX=40, MIN=8
+      do h1=1,h1d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+c!DEC$ unroll_and_jam (2)
       do h3=1,h3d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+      do h7=1,h7d
        triplesx(h3,h1,h2,p5,p6,p4)=triplesx(h3,h1,h2,p5,p6,p4)
-     1   - t2sub(h7,p4,p5,h1)*v2sub(h3,h2,p6,h7)
+     1   - t2sub(h7,p4,p5,h1)*scratch(h7,h3,h2,p6)
       enddo
       enddo
       enddo
@@ -1248,34 +1314,42 @@ c
 !$omp declare target (offl_sdtransp_t_d1_9)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d1_9
-cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7326
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,h7d
       integer h3,h2,h1,p6,p5,p4,h7
       integer h3h2
       double precision triplesx(h1d,h3d*h2d,p5d,p6d,p4d)
-      double precision scratch(h1d,p5d,p4d,h7d),t2sub(*)
-      double precision v2sub(h3d*h2d,p6d,h7d)
-#include "sd_top.fh"
+      double precision scratch(h7d,h3d*h2d,p6d)
+      double precision t2sub(h7d,p4d,p5d,h1d)
+      double precision v2sub(*)
 #ifdef OFFLOAD_CODE
-      call offl_ccsd_t_transpt2(
+      external offl_ccsd_t_transpt2_7326
 #else
-      call ccsd_t_transpt2(
+      external ccsd_t_transpt2_7326
 #endif
-     T        t2sub,scratch,
-     1     h1d,p5d,p4d,h7d)
+#include "sd_top.fh"
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7326(
+#else
+      call ccsd_t_transpt2_7326(
+#endif
+     T        v2sub,scratch,
+     1     h3d,h2d,p6d,h7d)
 !$omp parallel do private(p4,p5,p6,h3h2,h1,h7) collapse(OMPCOLLAPSE)
       do p4=1,p4d
       do p6=1,p6d
       do p5=1,p5d
-      do h7=1,h7d
 !DEC$ LOOP COUNT MAX=900, MIN=30
       do h3h2=1,h3d*h2d
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do h1=1,h1d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+      do h7=1,h7d
        triplesx(h1,h3h2,p5,p6,p4)=triplesx(h1,h3h2,p5,p6,p4)
-     1   + scratch(h1,p5,p4,h7)*v2sub(h3h2,p6,h7)
+     1   + t2sub(h7,p4,p5,h1)*scratch(h7,h3h2,p6)
       enddo
       enddo
       enddo
@@ -1308,6 +1382,11 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
       double precision triplesx(h3d,h2d,h1d,p6d,p5d,p4d)
       double precision scratch(p7d,h2d,h1d,p4d),t2sub(*)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2_7124
+#else
+      external ccsd_t_transpt2_7124
+#endif
 #include "sd2_top.fh"
 #ifdef OFFLOAD_CODE
       call offl_ccsd_t_transpt2_7124(
@@ -1363,7 +1442,13 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
       double precision triplesx(h2d*h1d,h3d,p6d,p5d,p4d)
       double precision scratch(h2d*h1d,p4d,p7d),t2sub(*)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2
+#else
+      external ccsd_t_transpt2
+#endif
 #include "sd2_top.fh"
+CDIR$ NOINLINE
 #ifdef OFFLOAD_CODE
       call offl_ccsd_t_transpt2(
 #else
@@ -1376,8 +1461,11 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
       do p5=1,p5d
       do p6=1,p6d
       do h3=1,h3d
+!DEC$ LOOP COUNT MAX=40, MIN=8
       do p7=1,p7d
 !DEC$ LOOP COUNT MAX=600, MIN=30
+cdir$ prefetch v2sub:1:8
+cdir$ prefetch v2sub:0:1
       do h2h1=1,h2d*h1d
        triplesx(h2h1,h3,p6,p5,p4)=triplesx(h2h1,h3,p6,p5,p4)
      1   - scratch(h2h1,p4,p7)*v2sub(p7,h3,p6,p5)
@@ -1405,6 +1493,7 @@ c
 !$omp declare target (offl_sdtransp_t_d2_3)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_3
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,p7d
@@ -1412,21 +1501,34 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_3
       double precision triplesx(h2d,h3d,h1d,p6d,p5d,p4d)
       double precision t2sub(p7d,p4d,h1d,h2d)
       double precision v2sub(p7d,h3d,p6d,p5d)
+      double precision scratch(p7d,h2d,h1d,p4d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2_7124
+#else
+      external ccsd_t_transpt2_7124
+#endif
 #include "sd2_top.fh"
-!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(OMPCOLLAPSE)
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7124(
+#else
+      call ccsd_t_transpt2_7124(
+#endif
+     T        t2sub,scratch,
+     1     p4d,h1d,h2d,p7d)
+!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(4)
       do p4=1,p4d
       do p5=1,p5d
       do p6=1,p6d
       do h1=1,h1d
+      do h3=1,h3d
 !DEC$ LOOP COUNT MAX=40, MIN=8
 !DEC$ unroll_and_jam (4)
-      do h3=1,h3d
-!DEC$ LOOP COUNT MAX=40, MIN=38
       do h2=1,h2d
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do p7=1,p7d
        triplesx(h2,h3,h1,p6,p5,p4)=triplesx(h2,h3,h1,p6,p5,p4) +
-     C        t2sub(p7,p4,h1,h2)*v2sub(p7,h3,p6,p5)
+     C        scratch(p7,h2,h1,p4)*v2sub(p7,h3,p6,p5)
       enddo
       enddo
       enddo
@@ -1460,7 +1562,13 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
       double precision triplesx(h3d,h2d,h1d,p6d,p4d,p5d)
       double precision scratch(p7d,h2d,h1d,p4d),t2sub(*)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2_7124
+#else
+      external ccsd_t_transpt2_7124
+#endif
 #include "sd2_top.fh"
+CDIR$ NOINLINE
 #ifdef OFFLOAD_CODE
       call offl_ccsd_t_transpt2_7124(
 #else
@@ -1468,17 +1576,16 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
 #endif
      T        t2sub,scratch,
      2     p4d, h1d, h2d, p7d)
-!$omp parallel do private(p4,p5,p6,h2,h1,h3,p7) collapse(OMPCOLLAPSE)
+!$omp parallel do private(p4,p5,p6,h2,h1,h3,p7) collapse(4)
       do p5=1,p5d
       do p4=1,p4d
       do p6=1,p6d
-      do h3=1,h3d
-!DEC$ LOOP COUNT MAX=40, MIN=8
-!DEC$ unroll_and_jam (1)
       do h1=1,h1d
 !DEC$ LOOP COUNT MAX=40, MIN=8
-!DEC$ unroll_and_jam (1)
       do h2=1,h2d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+!DEC$ unroll_and_jam (1)
+      do h3=1,h3d
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do p7=1,p7d
        triplesx(h3,h2,h1,p6,p4,p5)=triplesx(h3,h2,h1,p6,p4,p5)
@@ -1517,7 +1624,13 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
       double precision triplesx(h2d*h1d,h3d,p6d,p4d,p5d)
       double precision scratch(h2d*h1d,p4d,p7d),t2sub(*)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2
+#else
+      external ccsd_t_transpt2
+#endif
 #include "sd2_top.fh"
+CDIR$ NOINLINE
 #ifdef OFFLOAD_CODE
       call offl_ccsd_t_transpt2(
 #else
@@ -1530,12 +1643,13 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
       do p4=1,p4d
       do p6=1,p6d
       do h3=1,h3d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+!DEC$ unroll_and_jam (1)
       do p7=1,p7d
 !DEC$ LOOP COUNT MAX=600, MIN=30
       do h2h1=1,h2d*h1d
        triplesx(h2h1,h3,p6,p4,p5)=triplesx(h2h1,h3,p6,p4,p5)
      1   + scratch(h2h1,p4,p7)*v2sub(p7,h3,p6,p5)
-c      enddo
       enddo
       enddo
       enddo
@@ -1552,7 +1666,7 @@ c
       subroutine sdtransp_t_d2_6(h3d,h2d,h1d,p6d,p5d,p4d,
 #endif
      1               p7d,
-     2               triplesx,t2sub,v2sub,
+     2               triplesx,t2sub,v2sub,scratch,
      D     deltat)
       IMPLICIT NONE
 #ifdef OFFLOAD_CODE
@@ -1560,15 +1674,29 @@ c
 !$omp declare target (offl_sdtransp_t_d2_6)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_6
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,p7d
       integer h3,h2,h1,p6,p5,p4,p7
       double precision triplesx(h2d,h3d,h1d,p6d,p4d,p5d)
       double precision t2sub(p7d,p4d,h1d,h2d)
+      double precision scratch(p7d,h2d,h1d,p4d)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2_7124
+#else
+      external ccsd_t_transpt2_7124
+#endif
 #include "sd2_top.fh"
-!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(OMPCOLLAPSE)
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7124(
+#else
+      call ccsd_t_transpt2_7124(
+#endif
+     T        t2sub,scratch,
+     1     p4d,h1d,h2d,p7d)
+!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(4)
       do p5=1,p5d
       do p4=1,p4d
       do p6=1,p6d
@@ -1579,7 +1707,7 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_6
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do p7=1,p7d
        triplesx(h2,h3,h1,p6,p4,p5)=triplesx(h2,h3,h1,p6,p4,p5)
-     1   - t2sub(p7,p4,h1,h2)*v2sub(p7,h3,p6,p5)
+     1   - scratch(p7,h2,h1,p4)*v2sub(p7,h3,p6,p5)
       enddo
       enddo
       enddo
@@ -1605,26 +1733,42 @@ c
 !$omp declare target (offl_sdtransp_t_d2_7)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_7
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,p7d
       integer h3,h2,h1,p6,p5,p4,p7
       double precision triplesx(h3d,h2d,h1d,p4d,p6d,p5d)
       double precision t2sub(p7d,p4d,h1d,h2d)
+      double precision scratch(p7d,h2d,h1d,p4d)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2_7124
+#else
+      external ccsd_t_transpt2_7124
+#endif
 #include "sd2_top.fh"
-!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(OMPCOLLAPSE)
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7124(
+#else
+      call ccsd_t_transpt2_7124(
+#endif
+     T        t2sub,scratch,
+     1     p4d,h1d,h2d,p7d)
+!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(4)
       do p5=1,p5d
       do p6=1,p6d
       do p4=1,p4d
       do h1=1,h1d
+!DEC$ LOOP COUNT MAX=40, MIN=8
       do h2=1,h2d
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do h3=1,h3d
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do p7=1,p7d
        triplesx(h3,h2,h1,p4,p6,p5)=triplesx(h3,h2,h1,p4,p6,p5)
-     1   - t2sub(p7,p4,h1,h2)*v2sub(p7,h3,p6,p5)
+     1   - scratch(p7,h2,h1,p4)*v2sub(p7,h3,p6,p5)
       enddo
       enddo
       enddo
@@ -1659,6 +1803,11 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
       double precision triplesx(h2d*h1d,h3d,p4d,p6d,p5d)
       double precision scratch(h2d*h1d,p4d,p7d),t2sub(*)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2
+#else
+      external ccsd_t_transpt2
+#endif
 #include "sd2_top.fh"
 #ifdef OFFLOAD_CODE
       call offl_ccsd_t_transpt2(
@@ -1672,6 +1821,8 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
       do p6=1,p6d
       do p4=1,p4d
       do h3=1,h3d
+!DEC$ LOOP COUNT MAX=40, MIN=8
+!DEC$ unroll_and_jam (1)
       do p7=1,p7d
 !DEC$ LOOP COUNT MAX=600, MIN=30
       do h2h1=1,h2d*h1d
@@ -1693,7 +1844,7 @@ c
       subroutine sdtransp_t_d2_9(h3d,h2d,h1d,p6d,p5d,p4d,
 #endif
      1               p7d,
-     2               triplesx,t2sub,v2sub,
+     2               triplesx,t2sub,v2sub,scratch,
      D     deltat)
       IMPLICIT NONE
 #ifdef OFFLOAD_CODE
@@ -1701,26 +1852,42 @@ c
 !$omp declare target (offl_sdtransp_t_d2_9)
 #else
 cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_9
+cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
 #endif
 #endif
       integer h3d,h2d,h1d,p6d,p5d,p4d,p7d
       integer h3,h2,h1,p6,p5,p4,p7
       double precision triplesx(h2d,h3d,h1d,p4d,p6d,p5d)
       double precision t2sub(p7d,p4d,h1d,h2d)
+      double precision scratch(p7d,h2d,h1d,p4d)
       double precision v2sub(p7d,h3d,p6d,p5d)
+#ifdef OFFLOAD_CODE
+      external offl_ccsd_t_transpt2_7124
+#else
+      external ccsd_t_transpt2_7124
+#endif
 #include "sd2_top.fh"
-!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(OMPCOLLAPSE)
+CDIR$ NOINLINE
+#ifdef OFFLOAD_CODE
+      call offl_ccsd_t_transpt2_7124(
+#else
+      call ccsd_t_transpt2_7124(
+#endif
+     T        t2sub,scratch,
+     1     p4d,h1d,h2d,p7d)
+!$omp parallel do private(p5,p6,p4,h1,h3,h2,p7) collapse(4)
       do p5=1,p5d
       do p6=1,p6d
       do p4=1,p4d
       do h1=1,h1d
       do h3=1,h3d
 !DEC$ LOOP COUNT MAX=40, MIN=8
+!DEC$ unroll_and_jam (1)
       do h2=1,h2d
 !DEC$ LOOP COUNT MAX=40, MIN=8
       do p7=1,p7d
        triplesx(h2,h3,h1,p4,p6,p5)=triplesx(h2,h3,h1,p4,p6,p5)
-     1   + t2sub(p7,p4,h1,h2)*v2sub(p7,h3,p6,p5)
+     1    + scratch(p7,h2,h1,p4)*v2sub(p7,h3,p6,p5)
       enddo
       enddo
       enddo
@@ -1729,94 +1896,6 @@ cdir$ ATTRIBUTES OFFLOAD : mic :: offl_sdtransp_t_d2_9
       enddo
       enddo
 #include "sd_bottom.fh"
-      return
-      end
-#ifdef OFFLOAD_CODE
-      subroutine offl_ccsd_t_transpt2(
-#else
-      subroutine ccsd_t_transpt2(
-#endif
-     C     t2sub,scratch,
-     c     h1d,p5d,p4d,h7d)
-      implicit none
-#ifdef OFFLOAD_CODE
-#ifdef OPENMP_OFFLOAD
-!$omp declare target (offl_ccsd_t_transpt2)
-#else
-cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2
-#endif
-#endif
-      integer h1d,p5d,p4d,h7d
-      double precision t2sub(h7d,p4d,p5d,h1d)
-      double precision scratch(h1d,p5d,p4d,h7d)
-c
-      integer h1,p5,p4,h7
-c     
-      integer pp5,hh1
-!DIR$ ASSUME_ALIGNED t2sub: 64
-!DIR$ ASSUME_ALIGNED scratch: 64
-c
-#define CHUNK 16
-!$omp parallel do private(h7,p4,pp5,hh1,p5,h1) collapse(2)
-      do h7=1,h7d
-         do p4=1,p4d
-            do pp5=1,p5d,CHUNK
-               do hh1=1,h1d,CHUNK
-                  do p5=pp5,min(pp5+CHUNK-1,p5d)
-!DEC$ LOOP COUNT AVG=CHUNK
-cc!deC$ SIMD
-                     do h1=hh1,min(hh1+CHUNK-1,h1d)
-                        scratch(h1,p5,p4,h7)=t2sub(h7,p4,p5,h1)
-                     enddo
-                  enddo
-               enddo
-            enddo
-         enddo
-      enddo
-      return
-      end
-#ifdef OFFLOAD_CODE
-      subroutine offl_ccsd_t_transpt2_7124(
-#else
-      subroutine ccsd_t_transpt2_7124(
-#endif
-     t     t2sub,scratch,
-     c    p4d,h1d,h2d,p7d)
-      implicit none
-#ifdef OFFLOAD_CODE
-#ifdef OPENMP_OFFLOAD
-!$omp declare target (offl_ccsd_t_transpt2_7124)
-#else
-cdir$ ATTRIBUTES OFFLOAD : mic :: offl_ccsd_t_transpt2_7124
-#endif
-#endif
-      integer p4d,h1d,h2d,p7d
-      double precision t2sub(p7d,p4d,h1d,h2d)
-      double precision scratch(p7d,h2d,h1d,p4d)
-c
-      integer p4,h1,h2,p7
-c     
-      integer hh2,pp7
-!DIR$ ASSUME_ALIGNED t2sub: 64
-!DIR$ ASSUME_ALIGNED scratch: 64
-c
-#define CHUNK 16
-!$omp parallel do private(p4,h1,hh2,pp7,h2,p7) collapse(2)
-      do p4=1,p4d
-         do h1=1,h1d
-            do hh2=1,h2d,CHUNK
-               do pp7=1,p7d,CHUNK
-                  do h2=hh2,min(hh2+CHUNK-1,h2d)
-!DEC$ LOOP COUNT AVG=CHUNK
-cc!deC$ SIMD
-                     do p7=pp7,min(pp7+CHUNK-1,p7d)
-                        scratch(p7,h2,h1,p4)=t2sub(p7,p4,h1,h2)
-                     enddo
-                  enddo
-               enddo
-            enddo
-         enddo
-      enddo
       return
       end
 #ifndef OFFLOAD_CODE
@@ -1842,7 +1921,7 @@ cdbg      write(6,*) ' element 1 ',in(1)
 cdbg      write(6,*) ' element 2 ',in(2)
 cdbg      write(6,*) ' element last ',in(size)
 #ifdef USE_OPENMP
-!$omp parallel do  
+!$omp parallel do
 #endif
       do ii=1,size
          in(ii)=0d0

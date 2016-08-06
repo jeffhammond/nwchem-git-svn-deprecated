@@ -223,15 +223,18 @@ c     real*8     fion(3,natmx)
       if ((control_version().eq.4).or.(field_exist))
      >   call lattice_r_grid(dbl_mb(r_grid(1)))
 
+      call pspw_Lin_HFX_reset()
+
 *     ******************************************
 *     ****                                  ****
 *     ****   Start of steepest descent loop ****
 *     ****                                  ****
 *     ******************************************
+!$OMP PARALLEL private(it,tid,nthreads)
+      tid      = Parallel_threadid()
+      nthreads = Parallel_nthreads()
       do it=1,it_in
 
-
-!$OMP PARALLEL
 
         call Pack_c_nCopy(1,nemax,psi2,psi1)
 
@@ -260,7 +263,7 @@ c       these two functions are now threadsafe/multithreaded
 
 !$OMP DO private(n)
         do n=n1(1),n2(ispin)
-           call Pack_c_Copy(1,psi1(1,n),psi_r(1,n))
+           call Pack_c_Copy0(1,psi1(1,n),psi_r(1,n))
         end do
 !$OMP END DO
 
@@ -272,10 +275,10 @@ c       these two functions are now threadsafe/multithreaded
 
 !$OMP DO private(n)
         do n=n1(1),n2(ispin)
-           call D3dB_r_Zero_Ends(1,psi_r(1,n))
+           call D3dB_r_Zero_Ends0(1,psi_r(1,n))
         end do
 !$OMP END DO
-!$OMP END PARALLEL
+
 
 c       this function calls non pipelined 3d fft
         call nwpw_meta_gga_gen_tau(ispin,ne,psi1)
@@ -284,39 +287,39 @@ c       this function calls non pipelined 3d fft
 *       *********************
 *       **** generate dn ****
 *       *********************
-        call dcopy(ispin*n2ft3d,0.0d0,0,dn,1)
-        !call D3dB_r_nZero(1,ispin,dn)
+c        call dcopy(ispin*n2ft3d,0.0d0,0,dn,1)
+        call Parallel_shared_vector_zero(.true.,ispin*n2ft3d,dn)
         if (fractional) then
           do ms=1,ispin
              do n=n1(ms),n2(ms)
+!$OMP DO private(i)
                 do i=1,n2ft3d
                    dn(i,ms) = dn(i,ms) 
      >                      + scal2*(psi_r(i,n)**2)
      >                       *occ1(n)
                 end do
+!$OMP END DO
              end do
-             call D3dB_r_Zero_Ends(1,dn(1,ms))
-             call D1dB_Vector_SumAll(n2ft3d,dn(1,ms))
+             !call D3dB_r_Zero_Ends(1,dn(1,ms))
+             !call D1dB_Vector_SumAll(n2ft3d,dn(1,ms))
           end do
         else
           do ms=1,ispin
              do n=n1(ms),n2(ms)
+!$OMP DO private(i)
                 do i=1,n2ft3d
                    dn(i,ms) = dn(i,ms) + scal2*(psi_r(i,n)**2)
                 end do
+!$OMP END DO
              end do
-             call D3dB_r_Zero_Ends(1,dn(1,ms))
-             call D1dB_Vector_SumAll(n2ft3d,dn(1,ms))
+             !call D3dB_r_Zero_Ends(1,dn(1,ms))
+             !call D1dB_Vector_SumAll(n2ft3d,dn(1,ms))
           end do
         end if
+        call D1dB_Vector_SumAll(ispin*n2ft3d,dn)
 
 
-        !exc = 0.0d0
-        !do i=1,n2ft3d
-        !  exc = exc + dn(i,2)
-        !end do
-        !call D3dB_SumAll(exc)
-        !write(*,*) "dnall=",exc*dv
+
 
 *       **********************
 *       **** generate dng ****
@@ -338,7 +341,6 @@ c        call mask_C(0,dcpl_mb(dng(1)))
            call semicore_density(dcpl_mb(tmp1(1)))
            call D3dB_r_SMul1(1,0.5d0,dcpl_mb(tmp1(1)))
         else
-           !call dcopy(n2ft3d,0.0d0,0,dcpl_mb(tmp1(1)),1)
            call D3dB_r_Zero(1,dcpl_mb(tmp1(1)))
         end if
         do ms=1,ispin
@@ -349,20 +351,6 @@ c        call mask_C(0,dcpl_mb(dng(1)))
         
         call nwpw_timing_end(11)
 
-c
-c NOT NEEDED- moved to nonlocal psp
-c
-c*       **************************
-c*       **** update ncmp*Vloc ****
-c*       **************************
-c        if (psp_pawexist().and.(it.eq.1))
-c     >     call psp_dE_ncmp_vloc_Qlm(ispin,.false.,dbl_mb(fion(1)))
-c
-
-*       *****************************************
-*       **** generate local pseudopotential  ****
-*       **** and also get force if move true ****
-*       *****************************************
 
 !MATHIAS We might be able to add some parallelism between ions in that function 
         call v_local(dcpl_mb(vl(1)),
@@ -391,6 +379,7 @@ c
 
         if (control_version().eq.4) 
      >     call coulomb2_v(dbl_mb(rho(1)),dbl_mb(vc(1)))
+
 
         call nwpw_timing_start(46)
 *       *************************************************
@@ -421,10 +410,10 @@ c
            end if
         end if
 
-        call nwpw_timing_start(13)
 
 
         call nwpw_timing_start(47)
+
 
 *       ******************
 *       **** get Hpsi ****
@@ -444,6 +433,7 @@ c
      >             move,dbl_mb(fion(1)),fractional,occ1)
 
         call nwpw_timing_end(47)
+
         
 *       ************************************
 *       **** do a steepest descent step ****
@@ -454,7 +444,7 @@ c
 c          call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
           call Pack_cc_Sum2(1,psi1(1,n),psi2(1,n))
         end do
-        call nwpw_timing_end(13)
+
 
 *       *******************************************
 *       **** get ewald and semicore forces     ****
@@ -520,7 +510,8 @@ c          call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
            call psi_lmbda2(ispin,ne,nemax,npack1,psi1,psi2,
      >                     dte,occ1,
      >                     lmd,dbl_mb(tmp_L(1)),ierr)
-        else if (sic.or.hfx) then
+        !else if (sic.or.hfx) then
+        else if (sic) then
            call psi_lmbda_sic(ispin,ne,nemax,npack1,psi1,psi2,dte,
      >                    lmd,dbl_mb(tmp_L(1)),ierr)
         else
@@ -543,6 +534,8 @@ c          call Pack_cc_Sum(1,psi2(1,n),psi1(1,n),psi2(1,n))
 *     *** get orbital energies ****
       call Dneall_ffm_sym_Multiply(0,psi1,Hpsi,npack1,hml)
       call Dneall_m_scal(0,(-1.0d0),hml)
+!$OMP END PARALLEL
+
       if (fractional) then
          !call Dneall_m_diag_scal(0,dbl_mb(fweight(1)),hml)
          eorbit = Dneall_m_trace(0,hml)
@@ -626,11 +619,13 @@ c      end do
 c      end do
 c      if (np.gt.1) call Parallel_SumAll(enlocal)
 c      if (ispin.eq.1) enlocal = 2.0d0*enlocal
+
       enlocal = E_vnonlocal(ispin,ne,fractional,occ1)
 
 
 
 *     **** total energy ****
+!$OMP MASTER
       Eold=E(1)
       E(1) = eorbit + eion + exc - ehartr - pxc
       E(2) = eorbit
@@ -642,6 +637,7 @@ c      if (ispin.eq.1) enlocal = 2.0d0*enlocal
       E(8) = enlocal
       E(9) = 2.0d0*ehartr
       E(10) = pxc
+!$OMP END MASTER
 
 *     **** QM/MM terms ****
       if (pspw_qmmm_found()) then
@@ -801,9 +797,6 @@ c     end do
       value = Dneall_m_pop_stack(tmp_L)
 
       call nwpw_timing_end(12)
-
-#ifdef USE_OPENMP
-#endif
 
       call nwpw_timing_end(42)
 

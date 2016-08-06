@@ -23,7 +23,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c                
-c --> Experimental (not published yet)
 
       implicit none
 #include "errquit.fh"
@@ -102,8 +101,6 @@ c 17       format('---- g_vectors(',i3,',',i3,')-------- END')
 c         endif
       endif ! end-if-debug
  
-      debug=.false.
-
        call get_C1MCtrace(
      &               sumre,       ! out: trace(transp(vecE1  )*g_temp)
      &               sumim,       ! out: trace(transp(vecE1im)*g_temp)
@@ -148,7 +145,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c                
-c --> Experimental (not published yet)
 
       implicit none
 #include "errquit.fh"
@@ -311,7 +307,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c                
-c --> Experimental (not published yet)
 
       implicit none
 #include "errquit.fh"
@@ -479,7 +474,6 @@ c        for extension to spin-unrestricted case
 c        original aoresponse source code was written by 
 c        J. Autschbach and appears on nwchem-devtrunk (date:03-02-12)
 c                
-c --> Experimental (not published yet)
 
       implicit none
 #include "errquit.fh"

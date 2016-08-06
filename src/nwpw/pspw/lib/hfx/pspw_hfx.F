@@ -34,11 +34,19 @@
       norbs(2) = 0
       ehfx = 0.0d0
       hfx_on = .false.
+      localize_on  = .false.
+      localize2_on = .false.
       call D3dB_n2ft3d(1,n2ft3d)
 
       if (.not.btdb_get(rtdb,'pspw:HFX',mt_log,1,hfx_on))
      >   hfx_on = .false.
 
+      if (.not.btdb_get(rtdb,'pspw:HFX_Lin',mt_log,1,lin_on)) 
+     >   lin_on = .false.
+      lin_run = .false.
+      lin_off = .not.lin_on
+      lin_count1 = 0
+      lin_count2 = 0
 
 *     **** get the number of HFX orbitals ****
       if (hfx_on) then
@@ -116,12 +124,37 @@
      >                       mt_log,1,orb_contribution))
      >       orb_contribution = .false.
 
-         if (.not. btdb_get(rtdb,
-     >                      'pspw:HFX_localize',
+*        **** get localization parameters ****
+         if (.not. btdb_get(rtdb,'pspw:HFX_localize',
      >                      mt_log,1,localize_on)) 
-     >       localize_on = .false.
+     >      localize_on = .false.
 
-         !write(*,*) "localize_on=",localize_on
+         if (.not. btdb_get(rtdb,'pspw:HFX_localize2',
+     >                      mt_log,1,localize2_on)) 
+     >      localize2_on = .false.
+         if (localize2_on) localize_on = .true.
+
+         if (.not. btdb_get(rtdb,'pspw:HFX_localize2:maxiter',
+     >                      mt_dbl,1,maxiter)) 
+     >      maxiter = 5
+
+         if (.not. btdb_get(rtdb,'pspw:HFX_localize:prune_algorithm',
+     >                      mt_int,1,prune_algorithm)) 
+     >      prune_algorithm = 0
+
+         if (localize_on) then
+            if (.not. btdb_get(rtdb,'pspw:HFX_localize_rin',
+     >                         mt_dbl,1,rin_thresh)) then
+               rin_thresh = 6.5d0
+               if (prune_algorithm.eq.0) rin_thresh = 5.0d-3
+            end if
+            if (.not. btdb_get(rtdb,'pspw:HFX_localize_rout',
+     >                         mt_dbl,1,rout_thresh)) then
+               rout_thresh = 7.5d0
+               if (prune_algorithm.eq.0) rout_thresh = 1.0d-2
+            end if
+         end if
+
  
 
 *        **** initialize coulomb_screened ****
@@ -149,6 +182,19 @@
      >       call errquit('pspw_init_HFX: out of heap memory',1, MA_ERR)
          end do
 
+      end if
+
+
+c     **** define Lin_projectors  ****
+      if (lin_on) then
+        call Dneall_neq(neq)
+        neqall = neq(1)+neq(2)
+        value = BA_alloc_get(mt_dbl,neqall*n2ft3d,
+     >                      'Lin_projectors',
+     >                       Lin_projectors(2),
+     >                       Lin_projectors(1))
+        if (.not. value)   
+     >    call errquit('pspw_init_HFX: out of heap memory',3,MA_ERR)
       end if
 
 
@@ -181,10 +227,12 @@ c     **** define extra psi and Hpsi  ****
      >                       Hpsi_r_replicated(2),
      >                       Hpsi_r_replicated(1))
         if (.not. value)   
-     >    call errquit('pspw_init_HFX: out of heap memory',3,MA_ERR)
+     >    call errquit('pspw_init_HFX: out of heap memory',4,MA_ERR)
          call dcopy(nrsize,0.0d0,0,dbl_mb(psi_r_replicated(1)),1)
          call dcopy(nrsize,0.0d0,0,dbl_mb(Hpsi_r_replicated(1)),1)
       end if
+
+      if (localize_on)  call pspw_hfx_localize_init()
    
       return
       end
@@ -237,6 +285,7 @@ c     **** define extra psi and Hpsi  ****
 
 
 *       **** deallocate memory ****
+        if (localize_on) call pspw_hfx_localize_end()
         value = .true.
         do ms=1,ispin
           value = value.and.BA_free_heap(orbital_list(2,ms)) 
@@ -260,18 +309,54 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
            end if
         end if
 
+*        **** deallocate Lin_projectors ****
+        if (lin_on) then
+           value = value.and.BA_free_heap(Lin_projectors(2))
+           if (.not. value)
+     >     call errquit('pspw_end_HFX:error freeing heap memory',
+     >                  0,MA_ERR)
+
+        end if
+
+
 *        **** deallocate replicated space if necessary ****
         if (replicated) then
            value = value.and.BA_free_heap(psi_r_replicated(2))
            value = value.and.BA_free_heap(Hpsi_r_replicated(2))
            if (.not. value)
      >     call errquit('pspw_end_HFX:error freeing heap memory',
-     >                  0,MA_ERR)
+     >                  1,MA_ERR)
         end if
 
       end if
 
       return
+      end
+
+*     **********************************
+*     *                                *
+*     *     pspw_print_HFX_counters    *
+*     *                                *
+*     **********************************
+      subroutine pspw_print_HFX_counters(unit)
+      implicit none
+      integer unit
+
+#include "bafdecls.fh"
+#include "pspw_hfx.fh"
+      
+      if (hfx_on) then
+         write(unit,501)
+         write(unit,502) lin_count2 
+         write(unit,503) lin_count1
+         write(unit,*) 
+         write(unit,*) 
+      end if
+
+      return
+ 501  format("== HFX Counters ==")
+ 502  format("  HFX Evalulations         =" I6)
+ 503  format("  Lin ACE HFX Evalulations =" I6)
       end
 
 *     *************************
@@ -315,6 +400,24 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
           write(unit,1007)
         end if
         if (hfx_parameter.ne.1.0d0) write(unit,1010) hfx_parameter
+        if (localize_on) then
+           if (localize2_on) then
+              write(unit,1027)
+              write(unit,1028) maxiter
+           else
+              write(unit,1020)
+           end if
+           if (prune_algorithm.eq.0) then
+              write(unit,1021)
+              write(unit,1022) rin_thresh
+              write(unit,1023) rout_thresh
+           else
+              write(unit,1024)
+              write(unit,1025) rin_thresh
+              write(unit,1026) rout_thresh
+           end if
+        end if
+        if (lin_on) write(unit,1029)
         write(unit,*)
 
       end if
@@ -338,8 +441,22 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
      >       I2)
  1012 FORMAT(6x,"- attenuation parameter (nwpw:attenuation)       :",
      >       E10.3)
+ 1020 FORMAT(6x,"- HFX localized orbital solver")
+ 1021 FORMAT(6x,"- HFX localized orbital absolute overlap pruning")
+ 1022 FORMAT(6x,"- Overlap threshold low (pspw:HFX_localize_rin)  :",
+     >       E10.3)
+ 1023 FORMAT(6x,"- Overlap threshold high (pspw:HFX_localize_rout):",
+     >       E10.3)
+ 1024 FORMAT(6x,"- HFX localized orbital distance pruning")
+ 1025 FORMAT(6x,"- Distance cutoff low  (pspw:HFX_localize_rin)   :",
+     >       E10.3)
+ 1026 FORMAT(6x,"- Distance cutoff high (pspw:HFX_localize_rout)  :",
+     >       E10.3)
+ 1027 FORMAT(6x,"- HFX Wannier orbital solver")
+ 1028 FORMAT(6x,"- HFX Wannier maxiter(pspw:HFX_localize2:maxiter):",
+     >       I3)
+ 1029 FORMAT(6x,"- HFX Lin extrapolation")
       end
-
 
 
 *     ****************************
@@ -357,6 +474,53 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
 #include "pspw_hfx.fh"
 #include "errquit.fh"
 
+      call nwpw_timing_start(33)
+
+
+      !**** run Lin projector HFX operator ****
+      if ((lin_run).and.(lin_on).and.(.not.lin_off)) then
+         call pspw_Lin_proj_HFX(dbl_mb(Lin_projectors(1)),psi_r,Hpsi_r)
+         lin_count1 = lin_count1 + 1
+
+      !**** HFX operator ****
+      else
+         if (localize_on) then
+            call pspw_hfx_localize_start(psi_r)
+            call pspw_potential_HFX0(ispin0,dbl_mb(psiloc_r(1)),Hpsi_r)
+            call pspw_hfx_localize_stop(Hpsi_r)
+         else
+            call pspw_potential_HFX0(ispin0,psi_r,Hpsi_r)
+         end if
+
+         !**** define Lin projectors ****
+         if ((lin_on).and.(.not.lin_off)) then
+            call pspw_Lin_proj_HFX_set(psi_r,Hpsi_r,
+     >                                 dbl_mb(Lin_projectors(1)))
+            lin_run = .true.
+         end if
+         lin_count2 = lin_count2 + 1
+ 
+      end if
+      call nwpw_timing_end(33)
+
+      return
+      end
+
+*     ****************************
+*     *                    	 *
+*     *    pspw_potential_HFX0   *
+*     *                          *
+*     ****************************
+      subroutine pspw_potential_HFX0(ispin0,psi_r,Hpsi_r)
+      implicit none
+      integer    ispin0
+      real*8     psi_r(*)
+      real*8     Hpsi_r(*)
+
+#include "bafdecls.fh"
+#include "pspw_hfx.fh"
+#include "errquit.fh"
+
       integer istart,iend,jstart,jend,imodn,imodtask
       integer ms,l,q,n,indx1,indx2,Levels,neq(2)
       integer requests(5),reqcnt
@@ -364,7 +528,9 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
       integer  Butter_Levels,Dneall_na_ptr
       external Butter_Levels,Dneall_na_ptr
 
-      call nwpw_timing_start(33)
+
+
+*     ***** now do exchange as normal ****
       ehfx = 0.0d0
       phfx = 0.0d0
       if (((norbs(1)+norbs(2)).ne.0).and.relaxed) then
@@ -438,7 +604,7 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
      >                       dbl_mb(Hpsi_r_replicated(1)),
      >                       dbl_mb(psi_r_replicated(1)))
                   end do
-                  call daxpy(neq(ms)*n2ft3d,hfx_parameter,
+                  call daxpy_omp(neq(ms)*n2ft3d,hfx_parameter,
      >                       dbl_mb(Hpsi_r_replicated(1)),1,
      >                       Hpsi_r(1+(ms-1)*neq(1)*n2ft3d),1)
                end do
@@ -470,25 +636,19 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
                call Dneall_qton(q,n)
                indx1 = Hpsi_r_replicated(1)+(n-1)*n2ft3d
                indx2 = (q-1)*n2ft3d + 1
-               call daxpy(n2ft3d,1.0d0,dbl_mb(indx1),1,Hpsi_r(indx2),1)
+               call daxpy_omp(n2ft3d,1.0d0,dbl_mb(indx1),1,
+     >                                     Hpsi_r(indx2),1)
             end do
             end if
 
          else
-            if (localize_on) then
-               call pspw_potential_hfx_localize(psi_r,Hpsi_r)
-            else
-               call pspw_potential_HFX_sub(ispin0,psi_r,Hpsi_r)
-            end if
+            call pspw_potential_HFX_sub(ispin0,psi_r,Hpsi_r)
          end if
 
       end if
-      call nwpw_timing_end(33)
 
       return
       end
-
-
 
 
 *     *************************
@@ -505,14 +665,46 @@ c     >  call errquit('pspw_end_HFX:error freeing heap memory',0, MA_ERR)
 
 #include "bafdecls.fh"
 #include "pspw_hfx.fh"
+
+      call nwpw_timing_start(33)
+      if (((norbs(1)+norbs(2)).ne.0).and.(.not.relaxed)) then
+         if (localize_on) then
+            call pspw_hfx_localize_start(psi_r)
+            call pspw_energy_HFX0(ispin0,dbl_mb(psiloc_r(1)),
+     >                            ehfx_out,phfx_out)
+         else
+            call pspw_energy_HFX0(ispin0,psi_r,ehfx_out,phfx_out)
+         end if
+      else
+         ehfx_out = ehfx
+         phfx_out = phfx
+      end if
+      call nwpw_timing_end(33)
+
+      return
+      end
+
+*     *************************
+*     *                       *
+*     *     pspw_energy_HFX0  *
+*     *                       *
+*     *************************
+      subroutine pspw_energy_HFX0(ispin0,psi_r,ehfx_out,phfx_out)
+      implicit none
+      integer ispin0
+      real*8  psi_r(*)
+      real*8 ehfx_out
+      real*8 phfx_out
+
+#include "bafdecls.fh"
+#include "pspw_hfx.fh"
 #include "errquit.fh"
 
       integer q,n,indx1,indx2
 
-      call nwpw_timing_start(33)
-c     **** calculate HFX energy  ****
       if (((norbs(1)+norbs(2)).ne.0).and.(.not.relaxed)) then
 
+c     **** calculate HFX energy  ****
          if (replicated) then
 
             call dcopy(nrsize,0.0d0,0,dbl_mb(psi_r_replicated(1)),1)
@@ -538,7 +730,6 @@ c     **** nothing to do ****
          ehfx_out = ehfx
          phfx_out = phfx
       end if
-      call nwpw_timing_end(33)
 
       return
       end
@@ -675,6 +866,35 @@ c     >                      dbl_mb(vij(1)))
       return
       end
 
+
+*     *************************
+*     *                       *
+*     *   pspw_HFX_localize   *
+*     *                       *
+*     *************************
+      logical function pspw_HFX_localize()
+      implicit none
+
+#include "pspw_hfx.fh"
+
+      pspw_HFX_localize = localize_on
+      return
+      end
+
+*     *************************
+*     *                       *
+*     *   pspw_HFX_localize2  *
+*     *                       *
+*     *************************
+      logical function pspw_HFX_localize2()
+      implicit none
+
+#include "pspw_hfx.fh"
+
+      pspw_HFX_localize2 = localize2_on
+      return
+      end
+
 *     *************************
 *     *                       *
 *     *   pspw_HFX_relaxed    *
@@ -713,9 +933,11 @@ c     >                      dbl_mb(vij(1)))
       integer q,n,indx1,indx2
 
       call nwpw_timing_start(33)
-c     **** calculate HFX stress  ****
       if (((norbs(1)+norbs(2)).ne.0)) then
 
+*     ***** localize psi_r here, and generate absoverlap and rotation matrix ****
+
+c     **** calculate HFX stress  ****
          if (replicated) then
             call dcopy(nrsize,0.0d0,0,dbl_mb(psi_r_replicated(1)),1)
             do q=1,neqall
@@ -765,13 +987,17 @@ c***************** sub/replicated routines *****************************
       integer i1,j1,k1,NN
       integer i2,j2,k2
       integer i3,j3,k3
-      real*8  scal1,scal2,dv,eh,ph
+      real*8  scal1,scal2,dv,eh,ph,ss
 
 *     **** external functions ****
       real*8   lattice_omega,icoulomb_screened_e
-      logical   D3dB_rc_pfft3_queue_filled,D3dB_cr_pfft3_queue_filled
+      logical  D3dB_rc_pfft3_queue_filled,D3dB_cr_pfft3_queue_filled
+      logical  pspw_hfx_localize_closeenough
+      real*8   pspw_hfx_localize_switchr
       external lattice_omega,icoulomb_screened_e
-      external  D3dB_rc_pfft3_queue_filled,D3dB_cr_pfft3_queue_filled
+      external D3dB_rc_pfft3_queue_filled,D3dB_cr_pfft3_queue_filled
+      external pspw_hfx_localize_closeenough
+      external pspw_hfx_localize_switchr
 
 
       ehfx = 0.0d0
@@ -816,9 +1042,14 @@ c***************** sub/replicated routines *****************************
            done = .false.
            do while (.not.done)
 
-              if (k1.le.NN) then
+              if ((k1.le.NN).and.
+     >            (.not.D3dB_rc_pfft3_queue_filled())) then
 
                  if (mod(k1,npj).eq.taskid_j) then
+                 if (pspw_hfx_localize_closeenough(
+     >                   int_mb(orbital_list(1,ms)+i1-1),
+     >                   int_mb(orbital_list(1,ms)+j1-1))) then
+
                     index1 =(int_mb(orbital_list(1,ms)+i1-1)-1)*n2ft3d+1
                     index2 =(int_mb(orbital_list(1,ms)+j1-1)-1)*n2ft3d+1
 
@@ -829,8 +1060,10 @@ c                    call D3dB_r_SMul(1,scal2*scal1,dbl_mb(dn(1)),
 c     >                                             dbl_mb(dn(1)))
                     call D3dB_r_SMul1(1,scal2*scal1,dbl_mb(dn(1)))
                     call D3dB_r_Zero_Ends(1,dbl_mb(dn(1)))
-
+                   
                     call D3dB_rc_pfft3f_queuein(0,dbl_mb(dn(1)))
+                  
+                 end if
                  end if
 
                  k1 = k1 + 1
@@ -841,10 +1074,19 @@ c     >                                             dbl_mb(dn(1)))
                  end if
               end if
  
-              if (     ((D3dB_rc_pfft3_queue_filled()).or.(k1.gt.NN))
-     >            .and.(k2.le.NN)) then
+              if ((     ((D3dB_rc_pfft3_queue_filled()).or.(k1.gt.NN))
+     >            .and.(k2.le.NN)).and.
+     >            (.not.D3dB_cr_pfft3_queue_filled())) then
 
                  if (mod(k2,npj).eq.taskid_j) then
+                 if (pspw_hfx_localize_closeenough(
+     >                   int_mb(orbital_list(1,ms)+i2-1),
+     >                   int_mb(orbital_list(1,ms)+j2-1))) then
+
+                    ss = pspw_hfx_localize_switchr(
+     >                   int_mb(orbital_list(1,ms)+i2-1),
+     >                   int_mb(orbital_list(1,ms)+j2-1))
+
                     call D3dB_rc_pfft3f_queueout(0,dbl_mb(dn(1)))
 
 *                   **** generate Vcoul ****
@@ -855,7 +1097,7 @@ c     >                                             dbl_mb(dn(1)))
 
 
 *                   **** apply hfx_parameter, double eh for restricted, and calculcate ph ****
-                    eh = eh*hfx_parameter
+                    eh = eh*hfx_parameter*ss
                     if (ispin0.eq.1) eh = eh + eh
                     ph = 2.0d0*eh
                     ehfx = ehfx - eh
@@ -870,6 +1112,8 @@ c     >                                             dbl_mb(dn(1)))
                     end if
 
                     call D3dB_cr_pfft3b_queuein(0,dbl_mb(vij(1)))
+                    
+                 end if
                  end if
 
                  k2 = k2 + 1
@@ -883,8 +1127,16 @@ c     >                                             dbl_mb(dn(1)))
               if ((D3dB_cr_pfft3_queue_filled()).or.(k2.gt.NN)) then
 
                  if (mod(k3,npj).eq.taskid_j) then
+                 if (pspw_hfx_localize_closeenough(
+     >                   int_mb(orbital_list(1,ms)+i3-1),
+     >                   int_mb(orbital_list(1,ms)+j3-1))) then
+
                     index1 =(int_mb(orbital_list(1,ms)+i3-1)-1)*n2ft3d+1
                     index2 =(int_mb(orbital_list(1,ms)+j3-1)-1)*n2ft3d+1
+
+                    ss = pspw_hfx_localize_switchr(
+     >                   int_mb(orbital_list(1,ms)+i3-1),
+     >                   int_mb(orbital_list(1,ms)+j3-1))
 
                     call D3dB_cr_pfft3b_queueout(0,dbl_mb(vij(1)))
 
@@ -892,7 +1144,7 @@ c     >                                             dbl_mb(dn(1)))
 c                    call D3dB_r_SMul(1,hfx_parameter,
 c     >                                 dbl_mb(vij(1)),
 c     >                                 dbl_mb(vij(1)))
-                    call D3dB_r_SMul1(1,hfx_parameter,dbl_mb(vij(1)))
+                    call D3dB_r_SMul1(1,hfx_parameter*ss,dbl_mb(vij(1)))
 
 *                   **** generate (Vij)*psi_r ***
                     call D3dB_rr_Mul(1,dbl_mb(vij(1)),
@@ -922,6 +1174,7 @@ c     >                                 Hpsi_r(index2))
      >                                     Hpsi_r(index2))
                     end if
                  end if
+                 end if
 
                  k3 = k3 + 1
                  j3 = j3 + 1
@@ -946,8 +1199,16 @@ c     >                                 Hpsi_r(index2))
          dbl_mb(ehfx_orb(1,ms)+i-1) = 0.0d0
          do j=1,i
            if (mod(k1,npj).eq.taskid_j) then
+           if (pspw_hfx_localize_closeenough(
+     >                   int_mb(orbital_list(1,ms)+i-1),
+     >                   int_mb(orbital_list(1,ms)+j-1))) then
+
               index1 = (int_mb(orbital_list(1,ms)+i-1)-1)*n2ft3d + 1
               index2 = (int_mb(orbital_list(1,ms)+j-1)-1)*n2ft3d + 1
+
+              ss = pspw_hfx_localize_switchr(
+     >             int_mb(orbital_list(1,ms)+i-1),
+     >             int_mb(orbital_list(1,ms)+j-1))
 
 *             **** generate dnij for Vij  ****
               call D3dB_rr_Mul(1,psi_r(index2),psi_r(index1),
@@ -961,11 +1222,11 @@ c              call D3dB_r_SMul(1,scal2,dbl_mb(dn(1)),dbl_mb(dn(1)))
               eh = 0.5d0*eh*dv
 
 *             **** apply hfx_parameter, double eh for restricted, and calculcate ph ****
-              eh = eh*hfx_parameter
+              eh = eh*hfx_parameter*ss
 c              call D3dB_r_SMul(1,hfx_parameter,
 c     >                         dbl_mb(vij(1)),
 c     >                         dbl_mb(vij(1)))
-              call D3dB_r_SMul1(1,hfx_parameter,dbl_mb(vij(1)))
+              call D3dB_r_SMul1(1,hfx_parameter*ss,dbl_mb(vij(1)))
               if (ispin0.eq.1) eh = eh + eh
               ph = 2.0d0*eh
 
@@ -1006,8 +1267,9 @@ c     >                           Hpsi_r(index2))
                  call D3dB_rr_Sub2(1,dbl_mb(tmp2(1)),
      >                               Hpsi_r(index2))
               end if
-            end if
-            k1 = k1 + 1
+           end if
+           end if
+           k1 = k1 + 1
          end do
         end do
         !call D1dB_Vector_SumAll(norbs(ms),dbl_mb(ehfx_orb(1,ms)))
@@ -1026,6 +1288,7 @@ c     >                           Hpsi_r(index2))
 
          call Parallel_SumAll(ehfx)
          call Parallel_SumAll(phfx)
+
       end if
 
       return
@@ -1052,11 +1315,15 @@ c     >                           Hpsi_r(index2))
       logical value
       integer i,j,n1,n2,n3,ms,k1
       integer dn(2),tmp1(2),index1,index2
-      real*8  scal1,scal2,dv,eh,ph
+      real*8  scal1,scal2,dv,eh,ph,ss
 
 *     **** external functions ****
       real*8   lattice_omega,coulomb_screened_e
       external lattice_omega,coulomb_screened_e
+      logical  pspw_hfx_localize_closeenough
+      external pspw_hfx_localize_closeenough
+      real*8   pspw_hfx_localize_switchr
+      external pspw_hfx_localize_switchr
 
       
       if (((norbs(1)+norbs(2)).ne.0).and.(.not.relaxed)) then
@@ -1085,8 +1352,17 @@ c     >                           Hpsi_r(index2))
          do j=1,i
 
             if (mod(k1,npj).eq.taskid_j) then
+            if (pspw_hfx_localize_closeenough(
+     >                   int_mb(orbital_list(1,ms)+i-1),
+     >                   int_mb(orbital_list(1,ms)+j-1))) then
+
               index1 = (int_mb(orbital_list(1,ms)+i-1)-1)*n2ft3d + 1
               index2 = (int_mb(orbital_list(1,ms)+j-1)-1)*n2ft3d + 1
+
+              ss = pspw_hfx_localize_switchr(
+     >             int_mb(orbital_list(1,ms)+i-1),
+     >             int_mb(orbital_list(1,ms)+j-1))
+
 
 *             **** generate dnij ****
               call D3dB_rr_Mul(1,psi_r(index1),psi_r(index2),
@@ -1116,7 +1392,7 @@ c     >                                   dbl_mb(dn(1)))
               end if
 
 *             **** apply hfx_parameter, double eh for restricted, and calculcate ph ****
-              eh = eh*hfx_parameter
+              eh = eh*hfx_parameter*ss
               if (ispin0.eq.1) eh = eh + eh
               ph = 2.0d0*eh
 
@@ -1132,6 +1408,7 @@ c     >                                   dbl_mb(dn(1)))
      >                                      - eh
               end if
 
+            end if
             end if
             k1 = k1 + 1
 
@@ -1175,12 +1452,15 @@ c     >                                   dbl_mb(dn(1)))
       logical value
       integer i,j,n1,n2,n3,ms,u,v,k1
       integer dn(2),index1,index2
-      real*8  scal1,scal2,dv,eh,ph
+      real*8  scal1,scal2,dv,eh,ph,ss
       real*8  tstress(3,3)
 
 *     **** external functions ****
       real*8   lattice_omega
       external lattice_omega
+      logical  pspw_hfx_localize_closeenough
+      external pspw_hfx_localize_closeenough
+      real*8   pspw_hfx_localize_switchr
 
       
       call dcopy(9,0.0d0,0,stress,1)
@@ -1204,8 +1484,16 @@ c     >                                   dbl_mb(dn(1)))
         do i=1,norbs(ms)
          do j=1,i
             if (mod(k1,npj).eq.taskid_j) then
+            if (pspw_hfx_localize_closeenough(
+     >                   int_mb(orbital_list(1,ms)+i-1),
+     >                   int_mb(orbital_list(1,ms)+j-1))) then
+
               index1 = (int_mb(orbital_list(1,ms)+i-1)-1)*n2ft3d + 1
               index2 = (int_mb(orbital_list(1,ms)+j-1)-1)*n2ft3d + 1
+
+              ss = pspw_hfx_localize_switchr(
+     >             int_mb(orbital_list(1,ms)+i-1),
+     >             int_mb(orbital_list(1,ms)+j-1))
 
 *             **** generate dnij ****
               call D3dB_rr_Mul(1,psi_r(index1),psi_r(index2),
@@ -1229,7 +1517,7 @@ c     >                                   dbl_mb(dn(1)))
                 if (ispin.eq.1) call dscal(9,2.0d0,tstress,1)
 
 *               **** apply the hfx_parameter ****
-                call dscal(9,hfx_parameter,tstress,1)
+                call dscal(9,hfx_parameter*ss,tstress,1)
 
 *             ***** free-space coulomb solver ****
               else
@@ -1253,6 +1541,7 @@ c     >                                   dbl_mb(dn(1)))
                 end do
               end if
 
+            end if
             end if
             k1 = k1 + 1
 
@@ -1722,7 +2011,7 @@ c        call D1dB_SumAll(ph)
             call pspw_potential_HFX_orb_sub(ms,psi_r,orb_r,
      >                                  dbl_mb(Hpsi_r_replicated(1)))
             call D1dB_Vector_SumAll(n2ft3d,dbl_mb(Hpsi_r_replicated(1)))
-            call daxpy(n2ft3d,1.0d0,dbl_mb(Hpsi_r_replicated(1)),1,
+            call daxpy_omp(n2ft3d,1.0d0,dbl_mb(Hpsi_r_replicated(1)),1,
      >                 Horb_r,1)
 
          else
@@ -1927,5 +2216,146 @@ c     >                                   dbl_mb(dn(1)))
       return
       end
 
+
+*     *****************************
+*     *                           *
+*     *   pspw_Lin_proj_HFX_set   *
+*     *                           *
+*     *****************************
+
+      subroutine pspw_Lin_proj_HFX_set(psi_r,Hpsi_r,Lin_prj)
+      implicit none
+      real*8  psi_r(*)
+      real*8  Hpsi_r(*)
+      real*8  Lin_prj(*)
+
+#include "bafdecls.fh"
+#include "pspw_hfx.fh"
+#include "errquit.fh"
+
+*     **** local variables ****
+      integer hml(2),neq(2),nsize,n1,n2,n3
+      real*8 scal1
+
+*     **** external functions ****
+      logical  Dneall_m_push_get,Dneall_m_pop_stack
+      external Dneall_m_push_get,Dneall_m_pop_stack
+
+      call D3dB_nx(1,n1)
+      call D3dB_ny(1,n2)
+      call D3dB_nz(1,n3)
+      scal1 = 1.0d0/dble(n1*n2*n3)
+
+      if (.not.Dneall_m_push_get(0,hml))
+     >   call errquit("pspw_Lin_Proj_HFX_set:out of stack",0,MA_ERR)
+
+      call Dneall_neq(neq)
+      nsize = (neq(1)+neq(2))*n2ft3d
+
+      call Parallel_shared_vector_copy(.false.,nsize,Hpsi_r,Lin_prj)
+c      call Dneall_ggm_sym_Multiply(0,psi_r,Hpsi_r,n2ft3d,dbl_mb(hml(1)))
+c      call Dneall_m_scal(0,scal1,dbl_mb(hml(1)))
+      call Dneall_ggm_Multiply(0,psi_r,Hpsi_r,-scal1,n2ft3d,
+     >                         dbl_mb(hml(1)),0.0d0)
+
+      call Dneall_m_cholesky(0,dbl_mb(hml(1)))
+      call Dneall_mg_forwardsolve(0,dbl_mb(hml(1)),n2ft3d,Lin_prj)
+
+      if (.not.Dneall_m_pop_stack(hml))
+     >   call errquit("pspw_Lin_Proj_HFX_set:pop stack",0,MA_ERR)
+      return
+      end 
+
+
+*     *****************************
+*     *                           *
+*     *   pspw_Lin_proj_HFX       *
+*     *                           *
+*     *****************************
+
+      subroutine pspw_Lin_proj_HFX(Lin_prj,psi_r,Hpsi_r)
+      implicit none
+      real*8  psi_r(*)
+      real*8  Lin_prj(*)
+      real*8  Hpsi_r(*)
+
+#include "bafdecls.fh"
+#include "pspw_hfx.fh"
+#include "errquit.fh"
+
+*     **** local variables ****
+      integer hml(2),neq(2),n1,n2,n3
+      real*8 scal1
+
+*     **** external functions ****
+      logical  Dneall_m_push_get,Dneall_m_pop_stack
+      external Dneall_m_push_get,Dneall_m_pop_stack
+      real*8   Dneall_m_sqr_trace
+      external Dneall_m_sqr_trace
+
+      call D3dB_nx(1,n1)
+      call D3dB_ny(1,n2)
+      call D3dB_nz(1,n3)
+      scal1 = 1.0d0/dble(n1*n2*n3)
+
+      if (.not.Dneall_m_push_get(0,hml))
+     >   call errquit("pspw_Lin_Proj_HFX:out of stack",0,MA_ERR)
+
+      call Dneall_ggm_Multiply(0,Lin_prj,psi_r,scal1,n2ft3d,
+     >                         dbl_mb(hml(1)),0.0d0)
+      call Dneall_gmg_Multiply(0,Lin_prj,n2ft3d,
+     >                         dbl_mb(hml(1)),-1.0d0,
+     >                         Hpsi_r,0.0d0)
+
+      phfx = Dneall_m_sqr_trace(0,dbl_mb(hml(1)))
+      phfx = -phfx
+      if (ispin.eq.1) phfx = phfx + phfx
+      ehfx = 0.5d0*phfx
+
+      if (.not.Dneall_m_pop_stack(hml))
+     >   call errquit("pspw_Lin_Proj_HFX:pop stack",0,MA_ERR)
+      return
+      end
+
+*     *****************************
+*     *                           *
+*     *   pspw_Lin_HFX_reset      *
+*     *                           *
+*     *****************************
+      subroutine pspw_Lin_HFX_reset()
+      implicit none
+#include "pspw_hfx.fh"
+
+      lin_run = .false.
+      return
+      end
+
+*     *****************************
+*     *                           *
+*     *   pspw_Lin_HFX_off        *
+*     *                           *
+*     *****************************
+      subroutine pspw_Lin_HFX_off(bvalue)
+      implicit none
+      logical bvalue
+
+#include "pspw_hfx.fh"
+
+      !lin_off = .true.
+      lin_off = bvalue
+      return
+      end
+
+*     *****************************
+*     *                           *
+*     *   pspw_Lin_HFX_on         *
+*     *                           *
+*     *****************************
+      logical function pspw_Lin_HFX_on()
+      implicit none
+#include "pspw_hfx.fh"
+      pspw_Lin_HFX_on = lin_on
+      return
+      end
 
 

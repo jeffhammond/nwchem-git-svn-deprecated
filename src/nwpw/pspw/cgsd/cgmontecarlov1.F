@@ -49,7 +49,7 @@
 *     ***** energy variables ****
       integer ms,ispin
       real*8  E(40),en(2)
-      real*8  dipole(3)
+      real*8  dipole(3),cdipole(3)
       real*8  stress(3,3),lstress(6)
 
 *     **** gradient variables ****
@@ -174,12 +174,14 @@
       external control_mc_ddv,control_mc_volume_step
       real*8   control_mc_pressure
       external control_mc_pressure
-      logical  control_SA,control_pressure
-      external control_SA,control_pressure
+      logical  control_SA,control_pressure,ion_makehmass2
+      external control_SA,control_pressure,ion_makehmass2
       real*8   control_SA_decay
       external control_SA_decay
       integer  ion_nconstraints,ion_ndof,ion_rion_ptr
       external ion_nconstraints,ion_ndof,ion_rion_ptr
+      logical  control_periodic_dipole
+      external control_periodic_dipole
 
 
 *                            |************|
@@ -421,6 +423,7 @@
          END IF
          call pspw_print_SIC(luout)
          call pspw_print_HFX(luout)
+         if (ion_makehmass2()) write(luout,1135)
          write(luout,1140)
          do ia = 1,ion_nkatm()
             call psp_print(ia)
@@ -1020,7 +1023,13 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
       dipole(1) = 0.0d0
       dipole(2) = 0.0d0
       dipole(3) = 0.0d0
-      if (flag.gt.-1) call rho_dipole(dipole)
+      cdipole(1) = 0.0d0
+      cdipole(2) = 0.0d0
+      cdipole(3) = 0.0d0
+      if (flag.gt.-1) then
+        call rho_dipole(dipole)
+        if (control_periodic_dipole()) call psi1_crystal_dipole(cdipole)
+      end if
 
 
 *     **** calculate the stress tensor ****
@@ -1043,6 +1052,9 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
       value = value.and.
      >        btdb_put(rtdb,'pspw:dipole',mt_dbl,
      >                 3,dipole)
+      value = value.and.
+     >        btdb_put(rtdb,'pspw:crystal_dipole',mt_dbl,
+     >                 3,cdipole)
       end if
       if (flag.gt.0) then
         value = value.and.
@@ -1151,6 +1163,9 @@ c     >                        ratio_v,wa,wr,wa_v,wr_v
  1130 FORMAT(5X,' electron spin        = ',A)
  1131 FORMAT(5X,' exchange-correlation = ',A)
  1132 FORMAT(5X,' using fractional occupation')
+ 1135 FORMAT(/' The masses of QM H atoms converted to 2.0 amu.',
+     >       /' To turn off this default',
+     >        ' set nwpw:makehmass2 .false.')
  1140 FORMAT(/' elements involved in the cluster:')
  1150 FORMAT(5X,I2,': ',A4,'  core charge:',F4.1,'  lmax=',I3)
  1151 FORMAT(5X,'        cutoff =',4F8.3)

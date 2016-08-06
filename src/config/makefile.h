@@ -944,7 +944,7 @@ endif
 #gcc version 4.2.0 200608 (experimental)
 #         FOPTIONS= -malign-double# this break with gfort 4.2 and later http://gcc.gnu.org/bugzilla/show_bug.cgi?id=29562
          FOPTIMIZE+= -funroll-all-loops -mtune=native 
-         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -fprefetch-loop-arrays  -funroll-all-loops
+         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -fprefetch-loop-arrays  -funroll-all-loops 
 #         FOPTIMIZE=-O1
 #         FVECTORIZE=-O1
        endif
@@ -1058,7 +1058,7 @@ endif
        DEFINES   += -DGFORTRAN -DGCC4
 #
          FOPTIMIZE+= -funroll-all-loops -mtune=native 
-         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -fprefetch-loop-arrays  -funroll-all-loops
+         FVECTORIZE=-O3 -ffast-math -mtune=native -mfpmath=sse -msse3 -ftree-vectorize -fprefetch-loop-arrays  -funroll-all-loops 
 #         FOPTIMIZE=-O1
 #         FVECTORIZE=-O1
         GNUMAJOR=$(shell $(FC) -dumpversion | cut -f1 -d.)
@@ -1110,6 +1110,7 @@ endif
        _IFCV12= $(shell ifort -logo  2>&1|egrep "Version "|head -n 1|sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 12) {print "Y";exit}}')
        _IFCV14= $(shell ifort -logo  2>&1|egrep "Version "|head -n 1|sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 14) {print "Y";exit}}')
        _IFCV15ORNEWER=$(shell ifort -logo  2>&1|egrep "Version "|head -n 1 | sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 15) {print "Y";exit}}')
+       _IFCV17=$(shell ifort -logo  2>&1|egrep "Version "|head -n 1 | sed 's/.*Version \([0-9][0-9]\).*/\1/' | awk '{if ($$1 >= 17) {print "Y";exit}}')
         DEFINES  += -DIFCV8 -DIFCLINUX
         ifdef USE_I4FLAGS
         else
@@ -1117,10 +1118,15 @@ endif
         endif
         FOPTIONS += -fpp -g -no-save-temps
         FDEBUG    = -O2 -g
-        FOPTIMIZE = -O3 -xHost
+        FOPTIMIZE = -O3 -xHost	
         ifdef USE_OPENMP
-           FOPTIONS  += -openmp
-           LDOPTIONS += -openmp
+           ifeq ($(_IFCV15ORNEWER), Y)
+             FOPTIONS  += -qopenmp
+             LDOPTIONS += -qopenmp
+           else
+             FOPTIONS  += -openmp
+             LDOPTIONS += -openmp
+           endif
            DEFINES   += -DUSE_OPENMP
         endif
        ifdef  USE_FPE
@@ -1559,17 +1565,28 @@ endif
       _CC=gcc
       endif
       FOPTIMIZE  = -O2 
-      ifeq ($(_FC),gfortran)
        ifeq ($(_CPU),aarch64)
          DONTHAVEM64OPT=Y
        endif
+       ifeq ($(_CPU),mips64)
+         DONTHAVEM64OPT=Y
+       endif
+      ifeq ($(_CC),gcc)
        ifneq ($(DONTHAVEM64OPT),Y)
-         FOPTIONS   = -m64
          COPTIONS   = -m64
        endif
+      endif
+      ifeq ($(_FC),gfortran)
+       ifneq ($(DONTHAVEM64OPT),Y)
+         FOPTIONS   = -m64
+       endif
         COPTIONS += -Wall
+       ifdef  USE_FPE
+         FOPTIONS += -ffpe-trap=invalid,zero,overflow  -fbacktrace
+       else
         FOPTIONS   += -ffast-math #-Wunused  
-        FOPTIMIZE  += -ffast-math -Wuninitialized
+       endif
+        FOPTIMIZE  += -Wuninitialized
         DEFINES  += -DGFORTRAN
         DEFINES  += -DCHKUNDFLW -DGCC4
         GNUMAJOR=$(shell $(FC) -dM -E - < /dev/null 2> /dev/null | egrep __VERS | cut -c22)
@@ -1578,6 +1595,7 @@ endif
         GNU_GE_4_6 = $(shell [ $(GNUMAJOR) -gt 4 -o \( $(GNUMAJOR) -eq 4 -a $(GNUMINOR) -ge 6 \) ] && echo true)
         GNU_GE_4_8 = $(shell [ $(GNUMAJOR) -gt 4 -o \( $(GNUMAJOR) -eq 4 -a $(GNUMINOR) -ge 8 \) ] && echo true)
         endif
+        GNU_GE_6 = $(shell [ $(GNUMAJOR) -ge 6  ] && echo true)
         ifeq ($(GNU_GE_4_6),true)
           DEFINES  += -DGCC46
         endif
@@ -1749,38 +1767,37 @@ endif
            endif
            CPP=fpp -P 
 	   ifeq ($(_IFCV15ORNEWER), Y)
-           FOPTIONS += -qopt-report-file=stderr
+             FOPTIONS += -qopt-report-file=stderr
 # fpp seems to get lost with ifort 15 in the offload bit
 # only use EXPLICITF for offload because otherwise we want debugging to be easy
-#           FOPTIONS +=  -Qoption,fpp,-P -Qoption,fpp,-c_com=no  -allow nofpp_comments 
-          ifdef USE_OPTREPORT
-	  FOPTIONS += -qopt-report=1 -qopt-report-phase=vec 
-          endif
+#            FOPTIONS +=  -Qoption,fpp,-P -Qoption,fpp,-c_com=no  -allow nofpp_comments 
+             ifdef USE_OPTREPORT
+	  FOPTIONS += -qopt-report=3 -qopt-report-phase=vec,cg,loop,ipo
+               ifeq ($(_IFCV17), Y)
+                 FOPTIONS += -qopt-report-annotate-position=both
+               endif
+             FOPTIONS += -qopt-report-file=stderr
+             endif
 #to avoid compiler crashes on simd directive. e.g .Version 15.0.2.164 Build 20150121
-        ifdef USE_NOSIMD
-          FOPTIONS  += -no-simd
-        endif
-         ifdef USE_OPENMP
-           FOPTIONS += -qopenmp
-           FOPTIONS += -qopt-report-phase=openmp
-           COPTIONS += -qopenmp
-           DEFINES+= -DUSE_OPENMP 
-         else
-	   ifeq ($(_IFCV15ORNEWER), Y)
-           else
-           FOPTIONS += -qno-openmp
-           COPTIONS += -qno-openmp
-           endif
-         endif		   
+             ifdef USE_NOSIMD
+               FOPTIONS  += -no-simd
+             endif
+             ifdef USE_OPENMP
+               FOPTIONS += -qopenmp
+               FOPTIONS += -qopt-report-phase=openmp
+               DEFINES+= -DUSE_OPENMP 
+             else
+               FOPTIONS += -qno-openmp
+             endif		   
 	   else
-         FOPTIONS += -vec-report6
-         ifdef USE_OPENMP
-           FOPTIONS += -openmp
-           FOPTIONS += -openmp-report2
-           COPTIONS += -openmp
-           DEFINES+= -DUSE_OPENMP 
-         endif
-       endif
+             FOPTIONS += -vec-report6
+             ifdef USE_OPENMP
+               FOPTIONS += -openmp
+               FOPTIONS += -openmp-report2
+               COPTIONS += -openmp
+               DEFINES+= -DUSE_OPENMP 
+             endif
+           endif
            
        ifdef USE_OFFLOAD
          ifeq ($(_IFCV14), Y)
@@ -1796,6 +1813,8 @@ endif
           ifeq ($(_IFCV15ORNEWER), Y)
             FOPTIONS += -qopt-report-phase=offload
             FOPTIONS += -qoffload-option,mic,compiler,"-align array64byte"
+            FOPTIONS += -qoffload-option,mic,compiler,"-qopt-prefetch=4 -qopt-prefetch-distance=4,1"
+            FOPTIONS += -qopt-assume-safe-padding
             FOPTIONS += -align array64byte
 	        LDOPTIONS += -qoffload-option,mic,compiler," -Wl,-zmuldefs"
             FOPTIONS += -watch=mic_cmd 
@@ -1835,24 +1854,47 @@ $(error )
        ifdef  USE_FPE
          FOPTIONS += -fpe0 -traceback #-fp-model  precise
        endif
-        ifeq ($(_IFCV11),Y) 
+       ifeq ($(_IFCV11),Y) 
 #next 2 lines needed for fp accuracy
-        FDEBUG += -fp-model source
-        ifeq ($(_IFCV12),Y) 
-        FOPTIONS += -fimf-arch-consistency=true
-        endif
-        FOPTIMIZE += -xHost
-        FOPTIONS += -finline-limit=250
+         FDEBUG += -fp-model source
+         ifeq ($(_IFCV12),Y) 
+           FOPTIONS += -fimf-arch-consistency=true
+         endif
+         ifdef USE_KNL
+           FOPTIMIZE += -xMIC-AVX512 
+         else
+           FOPTIMIZE += -xHost
+         endif
+         FOPTIONS += -finline-limit=250
        else
-        ifeq ($(_GOTSSE3),Y) 
-         FOPTIMIZE += -xP -no-prec-div
-        else
-         FOPTIMIZE +=  -tpp7 -ip 
-         FOPTIMIZE += -xW
-        endif
+         ifeq ($(_GOTSSE3),Y) 
+           FOPTIMIZE += -xP -no-prec-div
+         else
+           FOPTIMIZE +=  -tpp7 -ip 
+           FOPTIMIZE += -xW
+         endif
        endif
-     endif	
-#      
+
+
+       # configuration options for MEMKIND library on Intel Xeon Phi processors
+       ifdef USE_FASTMEM
+           ifdef MEMKIND_PATH
+               FASTMEM_OPTIONS_LD += -L$(MEMKIND_PATH)
+           endif
+           ifdef USE_MEMKIND_TBB
+               FASTMEM_OPTIONS_LD += -L$(TBB_PATH)
+           endif
+           FASTMEM_OPTIONS_LD += -lmemkind
+           ifdef USE_MEMKIND_TBB
+               FASTMEM_OPTIONS_LD += -ltbbmalloc
+           endif
+           EXTRA_LIBS += $(FASTMEM_OPTIONS_LD)
+           # we need to use ALLOCATABLE data for MEMKIND
+           DEFINES += -DUSE_F90_ALLOCATABLE -DUSE_FASTMEM
+       endif
+
+     endif # _FC = ifort (i think)
+#
       ifeq ($(_FC),pgf90)
         FOPTIONS   += -Mdalign -Mllalign -Kieee 
 #        FOPTIONS   += -tp k8-64  
@@ -1909,7 +1951,7 @@ $(error )
          COPTIMIZE += -ip -no-prec-div
       endif
       ifeq ($(_CC),gcc)
-        COPTIONS   =   -O3 -funroll-loops -ffast-math 
+        COPTIONS   +=   -O3 -funroll-loops -ffast-math 
         ifdef USE_OPENMP
           COPTIONS += -fopenmp
         endif
@@ -1953,7 +1995,14 @@ $(error )
         endif
 	    LINK.f = $(FC)  $(LDFLAGS) 
         FOPTIMIZE  += -O3 
-        FOPTIMIZE  += -mfpmath=sse -ffast-math
+        FOPTIMIZE  += -mfpmath=sse # 
+        ifeq ($(GNU_GE_6),true)
+         FOPTIMIZE += -fno-tree-dominator-opts # solvation/hnd_cosmo_lib breaks
+        endif
+
+        ifndef USE_FPE
+        FOPTIMIZE  += -ffast-math #2nd time
+        endif
         FOPTIMIZE  += -fprefetch-loop-arrays #-ftree-loop-linear
         ifeq ($(GNU_GE_4_8),true)
           FOPTIMIZE  += -ftree-vectorize
@@ -1966,7 +2015,7 @@ $(error )
           FOPTIONS +=  -ff2c -fno-second-underscore
         endif
         ifeq ($(GNU_GE_4_6),true) 
-          FOPTIONS += -march=native -mtune=native
+          FOPTIMIZE += -march=native -mtune=native
           FOPTIONS += -finline-functions
         else
         ifeq ($(_GOT3DNOW),Y) 
@@ -1988,12 +2037,12 @@ $(error )
       endif
       ifeq ($(_FC),crayftn)
 	# Jeff: Cray Fortran supports preprocessing as of version 8.2.2 (at least)
-        #EXPLICITF = FALSE
-        #CPP = /usr/bin/cpp  -P -C -traditional
- 	#CPPFLAGS += -DCRAYFORTRAN
-        #FCONVERT = $(CPP) $(CPPFLAGS) $< > $*.f
+        EXPLICITF = FALSE
+        CPP = /usr/bin/cpp  -P -C -traditional
+ 	CPPFLAGS += -DCRAYFORTRAN -DUSE_POSIXF
+        FCONVERT = $(CPP) $(CPPFLAGS) $< > $*.f
         # USE_POSIXF is required because getlog is provided (GNU extension)
-        FOPTIONS   +=  -Ktrap=fp -DCRAYFORTRAN -DUSE_POSIXF
+        FOPTIONS   +=  -Ktrap=fp# -DCRAYFORTRAN -DUSE_POSIXF
         FDEBUG   =    -g
 #       FOPTIMIZE = -O2 -O scalar3,thread0,vector1,ipa0
         FOPTIMIZE = -O2 -O scalar3,thread0,vector2,ipa2 #-rdm
@@ -2046,6 +2095,19 @@ ifeq ($(_CPU),$(findstring $(_CPU), ppc64 ppc64le))
 #     CORE_LIBS +=  $(BLASOPT) -lnwclapack -lnwcblas
 #     EXTRA_LIBS +=  -dynamic-linker /lib64/ld64.so.1 -melf64ppc -lxlf90_r -lxlopt -lxlomp_ser -lxl -lxlfmath -ldl -lm -lc -lgcc -lm
     endif
+      ifeq ($(_FC),pgf90)
+        FOPTIONS   += -Mcache_align  # -Kieee 
+#        FOPTIMIZE   = -O3  -Mnounroll -Minfo=loop -Mipa=fast
+        FOPTIMIZE   =  -fast -O3 -Mvect=simd  -Munroll -Minfo=loop # -Mipa=fast
+        FVECTORIZE   = -fast    -O3   #-Mipa=fast
+        FDEBUG = -g -O2
+        DEFINES  += -DCHKUNDFLW -DPGLINUX
+        ifdef USE_OPENMP
+           FOPTIONS  += -mp -Minfo=mp
+           LDOPTIONS += -mp
+           DEFINES += -DUSE_OPENMP
+        endif
+      endif
 
      ifeq ($(BUILDING_PYTHON),python)
 #   EXTRA_LIBS += -ltk -ltcl -L/usr/X11R6/lib -lX11 -ldl

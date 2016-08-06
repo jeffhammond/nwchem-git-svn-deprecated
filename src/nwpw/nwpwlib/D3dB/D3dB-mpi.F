@@ -1,4 +1,4 @@
-#define NBLOCKS 2
+#define NBLOCKS 3
 
 *
 * $Id$
@@ -76,26 +76,27 @@ c     integer i2_start(NFFT3+1)
 
 
 *     **** pack A(i) array ****
-#ifndef CRAY
-!DIR$ ivdep
-#endif
+!$OMP DO
       do i=1,nfft3d(nb) 
          tmp1(int_mb(iq_to_i1(1,nb)+i-1)) = A(i)
       end do
+!$OMP END DO
 
 *     **** it = 0, transpose data on same thread ****  
       msglen = int_mb(i2_start(1,nb)+2-1) - int_mb(i2_start(1,nb)+1-1)
-#ifndef CRAY
-!DIR$ ivdep
-#endif
-      do i=1,msglen
-         tmp2(int_mb(i2_start(1,nb)+1-1)+i-1) 
-     > = tmp1(int_mb(i1_start(1,nb)+1-1)+i-1)
-      end do
+
+c      do i=1,msglen
+c         tmp2(int_mb(i2_start(1,nb)+1-1)+i-1) 
+c     > = tmp1(int_mb(i1_start(1,nb)+1-1)+i-1)
+c      end do
+      call Parallel_shared_vector_copy(.false.,2*msglen,
+     >               tmp1(int_mb(i1_start(1,nb)+1-1)),
+     >               tmp2(int_mb(i2_start(1,nb)+1-1)))
          
 
 *     **** receive packed array data ****
       reqcnt = 0
+!$OMP MASTER
       do it = 1,np-1
 
 *        **** synchronous receive of tmp ****
@@ -161,16 +162,17 @@ c     integer i2_start(NFFT3+1)
 
    
 *     **** wait for completion of mp_send, also do a sync ****
-      if (np.gt.1) call Parallel_mpiWaitAll(reqcnt,int_mb(request(1)))
+      if (np.gt.1) call Parallel_mpiWaitAll0(reqcnt,int_mb(request(1)))
 
+!$OMP END MASTER
+!$OMP BARRIER
 
 *     **** unpack A(i) array ****
-#ifndef CRAY
-!DIR$ ivdep
-#endif
+!$OMP DO
       do i=1,nfft3d(nb) !***(nx(nb)/2+1)*ny(nb)*nq(nb)
          A(i) = tmp2(int_mb(iq_to_i2(1,nb)+i-1))
       end do
+!$OMP END DO
       
 
       !*** deallocate memory ***
@@ -258,19 +260,25 @@ c     integer i2_start(NFFT3+1)
 #ifndef CRAY
 !DIR$ ivdep
 #endif
+!$OMP DO
       do index1=int_mb(i1_start(1,nb)+1-1),
      >         (int_mb(i1_start(1,nb)+np+1-1)-1)
          tmp1(index1) = A(int_mb(iq_to_i1(1,nb)+index1-1))
       end do
+!$OMP END DO
 
 *     **** it = 0, transpose data on same thread ****
       msglen = int_mb(i2_start(1,nb)+2-1) - int_mb(i2_start(1,nb)+1-1)
-      call dcopy(2*msglen,tmp1(int_mb(i1_start(1,nb))),1,
-     >                    tmp2(int_mb(i2_start(1,nb))),1)
+c      call dcopy(2*msglen,tmp1(int_mb(i1_start(1,nb))),1,
+c     >                    tmp2(int_mb(i2_start(1,nb))),1)
+      call Parallel_shared_vector_copy(.false.,2*msglen,
+     >                                 tmp1(int_mb(i1_start(1,nb))),
+     >                                 tmp2(int_mb(i2_start(1,nb))))
 
 
 *     **** receive packed array data ****
       reqcnt = 0
+!$OMP MASTER
       do it = 1,np-1
 
 *        **** synchronous receive of tmp ****
@@ -337,17 +345,21 @@ c     integer i2_start(NFFT3+1)
 
 
 *     **** wait for completion of mp_send, also do a sync ****
-      if (np.gt.1) call Parallel_mpiWaitAll(reqcnt,int_mb(request(1)))
+      if (np.gt.1) call Parallel_mpiWaitAll0(reqcnt,int_mb(request(1)))
+!$OMP END MASTER
+!$OMP BARRIER
 
 
 *     **** unpack A(i) array ****
 #ifndef CRAY
 !DIR$ ivdep
 #endif
+!$OMP DO
       do index2=int_mb(i2_start(1,nb)+1-1),
      >         (int_mb(i2_start(1,nb)+np+1-1)-1)
         A(int_mb(iq_to_i2(1,nb)+index2-1))=dconjg(tmp2(index2))
       end do
+!$OMP END DO
 
 
       !*** deallocate memory ***
@@ -409,10 +421,6 @@ c     integer i2_start(NFFT3+1)
      >                         h_i1_start,
      >                         h_i2_start
 
-#ifdef USE_OPENMP
-#endif
-
-
 *     **** local variables ***
       logical value
       integer i,nnfft3d
@@ -451,32 +459,29 @@ c     integer i2_start(NFFT3+1)
 !DIR$ ivdep
 #endif
 
-      tid = Parallel_threadid()
-      nthr = Parallel_nthreads()
-
-
-
+c      tid = Parallel_threadid()
+c      nthr = Parallel_nthreads()
 
  
-c      chunklen = nnfft3d / nthr
-c      offset = 1+tid*chunklen 
-c      if(tid.eq.nthr-1) chunklen = nnfft3d - offset +1
-c      chunklen = offset+chunklen-1
-c      do i=offset,chunklen
-
+!$OMP DO
       do i=1,nnfft3d
         tmp1(int_mb(h_iq_to_i1(1,op,nb)+i-1)) = A(i)
       end do
+!$OMP END DO
 
 *     **** it = 0, transpose data on same thread ****  
       msglen = int_mb(h_i2_start(1,op,nb)+2-1) 
      >       - int_mb(h_i2_start(1,op,nb)+1-1)
-      call dcopy(2*msglen,tmp1(int_mb(h_i1_start(1,op,nb))),1,
-     >                    tmp2(int_mb(h_i2_start(1,op,nb))),1)
+c      call dcopy(2*msglen,tmp1(int_mb(h_i1_start(1,op,nb))),1,
+c     >                    tmp2(int_mb(h_i2_start(1,op,nb))),1)
+      call Parallel_shared_vector_copy(.false.,2*msglen,
+     >                    tmp1(int_mb(h_i1_start(1,op,nb))),
+     >                    tmp2(int_mb(h_i2_start(1,op,nb))))
          
 
 *     **** receive packed array data ****
       reqcnt = 0
+!$OMP MASTER
       do it = 1,np-1
 
 *        **** synchronous receive of tmp ****
@@ -541,8 +546,10 @@ c      do i=offset,chunklen
       end do
 
 *     **** wait for completion of mp_send, also do a sync ****
-      if (np.gt.1) call Parallel_mpiWaitAll(reqcnt,int_mb(request(1)))
+      if (np.gt.1) call Parallel_mpiWaitAll0(reqcnt,int_mb(request(1)))
 
+!$OMP END MASTER
+!$OMP BARRIER
 
 
 *     **** unpack A(i) array ****
@@ -553,15 +560,11 @@ c      do i=offset,chunklen
 !DIR$ ivdep
 #endif
 
-!MATHIAS split this across threads
-c      chunklen = nnfft3d / nthr
-c      offset = 1+tid*chunklen 
-c      if(tid.eq.nthr-1) chunklen = nnfft3d - offset +1
-c      chunklen = offset+chunklen-1
-c      do i=offset,chunklen
+!$OMP DO
       do i=1,nnfft3d
          A(i) = tmp2(int_mb(h_iq_to_i2(1,op,nb)+i-1))
       end do
+!$OMP END DO
 
 
       !*** deallocate memory ***
@@ -785,6 +788,7 @@ c     implicit none
 
       call Parallel2d_np_i(np)
       if (np.gt.1) then
+!$OMP MASTER
          msglen = 1
 #ifdef MPI4
          stupid_msglen = msglen
@@ -795,6 +799,51 @@ c     implicit none
      >                       MPI_SUM,Parallel2d_comm_i(),mpierr)
 #endif
          sum = sumall
+!$OMP END MASTER
+!$OMP BARRIER
+      end if
+
+      return
+      end
+
+
+*     ***********************************
+*     *                                 *
+*     *         D3dB_MaxAll             *
+*     *                                 *
+*     ***********************************
+      subroutine D3dB_MaxAll(sum)
+c     implicit none
+      real*8  sum
+
+#ifdef MPI4
+#include "stupid_mpi4.fh"
+#else
+#include "mpif.h"
+#endif
+
+      integer msglen,mpierr,np
+      real*8 sumall
+
+*     **** external functions ****
+      integer  Parallel2d_comm_i
+      external Parallel2d_comm_i
+
+      call Parallel2d_np_i(np)
+      if (np.gt.1) then
+!$OMP MASTER
+         msglen = 1
+#ifdef MPI4
+         stupid_msglen = msglen
+         call MPI_Allreduce(sum,sumall,stupid_msglen,stupid_double,
+     >                       stupid_max,stupid_comm_i,stupid_ierr)
+#else
+         call MPI_Allreduce(sum,sumall,msglen,MPI_DOUBLE_PRECISION,
+     >                       MPI_MAX,Parallel2d_comm_i(),mpierr)
+#endif
+         sum = sumall
+!$OMP END MASTER
+!$OMP BARRIER
       end if
 
       return
@@ -820,6 +869,7 @@ c     implicit none
 
       integer msglen,mpierr,np
       integer sumall
+      common /D3dB_ISumAll_tmp/ sumall
 
 *     **** external functions ****
       integer  Parallel2d_comm_i
@@ -827,21 +877,25 @@ c     implicit none
 
       call Parallel2d_np_i(np)
       if (np.gt.1) then
-!!$OMP SINGLE
 #ifdef MPI4
+!$OMP MASTER
          stupid_msglen = 1
          stupid_tsum = sum
          call MPI_Allreduce(stupid_tsum,stupid_tsum2,stupid_msglen,
      >                      stupid_integer,
      >                      stupid_sum,stupid_comm_i,stupid_ierr)
+!$OMP END MASTER
+!$OMP BARRIER
          sum = stupid_tsum2
 #else
+!$OMP MASTER
          msglen = 1
          call MPI_Allreduce(sum,sumall,msglen,MPI_INTEGER,
      >                       MPI_SUM,Parallel2d_comm_i(),mpierr)
+!$OMP END MASTER
+!$OMP BARRIER
          sum = sumall
 #endif
-!!$OMP END SINGLE copyprivate(sum)
       end if
 
       return
@@ -892,6 +946,7 @@ c     implicit none
      > call errquit('D3dB_Vector_SumAll:out of stack',0, MA_ERR)
 
 
+!$OMP MASTER
 #ifdef MPI4
       stupid_msglen = n
       call MPI_Allreduce(sum,dbl_mb(sumall(1)),
@@ -905,6 +960,9 @@ c     implicit none
 #endif
 
       call dcopy(n,dbl_mb(sumall(1)),1,sum,1)
+!$OMP END MASTER
+!$OMP BARRIER
+
       value = BA_pop_stack(sumall(2))
 
       end if
@@ -1024,11 +1082,11 @@ c     implicit none
 #endif
 
 *     **** indexing variables ****
-      integer iq_to_i1(2,0:1)
-      integer iq_to_i2(2,0:1)
-      integer iz_to_i2(2,0:1)
-      integer i1_start(2,0:1)
-      integer i2_start(2,0:1)
+      integer iq_to_i1(2,0:3)
+      integer iq_to_i2(2,0:3)
+      integer iz_to_i2(2,0:3)
+      integer i1_start(2,0:3)
+      integer i2_start(2,0:3)
       common / ptrans_blk1 / iq_to_i1,iq_to_i2,iz_to_i2,
      >                       i1_start,i2_start
 
@@ -1043,12 +1101,18 @@ c     integer msgid
 c     integer status(MPI_STATUS_SIZE,512),request(512),reqcnt
       integer request(2),reqcnt
       integer taskid,np
-      integer mpierr,n1,n2
+      integer mpierr,n1,n2,id
 
 *     **** external functions ****
       integer  Parallel2d_convert_taskid_i,Parallel_comm_world
       external Parallel2d_convert_taskid_i,Parallel_comm_world
       
+      !id = 2*(nbb/2) + 1
+      if (nbb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
       call Parallel2d_taskid_i(taskid)
       call Parallel2d_np_i(np)
 
@@ -1143,7 +1207,8 @@ c     integer status(MPI_STATUS_SIZE,512),request(512),reqcnt
 
 *     **** unpack A(i) array ****
       call D3dB_pfft_index2_copy(n2,int_mb(iq_to_i2(1,nbb)),tmp2,A)
-      call D3dB_pfft_index2_zero(nfft3d(1)-n2,int_mb(iz_to_i2(1,nbb)),A)
+      call D3dB_pfft_index2_zero(nfft3d(id)-n2,
+     >                           int_mb(iz_to_i2(1,nbb)),A)
       
 
       !*** deallocate memory ***
@@ -1193,11 +1258,11 @@ c     integer status(MPI_STATUS_SIZE,512),request(512),reqcnt
 
 
 *     **** indexing variables ****
-      integer iq_to_i1(2,0:1)
-      integer iq_to_i2(2,0:1)
-      integer iz_to_i2(2,0:1)
-      integer i1_start(2,0:1)
-      integer i2_start(2,0:1)
+      integer iq_to_i1(2,0:3)
+      integer iq_to_i2(2,0:3)
+      integer iz_to_i2(2,0:3)
+      integer i1_start(2,0:3)
+      integer i2_start(2,0:3)
       common / ptrans_blk2 / iq_to_i1,iq_to_i2,iz_to_i2,
      >                       i1_start,i2_start
 
@@ -1209,12 +1274,18 @@ c     integer status(MPI_STATUS_SIZE,512),request(512),reqcnt
       integer msglen
       integer request(2),reqcnt
       integer taskid,np
-      integer mpierr,n1,n2
+      integer mpierr,n1,n2,id
 
 c     **** external functions ****
       integer  Parallel2d_convert_taskid_i,Parallel_comm_world
       external Parallel2d_convert_taskid_i,Parallel_comm_world
       
+      !id = 2*(nbb/2)+1
+      if (nbb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
       call Parallel2d_taskid_i(taskid)
       call Parallel2d_np_i(np)
 
@@ -1308,7 +1379,8 @@ c     **** external functions ****
 
 *     **** unpack A(i) array ****
       call D3dB_pfft_index2_copy(n2,int_mb(iq_to_i2(1,nbb)),tmp2,A)
-      call D3dB_pfft_index2_zero(nfft3d(1)-n2,int_mb(iz_to_i2(1,nbb)),A)
+      call D3dB_pfft_index2_zero(nfft3d(id)-n2,
+     >                           int_mb(iz_to_i2(1,nbb)),A)
       
 
       !*** deallocate memory ***
@@ -1358,12 +1430,12 @@ c     **** external functions ****
 
 
 *     **** indexing variables ****
-      integer h_iq_to_i1(2,6,0:1)
-      integer h_iq_to_i2(2,6,0:1)
-      integer h_iz_to_i2(2,6,0:1)
-      integer h_iz_to_i2_count(6,0:1)
-      integer h_i1_start(2,6,0:1)
-      integer h_i2_start(2,6,0:1)
+      integer h_iq_to_i1(2,6,0:3)
+      integer h_iq_to_i2(2,6,0:3)
+      integer h_iz_to_i2(2,6,0:3)
+      integer h_iz_to_i2_count(6,0:3)
+      integer h_i1_start(2,6,0:3)
+      integer h_i2_start(2,6,0:3)
       common / ptrans_blk_ijk / h_iq_to_i1,
      >                         h_iq_to_i2,
      >                         h_iz_to_i2,
@@ -1409,11 +1481,15 @@ c     **** external functions ****
 *     **** it = 0, transpose data on same thread ****  
       msglen = int_mb(h_i2_start(1,op,nbb)+2-1) 
      >       - int_mb(h_i2_start(1,op,nbb)+1-1)
-      call dcopy(2*msglen,
-     >           tmp1(int_mb(h_i1_start(1,op,nbb))),1,
-     >           tmp2(int_mb(h_i2_start(1,op,nbb))),1)
+c      call dcopy(2*msglen,
+c     >           tmp1(int_mb(h_i1_start(1,op,nbb))),1,
+c     >           tmp2(int_mb(h_i2_start(1,op,nbb))),1)
+      call Parallel_shared_vector_copy(.true.,2*msglen,
+     >           tmp1(int_mb(h_i1_start(1,op,nbb))),
+     >           tmp2(int_mb(h_i2_start(1,op,nbb))))
 
 
+!$OMP MASTER
 *     **** receive packed array data ****
       reqcnt = 0
       do it = 1,np-1
@@ -1481,8 +1557,10 @@ c     **** external functions ****
 
    
 *     **** wait for completion of mp_send, also do a sync ****
-      if (np.gt.1) call Parallel_mpiWaitAll(reqcnt,int_mb(request(1)))
+      if (np.gt.1) call Parallel_mpiWaitAll0(reqcnt,int_mb(request(1)))
 
+!$OMP END MASTER
+!$OMP BARRIER
 
 *     **** unpack A(i) array ****
       call D3dB_pfft_index2_copy(n2,int_mb(h_iq_to_i2(1,op,nbb)),tmp2,A)
@@ -1531,6 +1609,7 @@ c     **** external functions ****
       external Parallel2d_convert_taskid_i,Parallel_comm_world
 
 
+!$OMP MASTER
       reqcnt = 0
       if (log_mb(sender_list(1)+nb)) then
          do j=1,int_mb(npacket_list(1)+nb)
@@ -1596,6 +1675,8 @@ c            recieve data....
 
          end do
       end if
+!$OMP END MASTER
+!$OMP BARRIER
 
       return
       end
@@ -1790,11 +1871,11 @@ c            send data....
 
 
 *     **** indexing variables ****
-      integer iq_to_i1(2,0:1)
-      integer iq_to_i2(2,0:1)
-      integer iz_to_i2(2,0:1)
-      integer i1_start(2,0:1)
-      integer i2_start(2,0:1)
+      integer iq_to_i1(2,0:3)
+      integer iq_to_i2(2,0:3)
+      integer iz_to_i2(2,0:3)
+      integer i1_start(2,0:3)
+      integer i2_start(2,0:3)
       common / ptrans_blk1 / iq_to_i1,iq_to_i2,iz_to_i2,
      >                       i1_start,i2_start
 
@@ -1930,16 +2011,23 @@ c         msgtype   = 1
 
 
 *     **** indexing variables ****
-      integer iq_to_i1(2,0:1)
-      integer iq_to_i2(2,0:1)
-      integer iz_to_i2(2,0:1)
-      integer i1_start(2,0:1)
-      integer i2_start(2,0:1)
+      integer iq_to_i1(2,0:3)
+      integer iq_to_i2(2,0:3)
+      integer iz_to_i2(2,0:3)
+      integer i1_start(2,0:3)
+      integer i2_start(2,0:3)
       common / ptrans_blk1 / iq_to_i1,iq_to_i2,iz_to_i2,
      >                       i1_start,i2_start
 
 *     **** local variables ***
-      integer np,n2
+      integer np,n2,id
+
+      !id=2*(nbb/2)+1
+      if (nbb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
       
       call Parallel2d_np_i(np)
       if (np.gt.1) call Parallel_mpiWaitAll(reqcnt,request)
@@ -1947,7 +2035,8 @@ c         msgtype   = 1
 *     **** unpack A(i) array ****
       n2 = int_mb(i2_start(1,nbb)+np) - 1
       call D3dB_pfft_index2_copy(n2,int_mb(iq_to_i2(1,nbb)),tmp2,A)
-      call D3dB_pfft_index2_zero(nfft3d(1)-n2,int_mb(iz_to_i2(1,nbb)),A)
+      call D3dB_pfft_index2_zero(nfft3d(id)-n2,
+     >                           int_mb(iz_to_i2(1,nbb)),A)
       return
       end
 
@@ -1992,11 +2081,11 @@ c         msgtype   = 1
 #endif
 
 *     **** indexing variables ****
-      integer iq_to_i1(2,0:1)
-      integer iq_to_i2(2,0:1)
-      integer iz_to_i2(2,0:1)
-      integer i1_start(2,0:1)
-      integer i2_start(2,0:1)
+      integer iq_to_i1(2,0:3)
+      integer iq_to_i2(2,0:3)
+      integer iz_to_i2(2,0:3)
+      integer i1_start(2,0:3)
+      integer i2_start(2,0:3)
       common / ptrans_blk2 / iq_to_i1,iq_to_i2,iz_to_i2,
      >                       i1_start,i2_start
 
@@ -2133,11 +2222,11 @@ c         msgtype   = 1
 #include "D3dB.fh"
 
 *     **** indexing variables ****
-      integer iq_to_i1(2,0:1)
-      integer iq_to_i2(2,0:1)
-      integer iz_to_i2(2,0:1)
-      integer i1_start(2,0:1)
-      integer i2_start(2,0:1)
+      integer iq_to_i1(2,0:3)
+      integer iq_to_i2(2,0:3)
+      integer iz_to_i2(2,0:3)
+      integer i1_start(2,0:3)
+      integer i2_start(2,0:3)
       common / ptrans_blk2 / iq_to_i1,iq_to_i2,iz_to_i2,
      >                       i1_start,i2_start
 
@@ -2145,15 +2234,22 @@ c         msgtype   = 1
 *     **** local variables ***
       logical value
       integer status(2),request2(2)
-      integer np,n2
-      
+      integer np,n2,id
+
+      !id=2*(nbb/2)+1      
+      if (nbb.lt.2) then
+         id = 1
+      else
+         id = 3
+      end if
       call Parallel2d_np_i(np)
       if (np.gt.1) call Parallel_mpiWaitAll(reqcnt,request)
 
 *     **** unpack A(i) array ****
       n2 = int_mb(i2_start(1,nbb)+np) - 1
       call D3dB_pfft_index2_copy(n2,int_mb(iq_to_i2(1,nbb)),tmp2,A)
-      call D3dB_pfft_index2_zero(nfft3d(1)-n2,int_mb(iz_to_i2(1,nbb)),A)
+      call D3dB_pfft_index2_zero(nfft3d(id)-n2,
+     >                           int_mb(iz_to_i2(1,nbb)),A)
       return
       end
 
@@ -2197,12 +2293,12 @@ c         msgtype   = 1
 
 
 *     **** indexing variables ****
-      integer h_iq_to_i1(2,6,0:1)
-      integer h_iq_to_i2(2,6,0:1)
-      integer h_iz_to_i2(2,6,0:1)
-      integer h_iz_to_i2_count(6,0:1)
-      integer h_i1_start(2,6,0:1)
-      integer h_i2_start(2,6,0:1)
+      integer h_iq_to_i1(2,6,0:3)
+      integer h_iq_to_i2(2,6,0:3)
+      integer h_iz_to_i2(2,6,0:3)
+      integer h_iz_to_i2_count(6,0:3)
+      integer h_i1_start(2,6,0:3)
+      integer h_i2_start(2,6,0:3)
       common / ptrans_blk_ijk / h_iq_to_i1,
      >                         h_iq_to_i2,
      >                         h_iz_to_i2,
@@ -2227,8 +2323,6 @@ c     **** external functions ****
       call Parallel2d_np_i(np)
 
 
-!$OMP BARRIER
-!$OMP MASTER
 *     **** pack A(i) array ****
       n1 = int_mb(h_i1_start(1,op,nbb)+np) - 1
       call D3dB_pfft_index1_copy(n1,int_mb(h_iq_to_i1(1,op,nbb)),A,tmp1)
@@ -2237,11 +2331,15 @@ c     **** external functions ****
 *     **** it = 0, transpose data on same thread ****  
       msglen = int_mb(h_i2_start(1,op,nbb)+2-1) 
      >       - int_mb(h_i2_start(1,op,nbb)+1-1)
-      call dcopy(2*msglen,
-     >           tmp1(int_mb(h_i1_start(1,op,nbb))),1,
-     >           tmp2(int_mb(h_i2_start(1,op,nbb))),1)
+c      call dcopy(2*msglen,
+c     >           tmp1(int_mb(h_i1_start(1,op,nbb))),1,
+c     >           tmp2(int_mb(h_i2_start(1,op,nbb))),1)
+      call Parallel_shared_vector_copy(.true.,2*msglen,
+     >           tmp1(int_mb(h_i1_start(1,op,nbb))),
+     >           tmp2(int_mb(h_i2_start(1,op,nbb))))
 
 
+!$OMP MASTER
 *     **** receive packed array data ****
       reqcnt = 0
       do it = 1,np-1
@@ -2349,12 +2447,12 @@ c         msgtype   = 1
 #include "D3dB.fh"
 
 *     **** indexing variables ****
-      integer h_iq_to_i1(2,6,0:1)
-      integer h_iq_to_i2(2,6,0:1)
-      integer h_iz_to_i2(2,6,0:1)
-      integer h_iz_to_i2_count(6,0:1)
-      integer h_i1_start(2,6,0:1)
-      integer h_i2_start(2,6,0:1)
+      integer h_iq_to_i1(2,6,0:3)
+      integer h_iq_to_i2(2,6,0:3)
+      integer h_iz_to_i2(2,6,0:3)
+      integer h_iz_to_i2_count(6,0:3)
+      integer h_i1_start(2,6,0:3)
+      integer h_i2_start(2,6,0:3)
       common / ptrans_blk_ijk / h_iq_to_i1,
      >                         h_iq_to_i2,
      >                         h_iz_to_i2,
@@ -2370,13 +2468,11 @@ c         msgtype   = 1
 
       if (np.gt.1) call Parallel_mpiWaitAll(reqcnt,request)
 
-!$OMP SINGLE
 *     **** unpack A(i) array ****
       n2 = int_mb(h_i2_start(1,op,nbb)+np) - 1
       n3 = h_iz_to_i2_count(op,nbb)
       call D3dB_pfft_index2_copy(n2,int_mb(h_iq_to_i2(1,op,nbb)),tmp2,A)
       call D3dB_pfft_index2_zero(n3,int_mb(h_iz_to_i2(1,op,nbb)),A)
-!$OMP END SINGLE
 
       return
       end

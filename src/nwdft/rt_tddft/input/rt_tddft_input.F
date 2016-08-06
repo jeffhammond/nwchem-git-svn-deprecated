@@ -40,11 +40,11 @@ C      integer nsnapshots
       character*16 field_name
       character*255 tag_in, method
       integer prop_method, exp_method
+      logical use_dmat
 
       
 C     (parameters that must be supplied--no defaults)
       logical got_tmin, got_tmax, got_dt
-      
       integer nfields, nexcites
       
       
@@ -130,8 +130,35 @@ C
      $              1, loadtarget)) call errquit (pname//
      $              "failed to put 'init_movecs' target into rtdb",0,0)
 
+            elseif (loadopts .eq. "density") then
+               use_dmat=.true.
+               if (.not.rtdb_put(rtdb,'rt_tddft:use_dmat',mt_log,
+     $              1,use_dmat))
+     $            call errquit(pname//'Write failed to rtdb',0,RTDB_ERR)
+c              Read total (if CS) or alpha (if OS) dmat
+               if (.not.inp_a(loadtarget)) then
+                  call errquit (pname//
+     $                 "failed to parse 'load density' target",0,0)
+               endif
+               if (.not. rtdb_cput (rtdb, "rt_tddft:init_dmat1",
+     $              1, loadtarget)) call errquit (pname//
+     $              "failed to put 'init_density' target into rtdb",0,0)
+c              Read beta dmat if given (i.e. doing OS)
+               if (inp_a(loadtarget)) then
+                 if (.not. rtdb_cput (rtdb, "rt_tddft:init_dmat2",
+     $               1, loadtarget)) call errquit (pname//
+     $              "failed to put 'init_density' target into rtdb",0,0)
+               endif
+
             elseif (loadopts .eq. "scf") then
 C     (no need to do anything--will use SCF vectors as starting point if nothing in rtdb)
+               
+            elseif (loadopts .eq. "restart") then ! will look for *.rt_restart file
+               if (.not.rtdb_put (rtdb, "rt_tddft:restart",
+     $              mt_log, 1, .true.))
+     $              call errquit(pname//
+     $              'Write failed to rtdb',0,RTDB_ERR)
+               
             else
                call errquit (pname//"invalid 'load' option: "
      $              //loadopts,0,0)
@@ -161,6 +188,13 @@ C     visualization sub-block
 C
          elseif (inp_compare(.false.,test,'visualization')) then
             call rt_tddft_input_visualization (rtdb)
+
+
+C
+C     MO CAP sub-block
+C
+         elseif (inp_compare(.false.,test,'mocap')) then
+            call rt_tddft_input_mocap (rtdb)
             
             
 C     

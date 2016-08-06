@@ -2506,8 +2506,6 @@ c      electron_psi_vnl_ave = enlocal
 
 
 
-
-
 *     ***********************************
 *     *			 		*
 *     *   electron_semicoreforce 	*

@@ -4331,7 +4331,7 @@ C
        EXTERNAL MV7
 *
        TEST = 1.0D-6
-       IPRT= 2 
+       IPRT= 1
        IF(IPRT.GE.1.and.ga_nodeid().eq.0) THEN
          WRITE(6,*) ' MINDV4 in action '
          WRITE(6,*) ' Convergence threshold for residual = ', TEST
@@ -4377,10 +4377,10 @@ CNW      CALL FRMDSC(VEC1,NVAR,-1  ,LU1,IMZERO,IAMPACK)
 *
 C?       CALL WRTMAT(VEC1,1,NVAR,1,NVAR)
 *
-         call ga_zero(VEC2) !VOG
+         call ga_zero(VEC2) 
          CALL MV7(VEC1,VEC2,0,0,0,0)
 CNW      CALL TODSC(VEC2,NVAR,-1  ,LU2)
-         status = dra_inquire(LU2,itype,idim1,idim2,myname,filename)
+!         write(*,*) ga_nodeid(), NVAR, IVEC
          if (dra_write_section(.false.,VEC2,1,NVAR,1,1,LU2,1,NVAR,
      &       IVEC,IVEC,itask).ne.0) call errquit('dra error',itask,911)
          if(dra_wait(itask).ne.0) call errquit('dra writ err',itask,911)
@@ -5051,13 +5051,12 @@ CNW   CALL FRMDSC(VEC1,NVAR,-1  ,LU1,IMZERO,IAMPACK)
           IF(IPRT.GE.1000) THEN
             WRITE(6,1200)
  1200       FORMAT(1H0,'The final approximation to eigenvector')
-            CALL REWINO( LU1)
-            CALL FRMDSC(VEC1,NVAR,-1  ,LU1,IMZERO,IAMPACK)
+cVOG        CALL REWINO( LU1)
+cVOG        CALL FRMDSC(VEC1,NVAR,-1  ,LU1,IMZERO,IAMPACK)
             CALL WRTMAT(VEC1,1,NVAR,1,NVAR)
           END IF
           if (ga_nodeid().eq.0) then
           WRITE(6,1300)
-CVOG      if (ga_nodeid().eq.0) then
  1300     FORMAT(1H0,' Summary of iterations ',/,1H
      +          ,' ----------------------')
           WRITE(6,1310)

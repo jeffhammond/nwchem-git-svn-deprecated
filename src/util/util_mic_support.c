@@ -27,6 +27,8 @@
 static short int mic_get_num_initialized=0;
 static int num_mic_devs;
 
+long __attribute__((target(mic)))  sysconf(int );
+
 extern int util_cgetppn();
 extern int util_my_smp_index();
 extern int util_my_smp_master();
@@ -108,8 +110,9 @@ int util_mic_get_num_devices_() {
 #endif
   }
   
+    MPI_Comm ga_comm=GA_MPI_Comm_pgroup_default();
     /*get world group handle to be used later */
-    err=MPI_Comm_group(MPI_COMM_WORLD, &wgroup_handle);
+    err=MPI_Comm_group(ga_comm, &wgroup_handle);
     if (err != MPI_SUCCESS) {
       fprintf(stdout,"util_getppn: MPI_Comm_group failed\n");
       GA_Error("util_getppn error", 0L);
@@ -125,7 +128,7 @@ int util_mic_get_num_devices_() {
     }
     
     /* Create new new communicator for the newly created group */
-    err=MPI_Comm_create(MPI_COMM_WORLD, group_handle, &group_comm);
+    err=MPI_Comm_create(ga_comm, group_handle, &group_comm);
     if (err != MPI_SUCCESS) {
       fprintf(stdout,"util_micdevs: MPI_Comm_group failed\n");
       GA_Error("util_micdevs error", 0L);
@@ -205,9 +208,16 @@ void FATR util_mic_set_affinity_() {
 	
 	nthreads = nprocs / ranks_per_device * DEFAULT_OFFLOAD_THREAD_MULTIPLIER;
 	
+#if __INTEL_COMPILER > 1599
+	pos+=snprintf(affinity+pos, BUFSZ-pos, "%dc@%o,%dt",
+	              nprocs / ranks_per_device, 
+		      rank_on_dev * (nprocs / ranks_per_device),
+		      DEFAULT_OFFLOAD_THREAD_MULTIPLIER);
+#else
 	pos+=snprintf(affinity+pos, BUFSZ-pos, "%dc,%dt,%do",
 	              nprocs / ranks_per_device, DEFAULT_OFFLOAD_THREAD_MULTIPLIER,
 				  rank_on_dev * (nprocs / ranks_per_device));
+#endif
 	snprintf(num_threads, BUFSZ, "OMP_NUM_THREADS=%d", nthreads);
 	
 	printf("%02d: micdev=%d nprocs=%d rank_on_dev=%d ranks_per_device=%d affinity='%s' pos=%d\n", 

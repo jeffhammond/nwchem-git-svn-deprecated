@@ -47,7 +47,7 @@
 *     ***** energy variables ****
       integer ms,ispin
       real*8  E(40),en(2)
-      real*8  dipole(3)
+      real*8  dipole(3),cdipole(3)
       real*8  stress(3,3),lstress(6)
 
 *     **** gradient variables ****
@@ -154,8 +154,8 @@
       integer  control_ks_maxit_orb,control_ks_maxit_orbs
       external control_ks_maxit_orb,control_ks_maxit_orbs
 
-      logical  pspw_bqext,control_Fei
-      external pspw_bqext,control_Fei
+      logical  pspw_bqext,control_Fei,control_periodic_dipole
+      external pspw_bqext,control_Fei,control_periodic_dipole
 
       integer  control_bo_steps_in,control_bo_steps_out
       integer  control_bo_algorithm,control_opt_algorithm
@@ -683,7 +683,13 @@ c         end if
       dipole(1) = 0.0d0
       dipole(2) = 0.0d0
       dipole(3) = 0.0d0
-      if (flag.gt.-1) call rho_dipole(dipole)
+      cdipole(1) = 0.0d0
+      cdipole(2) = 0.0d0
+      cdipole(3) = 0.0d0
+      if (flag.gt.-1) then
+        call rho_dipole(dipole)
+        if (control_periodic_dipole()) call psi1_crystal_dipole(cdipole)
+      end if
 
 
 *     **** calculate the stress tensor ****
@@ -706,6 +712,9 @@ c         end if
       value = value.and.
      >        btdb_put(rtdb,'pspw:dipole',mt_dbl,
      >                 3,dipole)
+      value = value.and.
+     >        btdb_put(rtdb,'pspw:crystal_dipole',mt_dbl,
+     >                 3,cdipole)
       end if
       if (flag.gt.0) then
         value = value.and.

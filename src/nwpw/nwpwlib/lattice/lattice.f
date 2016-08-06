@@ -560,6 +560,152 @@
 
 *     ********************************************
 *     *                                          *
+*     *          lattice_unita_small             *
+*     *                                          *
+*     ********************************************
+      real*8 function lattice_unita_small(i,j)
+      implicit none
+      integer i,j
+
+*     **** common block ****
+      logical has_small
+      real*8  omega_small
+      real*8  unita_small(3,3),unitg_small(3,3)
+      common /lattice_small_block/ unita_small,unitg_small,
+     >                             omega_small,has_small
+
+      lattice_unita_small = unita_small(i,j)
+      return
+      end
+
+*     ********************************************
+*     *                                          *
+*     *          lattice_unita_frozen_small      *
+*     *                                          *
+*     ********************************************
+      real*8 function lattice_unita_frozen_small(i,j)
+      implicit none
+      integer i,j
+
+*     **** common block ****
+      real*8  omega_frozen_small
+      real*8  unita_frozen_small(3,3),unitg_frozen_small(3,3)
+      common /lattice_small_frozen_block/ unita_frozen_small,
+     >                             unitg_frozen_small,
+     >                             omega_frozen_small
+
+      lattice_unita_frozen_small = unita_frozen_small(i,j)
+      return
+      end
+
+
+*     ********************************************
+*     *                                          *
+*     *          lattice_unitg_small             *
+*     *                                          *
+*     ********************************************
+      real*8 function lattice_unitg_small(i,j)
+      implicit none
+      integer i,j
+
+*     **** common block ****
+      logical has_small
+      real*8  omega_small
+      real*8  unita_small(3,3),unitg_small(3,3)
+      common /lattice_small_block/ unita_small,unitg_small,
+     >                             omega_small,has_small
+
+      lattice_unitg_small = unitg_small(i,j)
+      return
+      end
+
+*     ********************************************
+*     *                                          *
+*     *          lattice_unitg_frozen_small      *
+*     *                                          *
+*     ********************************************
+      real*8 function lattice_unitg_frozen_small(i,j)
+      implicit none
+      integer i,j
+
+*     **** common block ****
+      real*8  omega_frozen_small
+      real*8  unita_frozen_small(3,3),unitg_frozen_small(3,3)
+      common /lattice_small_frozen_block/ unita_frozen_small,
+     >                             unitg_frozen_small,
+     >                             omega_frozen_small
+
+      lattice_unitg_frozen_small = unitg_frozen_small(i,j)
+      return
+      end
+
+
+
+*     ********************************************
+*     *                                          *
+*     *          lattice_omega_small             *
+*     *                                          *
+*     ********************************************
+      real*8 function lattice_omega_small(i,j)
+      implicit none
+      integer i,j
+
+*     **** common block ****
+      logical has_small
+      real*8  omega_small
+      real*8  unita_small(3,3),unitg_small(3,3)
+      common /lattice_small_block/ unita_small,unitg_small,
+     >                             omega_small,has_small
+
+      lattice_omega_small = omega_small
+      return
+      end
+
+*     ********************************************
+*     *                                          *
+*     *          lattice_omega_frozen_small      *
+*     *                                          *
+*     ********************************************
+      real*8 function lattice_omega_frozen_small()
+      implicit none
+      integer i,j
+
+*     **** common block ****
+      real*8  omega_frozen_small
+      real*8  unita_frozen_small(3,3),unitg_frozen_small(3,3)
+      common /lattice_small_frozen_block/ unita_frozen_small,
+     >                             unitg_frozen_small,
+     >                             omega_frozen_small
+
+      lattice_omega_frozen_small = omega_frozen_small
+      return
+      end
+
+*     ********************************************
+*     *                                          *
+*     *          lattice_has_small               *
+*     *                                          *
+*     ********************************************
+      logical function lattice_has_small()
+      implicit none
+
+*     **** common block ****
+      logical has_small
+      real*8  omega_small
+      real*8  unita_small(3,3),unitg_small(3,3)
+      common /lattice_small_block/ unita_small,unitg_small,
+     >                             omega_small,has_small
+
+      lattice_has_small = has_small
+      return
+      end
+
+
+
+
+
+*     ********************************************
+*     *                                          *
 *     *          lattice_unitg_frozen            *
 *     *                                          *
 *     ********************************************
@@ -771,6 +917,18 @@
      >                         ecut_frozen,wcut_frozen,
      >                         omega_frozen,frozen
 
+      logical has_small
+      real*8  omega_small
+      real*8  unita_small(3,3),unitg_small(3,3)
+      common /lattice_small_block/ unita_small,unitg_small,
+     >                             omega_small,has_small
+
+      real*8  omega_frozen_small
+      real*8  unita_frozen_small(3,3),unitg_frozen_small(3,3)
+      common /lattice_small_frozen_block/ unita_frozen_small,
+     >                             unitg_frozen_small,
+     >                             omega_frozen_small
+
 
 *     **** local variables ****
       integer nx,ny,nz
@@ -780,12 +938,12 @@
       real*8  ecut0,wcut0
 
 *     **** external functions ****
-      logical  control_frozen
-      integer  control_ngrid
+      logical  control_frozen,control_has_ngrid_small
+      integer  control_ngrid,control_ngrid_small
       real*8   control_unita,control_ecut,control_wcut
       real*8   control_unita_frozen
-      external control_frozen
-      external control_ngrid
+      external control_frozen,control_has_ngrid_small
+      external control_ngrid,control_ngrid_small
       external control_unita,control_ecut,control_wcut
       external control_unita_frozen
         
@@ -867,8 +1025,123 @@ c     call D3dB_nz(1,nz)
       wcut_frozen = wcut
       ecut_frozen = ecut
 
+
+*     **** small cell ****
+      has_small = control_has_ngrid_small()
+      if (has_small) then
+         gg1 = dble(control_ngrid_small(1))/dble(nx)
+         gg2 = dble(control_ngrid_small(2))/dble(ny)
+         gg3 = dble(control_ngrid_small(3))/dble(nz)
+         unita_small(1,1) = unita(1,1)*gg1
+         unita_small(2,1) = unita(2,1)*gg1
+         unita_small(3,1) = unita(3,1)*gg1
+         unita_small(1,2) = unita(1,2)*gg2
+         unita_small(2,2) = unita(2,2)*gg2
+         unita_small(3,2) = unita(3,2)*gg2
+         unita_small(1,3) = unita(1,3)*gg3
+         unita_small(2,3) = unita(2,3)*gg3
+         unita_small(3,3) = unita(3,3)*gg3
+         call get_cube(unita_small,unitg_small,omega_small)
+         unita_frozen_small(1,1) = unita_frozen(1,1)*gg1
+         unita_frozen_small(2,1) = unita_frozen(2,1)*gg1
+         unita_frozen_small(3,1) = unita_frozen(3,1)*gg1
+         unita_frozen_small(1,2) = unita_frozen(1,2)*gg2
+         unita_frozen_small(2,2) = unita_frozen(2,2)*gg2
+         unita_frozen_small(3,2) = unita_frozen(3,2)*gg2
+         unita_frozen_small(1,3) = unita_frozen(1,3)*gg3
+         unita_frozen_small(2,3) = unita_frozen(2,3)*gg3
+         unita_frozen_small(3,3) = unita_frozen(3,3)*gg3
+         call get_cube(unita_frozen_small,
+     >                 unitg_frozen_small,
+     >                 omega_frozen_small)
+      end if
+
       return
       end
+
+
+*     *******************************
+*     *                             *
+*     *         lattice_p_grid      *
+*     *                             *
+*     *******************************
+*
+*     This routine computes coordinates of grid points in
+*     the unit cell
+*
+*     Uses -
+*          Parallel_taskid --- processor number
+*          D3dB_nx --- number of grid points in direction 1
+*          D3dB_ny --- number of grid points in direction 2
+*          D3dB_nz --- number of grid points in direction 2
+*          lattice_unita -- primitive lattice vectors in real space
+*
+*     Exit -
+*          xs  --- coordinates of grid points (Rx,Ry,Rz)
+*
+*
+      subroutine lattice_p_grid(xs)
+      implicit none
+      real*8 xs(*)
+
+*     **** local variables ****
+      integer nfft3d,n2ft3d
+      integer i,j,k,p,taskid
+      integer idx,k1,k2,k3
+      integer np1,np2,np3
+      integer nph1,nph2,nph3
+      real*8  a(3,3),dk1,dk2,dk3,twopi
+
+
+*     **** constants ****
+      call Parallel2d_taskid_i(taskid)
+      call D3dB_nfft3d(1,nfft3d)
+      n2ft3d = 2*nfft3d
+      call D3dB_nx(1,np1)
+      call D3dB_ny(1,np2)
+      call D3dB_nz(1,np3)
+      twopi = 8.0d0*datan(1.0d0)
+
+      nph1 = np1/2
+      nph2 = np2/2
+      nph3 = np3/2
+
+*     **** elemental vectors ****
+      call dcopy(9,0.0d0,0,a,1)
+      a(1,1) = twopi/dble(np1)
+      a(2,2) = twopi/dble(np2)
+      a(3,3) = twopi/dble(np3)
+
+      call dcopy(6*n2ft3d,0.0d0,0,xs,1)
+
+*     **** grid points in coordination space ****
+      do k3 = -nph3, nph3-1
+        do k2 = -nph2, nph2-1
+          do k1 = -nph1, nph1-1
+
+               i = k1 + nph1
+               j = k2 + nph2
+               k = k3 + nph3
+
+               call D3dB_ijktoindex2p(1,i+1,j+1,k+1,idx,p)
+               if (p .eq. taskid) then
+                dk1=dble(k1)
+                dk2=dble(k2)
+                dk3=dble(k3)
+                xs(idx)         =dcos(a(1,1)*dk1+a(1,2)*dk2+a(1,3)*dk3)
+                xs(idx+n2ft3d)  =dsin(a(1,1)*dk1+a(1,2)*dk2+a(1,3)*dk3)
+                xs(idx+2*n2ft3d)=dcos(a(2,1)*dk1+a(2,2)*dk2+a(2,3)*dk3)
+                xs(idx+3*n2ft3d)=dsin(a(2,1)*dk1+a(2,2)*dk2+a(2,3)*dk3)
+                xs(idx+4*n2ft3d)=dcos(a(3,1)*dk1+a(3,2)*dk2+a(3,3)*dk3)
+                xs(idx+5*n2ft3d)=dsin(a(3,1)*dk1+a(3,2)*dk2+a(3,3)*dk3)
+               end if
+          end do
+        end do
+      end do
+
+      return
+      end
+
 
 
 
@@ -1038,6 +1311,78 @@ c                r(3,index) = a(3,1)*k1 + a(3,2)*k3 + a(3,3)*k2
 
       return
       end
+
+
+      subroutine lattice_r_grid_sym0(r)
+      implicit none
+      real*8 r(*)
+
+*     **** local variables ****
+      integer nfft3d,n2ft3d
+      integer i,j,k,p,taskid
+      integer index,k1,k2,k3
+      integer np1,np2,np3
+      integer nph1,nph2,nph3
+      real*8  a(3,3),dk1,dk2,dk3
+
+*     **** external functions ****
+      real*8   lattice_unita
+      external lattice_unita
+
+
+*     **** constants ****
+      call Parallel2d_taskid_i(taskid)
+      call D3dB_nfft3d(1,nfft3d)
+      n2ft3d = 2*nfft3d
+      call D3dB_nx(1,np1)
+      call D3dB_ny(1,np2)
+      call D3dB_nz(1,np3)
+
+      nph1 = np1/2
+      nph2 = np2/2
+      nph3 = np3/2
+
+*     **** elemental vectors ****
+      do i=1,3
+         a(i,1) = lattice_unita(i,1)/dble(np1)
+         a(i,2) = lattice_unita(i,2)/dble(np2)
+         a(i,3) = lattice_unita(i,3)/dble(np3)
+      end do
+
+      call dcopy(3*n2ft3d,0.0d0,0,r,1)
+
+*     **** grid points in coordination space ****
+      do k3 = -nph3+1, nph3-1
+        do k2 = -nph2+1, nph2-1
+          do k1 = -nph1+1, nph1-1
+
+               i = k1 + nph1
+               j = k2 + nph2
+               k = k3 + nph3
+
+               !call D3dB_ktoqp(1,k+1,q,p)
+               call D3dB_ijktoindex2p(1,i+1,j+1,k+1,index,p)
+               if (p .eq. taskid) then
+c                 index = (q-1)*(np1+2)*np2
+c    >                  + j    *(np1+2)
+c    >                  + i+1
+                dk1=dble(k1)
+                dk2=dble(k2)
+                dk3=dble(k3)
+                r(index)          = a(1,1)*dk1 + a(1,2)*dk2 + a(1,3)*dk3
+                r(index+  n2ft3d) = a(2,1)*dk1 + a(2,2)*dk2 + a(2,3)*dk3
+                r(index+2*n2ft3d) = a(3,1)*dk1 + a(3,2)*dk2 + a(3,3)*dk3
+               end if
+          end do
+        end do
+      end do
+
+      return
+      end
+
+
+
+
 
       subroutine lattice_mask_sym(r)
       implicit none

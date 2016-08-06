@@ -58,7 +58,7 @@ c
 c
 c     cosmo code
 c
-      logical odbug
+      logical odebug
       logical osome
 c
       double precision egas
@@ -125,14 +125,14 @@ c
       converged = .false.
 c
    9  continue
-      odbug=.false.
-      odbug=odbug.and.ga_nodeid().eq.0
+      odebug=.false.
+      odebug=odebug.and.ga_nodeid().eq.0
       if(cosmo_on.and.cosmo_phase.eq.1) then
          osome=ga_nodeid().eq.0
          if(osome) then
             write(LuOut,909)
          endif
-         if(odbug) then
+         if(odebug) then
             write(LuOut,*) 'mode = ',mode
          endif
       elseif(cosmo_on.and.cosmo_phase.eq.2) then
@@ -146,7 +146,7 @@ c
          if(osome) then
             write(LuOut,910)
          endif
-         if(odbug) then
+         if(odebug) then
             write(LuOut,*) 'mode = ',mode
          endif
       endif
@@ -239,33 +239,26 @@ c
 c     
 c     ----- if sol_phase=.T. go back and do solution phase -----
 c
-      odbug=.false.
-      odbug=odbug.and.ga_nodeid().eq.0
+      odebug=.false.
+      odebug=odebug.and.ga_nodeid().eq.0
       if(cosmo_on.and.cosmo_phase.eq.1) then
          converged =.false.
          egas      =energy
+         if (.not. rtdb_put(rtdb, 'cosmo:egas', MT_DBL, 1, egas))
+     &     call errquit('dft_uks_nr_solve: failed to store egas', 0,
+     &       RTDB_ERR)
+c
          cosmo_phase = 2
-         if(odbug) then
+         if(odebug) then
             write(LuOut,*) 'gas_phase done, do sol-phase now ...'
          endif
          call ga_sync()
          go to 9
       elseif(cosmo_on.and.cosmo_phase.eq.2) then
          esol      =energy
-         if(ga_nodeid().eq.0) then
-            write(LuOut,915)
-            write(LuOut,*) '                 COSMO solvation results'
-            write(LuOut,*) '                 -----------------------'
-            write(LuOut,915)
-            write(LuOut,912) egas
-            write(LuOut,913) esol
-            write(LuOut,914) (egas-esol),(egas-esol)*627.509451d+00
- 912     format('                 gas phase energy = ',f20.10)
- 913     format('                 sol phase energy = ',f20.10)
- 914     format(' (electrostatic) solvation energy = ',f20.10,
-     $          ' (',f8.2,' kcal/mol)'                       )
- 915     format(' ')
-         endif
+         if (.not. rtdb_put(rtdb, 'cosmo:esol', MT_DBL, 1, esol))
+     &     call errquit('dft_uks_nr_solve: failed to store esol', 0,
+     &       RTDB_ERR)
       endif
 c
       if (ga_nodeid().eq.0) call util_flush(6)

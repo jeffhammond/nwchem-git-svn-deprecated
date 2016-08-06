@@ -42,7 +42,7 @@
 
       !character*30 cell_name
       character*50 rtdb_unita,rtdb_unitaf,rtdb_ngrid,rtdb_boundry
-      character*50 exchange_correlation
+      character*50 exchange_correlation,rtdb_ngrid_small
       integer i,l,np
 !      integer ind ! unused
 
@@ -159,6 +159,12 @@
       end if
       if (.not.btdb_get(rtdb,'nwpw:fmm_lr',mt_int,1,fmm_lr)) then
          fmm_lr = 1
+      end if
+
+*     **** get periodic_dipole ****
+      if (.not.btdb_get(rtdb,'nwpw:periodic_dipole',
+     >                  mt_log,1,periodic_dipole)) then
+         periodic_dipole = .false.
       end if
 
 *     **** get smooth_cuoff ****
@@ -1075,6 +1081,7 @@ c         return
       rtdb_unitaf = cell_name(1:l)//':unita_frozen'
       rtdb_ngrid = cell_name(1:l)//':ngrid'
       rtdb_boundry = cell_name(1:l)//':boundry'
+      rtdb_ngrid_small = cell_name(1:l)//':ngrid_small'
 
            
 *     **** define unita and boundary ****
@@ -1141,6 +1148,15 @@ c         return
          !ngrid(2) = 32
          !ngrid(3) = 32
       end if
+
+
+*     **** define ngrid_small ****
+      has_ngrid_small = .false.
+      ngrid_small(1) = 0
+      ngrid_small(2) = 0
+      ngrid_small(3) = 0
+      if (btdb_get(rtdb,rtdb_ngrid_small,mt_int,3,ngrid_small))
+     >   has_ngrid_small = .true.
 
 
 *     **** set fractional (smearing) parameters ****
@@ -1856,6 +1872,34 @@ c         mtensor(3,3) = z
       end
 
 
+*     ***********************************
+*     *                                 *
+*     *         control_ngrid_small     *
+*     *                                 *
+*     ***********************************
+      integer function control_ngrid_small(ijk)
+      implicit none
+      integer ijk
+
+#include "control.fh"
+
+      control_ngrid_small = ngrid_small(ijk)
+      return
+      end
+
+*     ***********************************
+*     *                                 *
+*     *     control_has_ngrid_small     *
+*     *                                 *
+*     ***********************************
+      logical function control_has_ngrid_small()
+      implicit none
+
+#include "control.fh"
+
+      control_has_ngrid_small = has_ngrid_small
+      return
+      end
 
 
 *     ***********************************
@@ -2592,6 +2636,22 @@ c      end
       return 
       end
 
+
+*     ***********************************
+*     *                                 *
+*     *        control_is_grimme2       *
+*     *                                 *
+*     ***********************************
+      logical function control_is_grimme2()
+      implicit none
+
+#include "control.fh"
+
+      control_is_grimme2 = is_grimme2
+      return
+      end
+
+
 *     ***********************************
 *     *                                 *
 *     *        control_has_disp         *
@@ -3081,6 +3141,34 @@ c      end
       control_qmmm = task_qmmm
       return
       end
+
+
+*     *****************************
+*     *                           *
+*     *     control_makehmass2    *
+*     *                           *
+*     *****************************
+      logical function control_makehmass2()
+      implicit none
+
+#include "bafdecls.fh"
+#include "btdb.fh"
+#include "util.fh"
+
+      logical makehmass2
+
+*     **** control_rtdb common block ****
+      integer rtdb
+      common / control_rtdb1 / rtdb
+
+      if( .not. btdb_get(rtdb,'nwpw:makehmass2',mt_log,1,makehmass2))
+     >  makehmass2 = .true.
+
+      control_makehmass2 = makehmass2
+      return
+      end
+
+
 
 *     *****************************
 *     *                           *
@@ -4642,6 +4730,20 @@ c      end
 #include "control.fh"
 
       control_fmm = fmm
+      return
+      end
+
+*     ************************************
+*     *                                  *
+*     *      control_periodic_dipole     *
+*     *                                  *
+*     ************************************
+      logical function control_periodic_dipole()
+      implicit none
+
+#include "control.fh"
+
+      control_periodic_dipole = periodic_dipole
       return
       end
 

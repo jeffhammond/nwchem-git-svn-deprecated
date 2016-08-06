@@ -65,7 +65,7 @@ c
 c ... jochen:
       integer aoresponse, nfreq, l_fr, k_fr, 
      &        velocity, magneticpert, aor_giao, aor_damp, aor_conv,
-     &        aor_orbeta, aor_quad, aor_analyze
+     &        aor_orbeta, aor_gprime, aor_quad, aor_analyze
       double precision gamwidth, convergence
 c     
 c>>>  declarations from NWdft
@@ -130,11 +130,13 @@ c ... jochen:
       aor_damp          = 1
       aor_conv          = 1
       aor_orbeta        = 1
+      aor_gprime        = 1
       aor_quad          = 1
       aor_analyze       = 1
       nfreq             = 0
       cphf3write        = 0 ! FA
       checkorth         = 0 ! FA
+      gamwidth          = 0d0
 c     
 c     read inputs; store in rtdb
 c     
@@ -271,7 +273,9 @@ c  ... jochen: parse input for response/aoresponse key
       elseif ( inp_compare(.false., 'giao', test)) then
          aor_giao = 0
       elseif ( inp_compare(.false., 'orbeta', test)) then
-         aor_orbeta = 0
+        aor_orbeta = 0
+      elseif ( inp_compare(.false., 'gprime', test)) then
+         aor_gprime = 0
       elseif ( inp_compare(.false., 'bdtensor', test)) then
          aor_quad = 0
       elseif ( inp_compare(.false., 'analysis', test)) then
@@ -690,6 +694,9 @@ c             "nocheck" option which is used later in hnd_property.F
       if (.not. rtdb_put(rtdb, 'aoresponse:orbeta', mt_int, 1,
      $   aor_orbeta))
      $   call errquit('prop_input: rtdb_put failed', 0, RTDB_ERR)
+      if (.not. rtdb_put(rtdb, 'aoresponse:gprime', mt_int, 1,
+     $   aor_gprime))
+     $   call errquit('prop_input: rtdb_put failed', 0, RTDB_ERR)      
       if (.not. rtdb_put(rtdb, 'aoresponse:quad', mt_int, 1,
      $   aor_quad))
      $   call errquit('prop_input: rtdb_put failed', 0, RTDB_ERR)

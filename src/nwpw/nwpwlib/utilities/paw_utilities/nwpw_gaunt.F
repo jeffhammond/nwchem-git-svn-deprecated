@@ -136,11 +136,12 @@ c
       real*8   nwpw_gaunt_sub
       external nwpw_gaunt_sub
 
+      call nwpw_timing_start(51)
       if ((l1.gt.nwpw_gaunt_lmax).or.
      >    (l2.gt.nwpw_gaunt_lmax).or.
      >    (l3.gt.nwpw_gaunt_lmax).or.
      >    (iscmplx.neqv.nwpw_gaunt_iscmplx)) then
-        write(*,*) "calling gaunt_sub=",l1,m1,l2,m2,l3,m3
+        !write(*,*) "calling gaunt_sub=",l1,m1,l2,m2,l3,m3
         gg = nwpw_gaunt_sub(iscmplx,l1,m1,l2,m2,l3,m3)
       else
          i = l1**2 + (l1+m1)
@@ -152,6 +153,7 @@ c
          gg = dbl_mb(nwpw_gaunt_coeff(1)+indx)
 
       end if
+      call nwpw_timing_end(51)
       nwpw_gaunt = gg
 
       return

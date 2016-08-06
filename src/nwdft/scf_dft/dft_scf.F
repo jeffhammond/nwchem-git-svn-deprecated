@@ -40,7 +40,7 @@ c
 #include "dftps.fh"
 #include "cosmo.fh"
 #include "zora.fh"
-#include "dimqm.fh"
+cold#include "dimqm.fh"
 c     
       Logical movecs_write, movecs_converged, movecs_read
       External movecs_write, movecs_converged, movecs_read
@@ -50,7 +50,7 @@ c
 c
       integer g_s ! [in]
 c
-      logical use_nwxc
+      logical use_nwxc,use_dimqm
       logical lvan, do_ddl, lbrak, check
       double precision dl_conv, dl2, ddl2, x1, x2, fddl, dlold
       logical lcdft
@@ -129,8 +129,6 @@ c
       parameter(zero = 0.d0, one = 1.d0, onem = -one)
 c
       integer ilo, ihi          ! For printing movecs analysis
-      double precision eval_pr_tol_lo, eval_pr_tol_hi
-      parameter (eval_pr_tol_lo = -1.5d0, eval_pr_tol_hi=0.5)
 c
       double precision dft_dencvg, dft_time
       external dft_dencvg
@@ -219,6 +217,8 @@ cc     AJL/Begin/FDE
       integer g_vxc_fde(4)
       integer g_xcinv_fde
       integer g_dens_fde(2)
+      logical ldimqm, dimqm_go
+      double precision edimqm
 cc     AJL/End
 c
       gotsmear(ss)=abs(ss).gt.1d-9
@@ -234,6 +234,10 @@ c
       double precision gstote, estote
       integer do_cosmo_vem, istep_cosmo_vem
       logical do_cosmo_smd
+
+C     RTDB flag for printing out all matrices
+      logical lprint_mats
+
 c
       gcds = 0.d0
       do_cosmo_vem = 0
@@ -364,9 +368,8 @@ c     check for FON in rtdb:
       endif
 
 c     read MO analysis threshold
-      tanalyze = 0.15d0
       if (.not.rtdb_get(rtdb,'movecs:tanalyze',MT_DBL,1,tanalyze))
-     &   tanalyze = 0.15d0
+     &   tanalyze = 0.025d0
 
 
 c
@@ -439,6 +442,16 @@ c     Jorge Garza/End
       use_nwxc = util_module_avail("nwxc")
       if (use_nwxc) then
          call nwxc_getvals("nwxc_is_on",use_nwxc)
+      endif
+      use_dimqm = util_module_avail("dimqm")
+      if (use_dimqm) then
+         call dimqm_init(rtdb)
+         call dimqm_used(ldimqm)
+         call dimqm_getgo(dimqm_go)
+      else
+         ldimqm=.false.
+         dimqm_go=.false.
+         edimqm=0d0
       endif
 c
 c     Set aside some memory for reduced density matrix
@@ -546,18 +559,27 @@ c
         levelshifting = .false.
         rlshift = rlshift_def
       endif
+c
+c     init diis handles to detect allocation
+c
+      k_gdiis=-1
+      k_mdiis=-1
+      k_hess=-1
+      
       if (nodiis)then
          diising = .false.
       else
          if (.not.MA_alloc_Get(MT_int,nfock*ipol*2,
      ,        'ga handle for diis',l_gdiis,k_gdiis))
      ,        call errquit('dft_scf: cannot allocate g_diis',0, MA_ERR)
-         if (.not.MA_alloc_Get(MT_DBL,nfock*nconstr,
-     ,        'ga handle for diis',l_mdiis,k_mdiis))
-     ,        call errquit('dft_scf: cannot allocate mdiis',0, MA_ERR)
-         if (.not.MA_alloc_Get(MT_DBL,max(nfock,nconstr)*nconstr,
-     ,        'ga handle for diis',l_hess,k_hess))
-     ,        call errquit('dft_scf: cannot allocate mdiis',0, MA_ERR)
+         if(nconstr.ne.0) then
+            if (.not.MA_alloc_Get(MT_DBL,nfock*nconstr,
+     ,           'ga handle for mdiis',l_mdiis,k_mdiis))
+     ,           call errquit('dft_scf: cannot allocate mdiis',0,MA_ERR)
+            if (.not.MA_alloc_Get(MT_DBL,max(nfock,nconstr)*nconstr,
+     ,           'ga handle for hess',l_hess,k_hess))
+     ,           call errquit('dft_scf: cannot allocate hess',0, MA_ERR)
+         endif
       endif
 
       homo_lumo_gap = 200.0d0
@@ -795,8 +817,11 @@ c     == better have static ldb at high node counts ==
           call ga_copy(g_dens(1),g_dens(2))
           call ga_dscal(g_dens(1),dble(ntotel-nclosed)/(ntotel))
           call ga_dscal(g_dens(2),dble(nclosed)/(ntotel))
-          if(oskel) call ga_symmetrize(g_dens(2))
         endif
+      if(oskel) then
+        call ga_symmetrize(g_dens(1))
+        if(ipol.eq.2) call ga_symmetrize(g_dens(2))
+      endif
         goto 1789
       endif
       if(oskel) then
@@ -1187,7 +1212,10 @@ c
 c
 c     DIM/QM JEM
 c     Add DIM energy
-      if (ldimqm .and. dimqm_go) Etnew = Etnew + Edimqm
+      if (ldimqm .and. dimqm_go) then
+         call dimqm_getenergy(edimqm)
+         Etnew = Etnew + Edimqm
+      endif
 c
 c     
 c     == is this a oneshot "noscf" type calculation, no diagonalization ==
@@ -1495,6 +1523,11 @@ c
          pstrace=ga_ddot(g_dens,g_s)
          if(ga_nodeid().eq.0) write (luout,'(5x,a,1x,e15.7)')
      &      'tr(P*S): ',pstrace 
+         if(ipol.eq.2) then
+            pstrace=ga_ddot(g_dens(2),g_s)
+            if(ga_nodeid().eq.0) write (luout,'(5x,a,1x,e15.7)')
+     &           'tr(P_beta*S): ',pstrace 
+         endif
       endif
 c
       if (oprint_time)
@@ -1537,6 +1570,7 @@ c
 c     check for symmetry breaking
 c
       if(oskel) then
+c      if(.false.) then
           call dft_symbr(geom,ao_bas_han,ipol,
      .     g_dens(1),g_dens(2), g_tmp)
        endif
@@ -1648,7 +1682,10 @@ c
 c     Check for SCF convergence.
 c     
 c     DIM/QM JEM
-      dimqm_go = .true.
+      if(use_dimqm) then
+         dimqm_go = .true.
+         call dimqm_setgo(dimqm_go)
+      endif
       call ga_sync
       if (oprint_time)
      &     call dft_tstamp(' calling scfcvg ')
@@ -1739,7 +1776,10 @@ c
 c
 c     DIM/QM JEM
 c     Add DIM energy
-      if(ldimqm .and. dimqm_go) Etnew = Etnew + Edimqm
+      if(ldimqm .and. dimqm_go) then
+         call dimqm_energy(edimqm)
+         Etnew = Etnew + Edimqm
+      endif
 c
 c    
       if (.not. ga_destroy(g_denso(1))) call errquit
@@ -1790,11 +1830,13 @@ c     vdw  bit
 c
 c     activate disp if is present in rtdb
 c     or include dispersion if this a functional that includes dispersion
+#if 0
       if (.not.rtdb_get(rtdb, 'dft:disp', mt_log, 1, disp))
      &   disp=.false.
 c
       if(disp.or.xc_chkdispauto())
      &      call xc_vdw(rtdb,geom,Etnew,dum,'energy')
+#endif
 c
 c
 c     ----- if cosmo ... after gas_phase, do sol_phase ... -----
@@ -1929,7 +1971,10 @@ c
 c        DIM/QM JEM
 c        Add DIM energy
 c        NOTE: Why are we redoing this energy sum?
-         if(ldimqm .and. dimqm_go) Etnew = Etnew + Edimqm
+         if(ldimqm .and. dimqm_go) then
+            call dimqm_energy(edimqm)
+            Etnew = Etnew + Edimqm
+         endif
 
 c        DIM/QM JEM
         
@@ -1951,6 +1996,13 @@ c        DIM/QM JEM
          if (abs(Edisp).gt.0.0d0) then
           write(LuOut,224)Edisp
          endif
+         if (cosmo_on.and.cosmo_phase.eq.2) then
+          if (do_cosmo_smd) then
+           write(LuOut,225) ecosmo+gcds
+          else
+           write(LuOut,225) ecosmo
+          end if
+         endif
          if (do_zora) write(luout,2221) ener_scal
          write(luout,2222) rho_n
          write(luout,2223) dft_time
@@ -1960,27 +2012,14 @@ c
 c regular cosmo output
 c
          if(cosmo_on.and.cosmo_phase.eq.2.and.
-     $ istep_cosmo_vem.eq.0.and..not.do_cosmo_smd) then
+     $            istep_cosmo_vem.eq.0) then
+            call cosmo_smd_output(egas, esol, do_cosmo_smd, gcds, 
+     $            gstote, gspol)
+
 c <-- MN solvation models
-           write(LuOut,*) '                 COSMO solvation results'
-           write(LuOut,*) '                 -----------------------'
-           write(LuOut,*) ' '
-           if (ocosmo_got_gasphase) then
-             write(LuOut,912) egas
-             write(LuOut,913) esol
-             write(LuOut,914) (egas-esol),(egas-esol)*627.509451d+00
-           else
-             write(LuOut,915) 
-             write(LuOut,913) esol
-           endif
-           call util_flush(LuOut)
+
          endif
       endif
- 912  format('                 gas phase energy = ',f20.10)
- 913  format('                 sol phase energy = ',f20.10)
- 914  format(' (electrostatic) solvation energy = ',f20.10,
-     $     ' (',f8.2,' kcal/mol)'                       )
- 915  format('     skipped: no gas phase energy')
 c
 c MN solvation models -->
 c
@@ -1988,27 +2027,9 @@ c equilibrium GS cosmo-smd output
 c
       if (me.eq.0.and.oprint)then
          if(cosmo_on.and.cosmo_phase.eq.2.and.
-     $ istep_cosmo_vem.eq.0.and.do_cosmo_smd) then
-           write(LuOut,919)
-           if (ocosmo_got_gasphase) then
-             write(LuOut,920) egas
-             write(LuOut,921) (gstote-gspol)
-             write(LuOut,922) (gstote-gspol-egas),
-     $ (gstote-gspol-egas)*627.509451d+00
-             write(LuOut,923) gstote
-             write(LuOut,924) gspol,
-     $ gspol*627.509451d+00
-             write(LuOut,925) esol
-             write(LuOut,926) gcds,gcds*627.509451d+00
-             write(LuOut,927) (esol-egas),(esol-egas)*627.509451d+00
-           else
-             write(LuOut,921) (gstote-gspol)
-             write(LuOut,923) gstote
-             write(LuOut,924) gspol,
-     $ gspol*627.509451d+00
-             write(LuOut,925) esol
-             write(LuOut,926) gcds,gcds*627.509451d+00
-           endif
+     $           istep_cosmo_vem.eq.0) then
+            call cosmo_smd_output(egas, esol, do_cosmo_smd, gcds, 
+     $            gstote, gspol)
          endif
 c
 c cosmo-vem (emission energy) output
@@ -2016,81 +2037,11 @@ c
          if(cosmo_on.and.cosmo_phase.eq.2.and.
      $ istep_cosmo_vem.eq.3.and.do_cosmo_vem.eq.2) then
           gstote = gstote - gspol + gspolneq
-          write (luout,930)
-          write (luout,931)
-          write (luout,932) estote
-          write (luout,933) espol,espol*27.211399d0
-          write (luout,934) gstote
-          write (luout,935) gspolneq,gspolneq*27.211399d0
-          write (luout,936) gspoldyn,gspoldyn*27.211399d0
-c          write (luout,937) gspol,gspol*27.211399d0
-          write (luout,938) (estote-gstote),(estote-gstote)*27.211399d0
+          call cosmo_vem_output(estote, espol, gstote, gspolneq, 
+     $              gspoldyn)
          endif
          call util_flush(LuOut)
-      endif
-c
- 919  format(
-     $32x,'COSMO-SMD solvation results',/,
-     $32x,'---------------------------',/
-     $' Reference for the SMD model:',/,
-     $' Marenich, A. V.; Cramer, C. J.; Truhlar, D. G.',
-     $' J. Phys. Chem. B 2009, 113, 6378',/)
- 920  format(1x,
-     $'            internal energy in gas <Psi(g)|H|Psi(g)> = ',
-     $ f20.10)
- 921  format(1x,
-     $'        internal energy in solvent <Psi(s)|H|Psi(s)> = ',
-     $ f20.10)
- 922  format(1x,
-     $'                              delta internal energy  = ',
-     $ f20.10,' (',f8.2,' kcal/mol)')
- 923  format(1x,
-     $'  total free energy in solvent <Psi(s)|H+V/2|Psi(s)> = ',
-     $ f20.10)
- 924  format(1x,
-     $'polarization energy contribution <Psi(s)|V/2|Psi(s)> = ',
-     $ f20.10,' (',f8.2,' kcal/mol)')
- 925  format(1x,
-     $'   total free energy in solvent including G(SMD-CDS) = ',
-     $ f20.10)
- 926  format(1x,
-     $'                      G(SMD-CDS) energy contribution = ',
-     $ f20.10,
-     $     ' (',f8.2,' kcal/mol)')
- 927  format(1x,
-     $'    1 M fixed-concentration free energy of solvation = ',
-     $ f20.10,' (',f8.2,' kcal/mol)'                       )
-c
- 930  format(/,
-     $'                          COSMO-VEM solvation results',/,
-     $'                          ---------------------------',/
-     $' Reference for the VEM model:',/,
-     $' Marenich, A. V.; Cramer, C. J.; Truhlar, D. G.;',
-     $' Guido, C. A.; Mennucci, B.;',/,' Scalmani, G.; Frisch, M. J.',
-     $' Chem. Sci. 2011, 2, 2143',/)               
- 931  format(1x,
-     $'emission spectrum data: ES = initial state, GS = final state')
- 932  format(1x,
-     $'(1)   VEM ES equilibrium total free energy = ',
-     $ f20.10)
- 933  format(1x,
-     $'(2)            ES polarization free energy = ',
-     $ f20.10,' (',f10.4,' eV)')
- 934  format(1x,
-     $'(3)    GS nonequilibrium total free energy = ',
-     $ f20.10)
- 935  format(1x,
-     $'(4)            GS polarization free energy = ',
-     $ f20.10,' (',f10.4,' eV)')
- 936   format(1x,
-     $'(5)     fast polarization component of (4) = ',
-     $ f20.10,' (',f10.4,' eV)')
- 937  format(1x,
-     $'(5a)        1/2 Vgs * ( Qes_in + Qgs_dyn ) = ',
-     $ f20.10,' (',f10.4,' eV)')
- 938  format(1x,
-     $'(6) VEM vertical emission energy (1) - (3) = ',
-     $ f20.10,' (',f10.4,' eV)')
+      endif  ! me.eq.0.and.oprint
 c
 c <-- MN solvation models
 c
@@ -2153,37 +2104,22 @@ c
       do ispin = 1, ipol
          call movecs_fix_phase(g_movecs(ispin))
          if (util_print('final vectors analysis', print_default)) then
-            do ilo = 1,max(1,nclosed-10)
-               if (dbl_mb(k_eval(ispin)+ilo-1) .ge. eval_pr_tol_lo) 
-     &            goto 961
-            enddo
- 961        do ihi = min(nclosed+nopen+10,nmo(1)), nmo(1)
-               if (dbl_mb(k_eval(ispin)+ihi-1) .ge. eval_pr_tol_hi) 
-     &            goto 9611
-            enddo
-            ihi = max(ihi-1,1)
- 9611       continue
-            ilo = max(1, ilo-1)  ! Qin
-            if (util_print('final vectors analysis', print_high)) then
-               ilo = 1
-               ihi = nmo(1)
-            endif
-            if (ipol.eq.1) then
-               blob='DFT Final Molecular Orbital Analysis'
-            else if(ipol.eq.2.and.ispin.eq.1) then
-               blob='DFT Final Alpha Molecular Orbital Analysis' 
-            else
-               blob='DFT Final Beta Molecular Orbital Analysis' 
-            endif
-c ... jochen: replaced 0.15 at the end of the line with 'tanalyze'
-c             which can be read from input
-c            call movecs_print_anal(ao_bas_han, ilo, ihi, 0.15d0, 
-            call movecs_print_anal(ao_bas_han, ilo, ihi, tanalyze, 
-     &           g_movecs(ispin), 
-     &           blob, 
-     &           .true., dbl_mb(k_eval(ispin)), oadapt, 
-     &           int_mb(k_ir+(ispin-1)*nbf_ao),
-     &           .true., dbl_mb(k_occ+(ispin-1)*nbf_ao))
+           ilo = 1
+           ihi = nmo(ispin)
+           if (ipol.eq.1) then
+              blob='DFT Final Molecular Orbital Analysis'
+           else if(ipol.eq.2.and.ispin.eq.1) then
+              blob='DFT Final Alpha Molecular Orbital Analysis' 
+           else
+              blob='DFT Final Beta Molecular Orbital Analysis' 
+           endif
+           
+           call movecs_print_anal(ao_bas_han, ilo, ihi, tanalyze, 
+     &          g_movecs(ispin), 
+     &          blob, 
+     &          .true., dbl_mb(k_eval(ispin)), oadapt, 
+     &          int_mb(k_ir+(ispin-1)*nbf_ao),
+     &          .true., dbl_mb(k_occ+(ispin-1)*nbf_ao))
          endif
       enddo
       if (oprint_final_vecs) then
@@ -2272,10 +2208,18 @@ c
      &                    g_tmp, g_svecs, svals, diising, nodiis,
      .        int_mb(k_gdiis),lkeeps,g_s12m,g_s12p,.true.,
      $           nconstr,multipliers0,dbl_mb(k_mdiis))
-         if (.not. MA_free_heap(l_hess))
-     .        call errquit(' dft_scf:cannot popstack',111, MA_ERR)
-         if (.not. MA_free_heap(l_mdiis))
-     .        call errquit(' dft_scf:cannot popstack',111, MA_ERR)
+      endif
+      if(nconstr.ne.0) then
+         if(k_hess.ne.-1) then
+            if (.not. MA_free_heap(l_hess))
+     .           call errquit(' dft_scf:cannot popstack',111, MA_ERR)
+         endif
+         if(k_mdiis.ne.-1) then
+            if (.not. MA_free_heap(l_mdiis))
+     .           call errquit(' dft_scf:cannot popstack',111, MA_ERR)
+         endif
+      endif
+      if(k_gdiis.ne.-1) then
          if (.not. MA_free_heap(l_gdiis))
      .        call errquit(' dft_scf:cannot popstack',111, MA_ERR)
       endif
@@ -2446,6 +2390,14 @@ C     KAL
 C---------------------------------------------------------------------------
 #endif      
 
+      
+C
+C     Print out matrices to stdout (useful for development and debugging)
+C
+      if (.not.rtdb_get(rtdb, 'dft:print_mats', mt_log, 1, lprint_mats))
+     $     lprint_mats = .false.
+      if (lprint_mats) call dft_print_mats (g_s, svals, g_svecs,
+     $     nmo, g_dens, g_focks)
 
       
       if (.not. ga_destroy(g_tmp)) call errquit
@@ -2537,6 +2489,7 @@ c
      &     '       Correlation energy =', f22.12/
      &     ' Nuclear repulsion energy =', f22.12/)
  224  format('    Dispersion correction =', f22.12/)
+ 225  format('             COSMO energy =', f22.12/)
 c
  2221 format('       Scaling correction =', f22.12/)
  2222 format(' Numeric. integr. density =', f22.12/)

@@ -615,19 +615,25 @@ c     implicit none
 
 #ifdef MPI4
       if (np.gt.1) then
+!$OMP MASTER
          stupid_msglen = 1
          call MPI_Allreduce(sum,sumall,stupid_msglen,stupid_double,
      >                      stupid_sum,stupid_world,stupid_ierr)
          sum = sumall
+!$OMP END MASTER
+!$OMP BARRIER
       end if
 #else
       integer msglen,mpierr
 
       if (np.gt.1) then
+!$OMP MASTER
          msglen = 1
          call MPI_Allreduce(sum,sumall,msglen,MPI_DOUBLE_PRECISION,
      >                       MPI_SUM,comm_world,mpierr)
          sum = sumall
+!$OMP END MASTER
+!$OMP BARRIER
       end if
 #endif
 
@@ -717,6 +723,7 @@ c     implicit none
       value = BA_push_get(mt_dbl,n,'sumall',sumall(2),sumall(1))
       if (.not. value) call errquit('out of stack memory',0, MA_ERR)
 
+!$OMP MASTER
 #ifdef MPI4
       stupid_msglen = n
       call MPI_Allreduce(sum,dbl_mb(sumall(1)),stupid_msglen,
@@ -728,8 +735,10 @@ c     implicit none
      >                MPI_DOUBLE_PRECISION,
      >                MPI_SUM,comm_world,mpierr)
 #endif
-
       call dcopy(n,dbl_mb(sumall(1)),1,sum,1)
+!$OMP END MASTER
+!$OMP BARRIER
+
       value = BA_pop_stack(sumall(2))
       if (.not.value) call errquit('dealloc stack memory',0,MA_ERR)
 
@@ -875,17 +884,23 @@ c     implicit none
       integer*4 tpsend
 
       if (np.gt.1) then
+!$OMP MASTER
          stupid_msglen = nsize
          tpsend        = psend
          call MPI_Bcast(sum,stupid_msglen,stupid_double,
      >                  tpsend,stupid_world,stupid_ierr)
+!$OMP END MASTER
+!$OMP BARRIER
       end if
 #else
       integer ierr
 
       if (np.gt.1) then
+!$OMP MASTER
          call MPI_Bcast(sum,nsize,MPI_DOUBLE_PRECISION,
      >                  psend,comm_world,ierr)
+!$OMP END MASTER
+!$OMP BARRIER
       end if
 #endif
 
@@ -1018,6 +1033,81 @@ c     implicit none
       return
       end
 #endif
+
+
+
+*     ***********************************
+*     *                                 *
+*     *      Parallel_mpiWaitAll0       *
+*     *                                 *
+*     ***********************************
+
+      subroutine Parallel_mpiWaitAll0(nreq,req)
+      implicit none
+      integer nreq,req(*)
+
+#include "bafdecls.fh"
+#include "errquit.fh"
+#include "mpif.h"
+#include "Parallel.fh"
+
+*     *** local variables ***
+#ifdef MPI4
+#include "stupid_mpi4.fh"
+      integer status(2),request2(2)
+#else
+      integer status(2),mpierr
+#endif
+
+     
+      if (nreq.gt.0) then
+
+*     **** allocate status memory ****
+      if (.not.MA_push_get(mt_int,MPI_STATUS_SIZE*nreq*4,
+     >                     'status',status(2),status(1)))
+     > call errquit('Parallel_mpiWaitAll0:out of stack',0,MA_ERR)
+
+
+
+*     **** wait for completion of mp_send, also do a sync ****
+
+#ifdef MPI4
+
+      if (.not.MA_push_get(mt_int,nreq,'rqst2',request2(2),request2(1)))
+     > call errquit(' Parallel_mpiWaitAll0:out of stack',1,MA_ERR)
+      call stupid_icopy8to4(nreq,req,int_mb(request2(1)))
+      stupid_msglen = nreq
+      call MPI_WAITALL(stupid_msglen,
+     >                 int_mb(request2(1)),
+     >                 int_mb(status(1)),stupid_ierr)
+c       call MPI_WAITALL(stupid_msglen,
+c     >                 int_mb(request2(1)),
+c     >                 MPI_STATUSES_IGNORE,stupid_ierr)
+      if (.not.MA_pop_stack(request2(2)))
+     > call errquit(' Parallel_mpiWaitAll0:popping stack',1,MA_ERR)
+
+c     *** danger! ***
+      if (stupid_ierr.ne.0) then
+         write(*,*) "MPI_WAITALL Failed on taskid=",taskid,
+     >              "  mpierr=",stupid_ierr
+         call util_flush(6)
+      end if
+
+#else
+      call MPI_WAITALL(nreq,req,int_mb(status(1)),mpierr)
+c      call MPI_WAITALL(nreq,req,MPI_STATUSES_IGNORE,mpierr)
+#endif
+
+*     *** may need to check status here??? ***
+
+      !*** deallocate status memory ***
+      if (.not.MA_pop_stack(status(2)))
+     > call errquit(' Parallel_mpiWaitAll0:popping stack',0,MA_ERR)
+
+      end if
+      return
+      end
+
 
 
 *     ***********************************

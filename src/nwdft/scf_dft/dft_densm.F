@@ -71,6 +71,8 @@ c     preliminaries
       me=ga_nodeid()
       nproc=ga_nnodes()
       rhfuhf=2d0
+      nocsave(1)=-1
+      nocsave(2)=-2
       if(ipol.eq.2) rhfuhf=1d0
 c       
 c     check degener
@@ -127,11 +129,12 @@ c
            if(fon) then
               anoc(1)=ncore_fon(1)+nel_fon(1)
               anoc(2)=ncore_fon(2)+nel_fon(2)
+              nocinit=0
            else
               anoc(1)=noc(1)
               anoc(2)=noc(2)
+              nocinit=1
            endif
-           nocinit=0
         endif
         new_ntotel=rhfuhf*(anoc(1)+anoc(2))
 c       

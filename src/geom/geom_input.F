@@ -48,7 +48,7 @@ c     .                           and for forcing symmetry
       double precision coords(3,max_center), velocities(3,max_center)
       double precision charge(max_center), mass(max_center)
       double precision invnucexp(max_center)
-      double precision ainv(3,3),t(3)
+      double precision ainv(3,3),t(3),tv(3)
 c
 c     Constraints in the geometry change the types of the atoms
 c     involved. E.g. in an H2O molecule the H involved in a bond of
@@ -538,16 +538,20 @@ cccc      write(*,*) "ncenter=",ncenter
       if (ecce_periodic) then
          write(*,*) "ecce periodic conversion"
          call dscal(3*ncenter, scale, coords, 1)
+         call dscal(3*ncenter, scale, velocities, 1)
          if (geom_amatinv_get(geom, ainv)) then
             do ii=1,ncenter
                do i=1,3
                   t(i) = 0.0d0
+                  tv(i) = 0.0d0
                   do j=1,3
                      t(i) = t(i) + ainv(i,j)*coords(j,ii)
+                     tv(i) = tv(i) + ainv(i,j)*velocities(j,ii)
                   end do
                end do
                do i=1, 3
                   coords(i,ii) = t(i)
+                  velocities(i,ii) = tv(i)
                end do
             end do
          end if
@@ -558,6 +562,7 @@ cccc      write(*,*) "ncenter=",ncenter
               if (geom_amatinv_get(geom, ainv)) then
                  do ii=1,ncenter
                     coords(3,ii) = coords(3,ii)*ainv(3,3)
+                    velocities(3,ii) = velocities(3,ii)*ainv(3,3)
                  end do
               end if
            end if
@@ -567,6 +572,8 @@ cccc      write(*,*) "ncenter=",ncenter
                  do ii=1,ncenter
                     coords(2,ii) = coords(2,ii)*ainv(2,2)
                     coords(3,ii) = coords(3,ii)*ainv(3,3)
+                    velocities(2,ii) = velocities(2,ii)*ainv(2,2)
+                    velocities(3,ii) = velocities(3,ii)*ainv(3,3)
                  end do
               end if
            end if
@@ -598,6 +605,7 @@ c
  1             format(/' Scaling coordinates for geometry "',a,'" by ',
      $              f12.9/' (inverse scale = ',f12.9,')',/)
                call dscal(3*ncenter, scale, coords, 1)
+               call dscal(3*ncenter, scale, velocities, 1)
             end if
          else if (isys .lt. 0) then
             call errquit('geom_input: invalid system type', 0,
@@ -775,7 +783,7 @@ C     $Id$
       double precision m(nmax)
       character*16 aformat
       character*255 message
-      character*255 fname
+      character*255 fname,fname_dir
       character*30 pname 
       character*255 field       ! for character input
       integer stride
@@ -881,8 +889,14 @@ c
         aformat=fname(i+1:)
       end if
       n0=n
+      call util_file_name_noprefix(fname,.false.,.false.,
+     F        fname_dir)
+C   ---------------------------------------------------------
+C   undoing pegging extenal file to perm as it breaks our jobs
+      fname_dir = fname
+C   ---------------------------------------------------------
       if(aformat.eq."xyz") then
-        call geom_read_file_xyz(fname,
+        call geom_read_file_xyz(fname_dir,
      +                              iframe, 
      +                              ns, 
      +                              asel, 
@@ -892,7 +906,7 @@ c
      +                              tags,
      +                               c)
       else if (aformat.eq."pdb") then
-        call geom_read_file_pdb(fname,
+        call geom_read_file_pdb(fname_dir,
      +                              iframe, 
      +                              ns, 
      +                              asel, 
@@ -1772,6 +1786,8 @@ c           we have to go through all this work, because some files have / in th
 #include "geomP.fh"
       if (geom.le.max_geom) then
         group_number(geom) = 1
+        group_name(geom)   = 'P1'
+        sym_num_ops(geom)  = 0
         geom_P1_set = .true.
       else
         geom_P1_set = .false.
@@ -1838,8 +1854,10 @@ c
                      group_number(geom) = 999
                      setting_number(geom) = 3
                      group_name(geom)   = test
-c                    call errquit('geom_sym_input: unknown group '//
-c     $                 'name/number', 0, GEOM_ERR)
+                     if (isystype(geom).eq.0) then
+                    call errquit('geom_sym_input: unknown group '//
+     $                 'name/number', 0, GEOM_ERR)
+                    endif
                   end if
                endif
             endif
@@ -3430,8 +3448,10 @@ C
          IF(NUMWRD.GT.1) THEN
             GO TO 110
          ELSE
-            IF((NUMCHR(1).EQ.6.AND.PRSWRD(1)(2:5).EQ.CHREND(1:4)).OR.
-     1         (NUMCHR(1).EQ.5.AND.PRSWRD(1)(2:4).EQ.CHREND(2:4))) THEN
+            IF((NUMCHR(1).EQ.6.AND.
+     &         INP_COMPARE(.FALSE.,CHREND(1:4),PRSWRD(1)(2:5))).OR.
+     &         (NUMCHR(1).EQ.5.AND.
+     &         INP_COMPARE(.FALSE.,CHREND(2:4),PRSWRD(1)(2:4)))) THEN
                NAT = IAT -1
                GO TO 140
             ELSE
@@ -3475,8 +3495,10 @@ C
             ENDIF
             GO TO 120
          ELSE
-            IF((NUMCHR(1).EQ.6.AND.PRSWRD(1)(2:5).EQ.CHREND(1:4)).OR.
-     1         (NUMCHR(1).EQ.5.AND.PRSWRD(1)(2:4).EQ.CHREND(2:4))) THEN
+            IF((NUMCHR(1).EQ.6.AND.
+     &         INP_COMPARE(.FALSE.,CHREND(1:4),PRSWRD(1)(2:5))).OR.
+     &         (NUMCHR(1).EQ.5.AND.
+     &         INP_COMPARE(.FALSE.,CHREND(2:4),PRSWRD(1)(2:4)))) THEN
                NVAR = IVAR -1
                GO TO 140
             ELSE
@@ -3510,8 +3532,10 @@ C
                FRZVAR(  IVAR)=.TRUE.
             GO TO 130
          ELSEIF(NUMWRD.EQ.1) THEN
-            IF((NUMCHR(1).EQ.6.AND.PRSWRD(1)(2:5).EQ.CHREND(1:4)).OR.
-     1         (NUMCHR(1).EQ.5.AND.PRSWRD(1)(2:4).EQ.CHREND(2:4))) THEN
+            IF((NUMCHR(1).EQ.6.AND.
+     &         INP_COMPARE(.FALSE.,CHREND(1:4),PRSWRD(1)(2:5))).OR.
+     &         (NUMCHR(1).EQ.5.AND.
+     &         INP_COMPARE(.FALSE.,CHREND(2:4),PRSWRD(1)(2:4)))) THEN
             ELSE
                WRITE(IW,8880)
                CALL HND_HNDERR(3,ERRMSG)

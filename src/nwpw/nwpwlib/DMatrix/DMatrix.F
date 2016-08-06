@@ -89,6 +89,7 @@ c
 
       call DMatrix_eye(n,n,1.0d0,Q,lda,ma,na,taskid_i,taskid_j)
       do k = 1,n-2
+          write(*,*) "k=",k
 
 c         call DMatrix_houseq_V(k,n,A,V1,Q1,lda,ma,na,r2,
 c     >            taskid_i,taskid_j,np_i,np_j,comm_i,comm_j,
@@ -99,6 +100,7 @@ c     >            work1,work2)
      >            taskid_i,taskid_j,np_i,np_j,comm_i,comm_j,
      >            work1,work2)
          call nwpw_timing_end(26)
+          write(*,*) "out houseq",k
 
          call nwpw_timing_start(27)
 *        **** A = Q1*A*Q1 ****
@@ -136,6 +138,7 @@ c     >            work1,work2)
      >             comm_i, comm_j,
      >             work1,work2)
          call nwpw_timing_end(27)
+          write(*,*) "out dgemms",k
 
       end do
 
@@ -169,6 +172,7 @@ c     >            work1,work2)
       integer i,j,ii,jj
       integer icur,jcur
 
+!$OMP MASTER
       jj   = 1
       jcur = 0
       do j=1,n
@@ -197,6 +201,8 @@ c     >            work1,work2)
            jj   = 1
          end if
       end do
+!$OMP END MASTER
+!$OMP BARRIER
 
       return
       end
@@ -585,6 +591,64 @@ c     >            work1,work2)
       return
       end
 
+
+
+
+*     ***********************************
+*     *                                 *
+*     *         DMatrix_sqr_trace       *
+*     *                                 *
+*     ***********************************
+      double precision function DMatrix_sqr_trace(n,
+     >                           Q,ldq,mq,nq,
+     >                           taskid_i,taskid_j)
+      implicit none
+      integer n
+      integer ldq,mq(*),nq(*)
+      real*8  Q(ldq,*)
+      integer taskid_i,taskid_j
+
+*     **** local variables ****
+      integer i,j,ii,jj
+      integer icur,jcur
+      double precision sum
+
+      sum = 0.0d0
+      jj   = 1
+      jcur = 0
+      do j=1,n
+         ii   = 1
+         icur = 0
+         do i=1,n
+
+            if ((icur.eq.taskid_i).and.(jcur.eq.taskid_j)) then
+                  sum = sum + Q(ii,jj)**2
+            end if
+
+            ii = ii + 1
+            if (ii.gt.mq(icur+1)) then
+              icur = icur + 1
+              ii   = 1
+            end if
+         end do
+
+        jj = jj + 1
+         if (jj.gt.nq(jcur+1)) then
+           jcur = jcur + 1
+           jj   = 1
+         end if
+      end do
+
+      call DMatrix_SumAll(sum)
+      DMatrix_sqr_trace = sum
+      return
+      end
+
+
+
+
+
+
 *     ***********************************
 *     *                                 *
 *     *         DMatrix_m_ijtoiijjp     *
@@ -925,6 +989,7 @@ c     >            work1,work2)
       integer i,j,ii,jj
       integer icur,jcur
 
+!$OMP MASTER
       jj   = 1
       jcur = 0
       do j=1,n
@@ -949,6 +1014,8 @@ c     >            work1,work2)
            jj   = 1
          end if
       end do
+!$OMP END MASTER
+!$OMP BARRIER
 
       return
       end

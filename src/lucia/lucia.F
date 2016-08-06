@@ -1896,7 +1896,7 @@ C?            write(6,*) ' IORB JORB IABS JABS ',IORB,JORB,IABS,JABS
 *
       INTEGER FUNCTION IDIST_CIVEC(NBLK,NBATS,LBATS,I1BATS,IBATS)
       INTEGER NBLK,NBATS,LBATS(*),I1BATS(*),IBATS(8,*)
-      INTEGER IBLK,JBATS,ISBLK,ILEN,IMAP,IDUM
+      INTEGER IBLK,JBATS,ISBLK,ILEN,IMAP,IDUM,IMAP2
 #include "errquit.fh"
 #include "mafdecls.fh"
 #include "global.fh"
@@ -1921,9 +1921,19 @@ C?            write(6,*) ' IORB JORB IABS JABS ',IORB,JORB,IABS,JABS
 C Now we have a list of block starts/ Now merge until we have the # of procs = # blocks
 C if we set nblcok1 to number of procs, last one gets all remianing blocks and most of work
         if (iblk.gt.ga_nnodes()) iblk = ga_nnodes()
-        if ( .not. ga_create_irreg(mt_dbl,ILEN,1,'CONVC1',int_mb(IMAP), 
-     &                           IBLK, 1, 1, IDIST_CIVEC))
+*
+*. VOGs way
+cVOG    CALL MEMMAN(IMAP2,iblk,'ADDL  ',1,'MAP2  ')
+cVOG    CALL MEMMAN(IMAP2,nblk,'ADDL  ',1,'MAP2  ')
+        CALL MEMMAN(IMAP2,NBATS,'ADDL  ',1,'MAP2  ')
+        call distribute_CIblks(ILEN,NBATS,LBATS,IBATS,NBLK,iblk,
+     &                         int_mb(IMAP2))
+        if ( .not. ga_create_irreg(mt_dbl,ILEN,1,'CONVC1',int_mb(IMAP2),
+     &                           iblk, 1, 1, IDIST_CIVEC))
+cVOG    if ( .not. ga_create_irreg(mt_dbl,ILEN,1,'CONVC1',int_mb(IMAP),
+cVOG &                           IBLK, 1, 1, IDIST_CIVEC))
      $     call errquit('IDIST_CIVEC ga_create fail', ILEN, GA_ERR)
+      newciblks = 1
       endif
       CALL MEMMAN(IDUM,IDUM,'FLUSM ',1,'IDIST ')
       RETURN
@@ -1986,9 +1996,9 @@ c      INCLUDE 'mxpdim.inc'
       integer only_dens
       call luciaqenter('gasci')
       CALL MEMMAN(IDUM,IDUM,'MARK  ',IDUM,'GASCI ')
-      NTEST = 00
+      newciblks = 0
+      NTEST = 000 ! VOG 000
       NTEST = MAX(NTEST,IPRNT)
-      IPRNT=2 !VOG
       MXACJ = 0
       MXACIJ = 0
       MXAADST = 0
@@ -2133,14 +2143,15 @@ CERR    LBLOCK  = MAX(NSD_FOR_OCCLS_MAX,LBLOCK)
         LBLOCK  = MAX(N_SDAB_PER_OCCLS_MAX,LBLOCK)
       END IF
       LBLOCK = MAX(LBLOCK,LCSBLK)
-      IF(NTEST.GE.1000) WRITE(6,*) ' TEST: LBLOCK = ', LBLOCK
+      IF(NTEST.GE.1000.and.ga_nodeid().eq.0)
+     &  WRITE(6,*) ' TEST: LBLOCK = ', LBLOCK
 * 
 *. Information about block structure- needed by new PICO2 routine.
 *. Memory for partitioning of C vector
       ICOMP = 0
       ILTEST = -3006
 *
-      IF(NTEST.GE.1000) THEN
+      IF(NTEST.GE.1000.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' KCIOIO, KCBLTP, KCIOCCLS_ACT, KCLBT = ',
      &               KCIOIO, KCBLTP, KCIOCCLS_ACT, KCLBT 
         WRITE(6,*) ' KCLEBT, KCLBLK, KCI1BT, KCIBT = ',
@@ -2397,7 +2408,6 @@ CNW       CALL SWAPVE(WORK(KINT1),WORK(KINT1O),NINT1)
        END IF ! determinant diagonal should be calculated
 *
        IF(NOCSF.EQ.0.AND.IH0_CSF.EQ.1) THEN
-         print*,'do average'
 *. Average of determinant diagonal in each conf
 C?       WRITE(6,*) ' IH0_CSF = ', IH0_CSF
          CALL CSDIAG(KPVEC2,KPDIA_SD,
@@ -2418,7 +2428,6 @@ C    &         LBLOCK,LUDIA_DET,LUDIA_CSF)
        END IF
 *
        IF(NOCSF.EQ.0.AND.IH0_CSF.GE.2) THEN
-         print*,'do exact'
 *. Use exact diagonal or blocks
 C?       WRITE(6,*) ' Ecore before GET_CSF.... ', ECORE
 C?       WRITE(6,*) ' KPDIA_SD = ', KPDIA_SD
@@ -3022,7 +3031,6 @@ C           END IF
 C?     write(6,*) ' IRFROOT and NROOT ',IRFROOT, NROOT
        IF(IH0ROOT.NE.NROOT) THEN
 *. Position vectors 
-         print*,'regenerate dens form ref root'
          CALL REWINO(LUC)
          DO JROOT = 1, IH0ROOT
            IF(ICISTR.EQ.1) THEN
@@ -4892,7 +4900,7 @@ C?    WRITE(6,*) ' ISBSPPR_ACT = ', ISBSPPR_ACT
 C?    WRITE(6,*) ' ICISTR,LBLK = ', ICISTR,LBLK
 C?    WRITE(6,*) ' IPRT = ', IPRT
 C?    WRITE(6,*) ' ILAST in CIEIG5 ', ILAST 
-      NTEST=0000
+      NTEST=10000
       IPRT= 1
 *
 *               ====================================
@@ -5258,7 +5266,7 @@ C
 #include "mafdecls.fh"
 #include "global.fh"
 #include "dra.fh"
-      character*64 filename
+      character*255 filename
 * =========================
 * Standard input and output
 * =========================
@@ -5695,7 +5703,7 @@ CNW   CALL REWINE(LU,-1)
 *.LOOP OVER BLOCKS
 *
 C     write(6,*) ' FNDMND NSUBMX = ', NSUBMX
-      NTESTL = 00000
+      NTESTL = 00000 
       NTEST = MAX(NTESTG,NTESTL)
 *
       IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
@@ -5731,9 +5739,11 @@ C     write(6,*) ' FNDMND NSUBMX = ', NSUBMX
      &        itask,911)
 CNW        CALL FRMDSC(SEGMNT,LBL ,-1,LU,IMZERO,IAMPACK)
            IF(NTEST.GE.10000) THEN
-             if (ga_nodeid().eq.0) WRITE(6,*) ' Elements read in '
+             if(ga_nodeid().eq.0) WRITE(6,*) ' Elements read in '
 CNW          CALL WRTMAT(SEGMNT,1,LBL,1,LBL)
-             call ga_print_patch(SEGMNT,1,LBL,1,1,0)
+cVOG It was causing problems...
+cVOG          call ga_print_patch(SEGMNT,1,LBL,1,1,1)!0)
+              call ga_print(SEGMNT)
            END IF
            IF(LBL .GE. 0 ) THEN
 *. LOWEST ELEMENTS IN SEGMNT  ( ADD TO PREVIOUS LIST )
@@ -8313,7 +8323,7 @@ cGLM         K(IORB,JORB) = GTIJKL(IORB,JORB,JORB,IORB)
         call ga_dgop(MT_DBL, K, NORB*NORB, '+')
       endif
 *
-      NTEST = 0
+      NTEST = 10 !VOG 0
       IF(NTEST.GT.10) THEN
         write(6,*) 'IORB IORB JORB JORB, J(IORB,JORB)'
         DO IORB = 1, NORB
@@ -8806,6 +8816,7 @@ C?    END IF
 * IOCOC(IATP,IBTP)  = 1 =>      allowed combination
 * IOCOC(IATP,IBTP)  = 0 => not allowed combination
 *
+#include "global.fh"
 *.Input
       INTEGER ICMBSPC(LCMBSPC)
       INTEGER MNMXOC(MXPNGAS,2,*)
@@ -8819,7 +8830,7 @@ C     INTEGER MNOCC(NGAS),MXOCC(NGAS)
 *
       NTEST = 00
       NTEST = MAX(NTEST,IPRNT)
-      IF(NTEST.GE.100) THEN
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' IAIBCM_GAS entered '
         WRITE(6,*) ' ==================='
         WRITE(6,*) 
@@ -8884,7 +8895,7 @@ C?          WRITE(6,*) ' IM_IN, INCLUDE = ', IM_IN, INCLUDE
    90   CONTINUE
   100 CONTINUE
 *
-      IF ( NTEST .GE. 100 ) THEN
+      IF ( NTEST .GE. 100 .and.ga_nodeid().eq.0) THEN
         WRITE(6,*)
         WRITE(6,*) ' Matrix giving allowed combinations of types '
         WRITE(6,*)
@@ -9326,7 +9337,7 @@ CNW   DIMENSION DIAG(*)
 *. Offsets for alpha and beta supergroups
       IOCTPA = IBSPGPFTP(IATP)
       IOCTPB = IBSPGPFTP(IBTP)
-      IF(NTEST.GE.10) THEN
+      IF(NTEST.GE.10.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' ================'
         WRITE(6,*) ' GASDIA speaking '
         WRITE(6,*) ' ================'
@@ -9367,6 +9378,7 @@ CNW   DIMENSION DIAG(*)
 **. Diagonal of one-body integrals and coulomb and exchange integrals
 *   One-body integrals stored in KINT1 are used
 *
+cVOG
       CALL GT1DIA(dbl_mb(KLH1D))
       CALL GTJK(dbl_mb(KLJ),dbl_mb(KLK),NTOOB,dbl_mb(KLSCR2),IREOTS)
 *
@@ -10043,7 +10055,7 @@ c Do four-index
 c
       CALL LUCIAQENTER('MO2')
       call moints_build_2x(luciabasis,.true.,.false.,1,1,norbt,1,
-     $     norbt,g_moreo,g_coul,.true.,g_exch,.false.,nwblen,.true.)
+     $     norbt,g_moreo,g_coul,.true.,g_coul,.false.,nwblen,.true.)
       CALL LUCIAQEXIT('MO2')
   
 c.. To write in LUCIA format
@@ -10056,7 +10068,8 @@ c     if (ihi.gt.0.and.jhi.gt.0) then
 c     call ga_access(g_coul,ilo,ihi,jlo,jhi,1,kint2_l,ilda)
 c.. 2e ints
 
-      if (ga_nodeid().eq.0) then
+c     if (ga_nodeid().eq.0) then
+      call ga_distribution(g_coul,ga_nodeid(),ilo,ihi,jlo,jhi)
       do ism_lu=1,nirrep
          do jsm_lu=1,ism_lu
             smij=(ism_lu-1)*nirrep+jsm_lu
@@ -10114,8 +10127,11 @@ c.. add on the offset for each irep
 c.. look for index in ga_coul
                         ij = (j-1)*norbt+i 
                         kl = k*(k-1)/2 + l
-                        call ga_get(g_coul,ij,ij,kl,kl,
+                        if (ij.ge.ilo.and.ij.le.ihi) then
+                           if (kl.ge.jlo.and.kl.le.jhi) 
+     &                  call ga_get(g_coul,ij,ij,kl,kl,
      &                       dbl_mb(KINT2+ind2e-1),1)
+                        endif
                      end do
                   endif
                end do
@@ -10123,8 +10139,9 @@ c.. look for index in ga_coul
          end do
       end do
 c
-      endif
+c     endif
       call ga_sync()
+c     call ga_brdcst(mt_dbl,dbl_mb(KINT2),NINT2,0)
       call ga_dgop(1,dbl_mb(KINT2),NINT2,'+')
 c
       CALL LUCIAQEXIT('MO2GA')
@@ -10912,7 +10929,7 @@ c      INCLUDE 'mxpdim.inc'
       external ga_create_atom_blocked, ga_create_JKblocked
 !      double precision task_cpu, task_wall !VOG
 *
-      NTEST = 0
+      NTEST = 2
 *
       CALL ISETVC(ISETVECOPS,0,10)
 * 1 => MATML7
@@ -10969,6 +10986,10 @@ c
 * ======================================================
       call ga_sync()
       CALL INPCTL(rtdb,LUOUT)
+*
+*. VOG: Search optimum GAS spaces for parallel performance
+*
+      call optimum_gas_for_ciblocks
 *. Static memory, initialize
       KBASE = 1
       KADD = MAXMEM
@@ -11022,7 +11043,7 @@ CNW   CALL MEMMAN(KBASE,KADD,'INI   ',IDUMMY,'DUMMY ')
       IF(I_DO_SBCNF.EQ.1) THEN
         CALL INFO_OCSBCLS
       END IF
-
+*
       IF(NOCSF.EQ.0) THEN
 *
        CALL PROTO_CSF_DIM
@@ -11173,6 +11194,21 @@ CNW   CALL STRINF_GAS(WORK,IPRSTR)
 * ========================================
 *
       CALL LCISPC(IPRCIX)
+c*
+c*. VOG: Condition if I should fragment further the GAS spaces and
+c*.      recalculate the number of blocks
+c      call ga_sync()
+c      nproc = ga_nnodes()
+c      if (ga_nodeid().eq.0) write(*,*) 'nblocks, nproc',
+c     &                                  NBLKIC(irefsm,1), nproc
+c      if (NBLKIC(irefsm,1).lt.nproc) then
+c       if (ga_nodeid().eq.0) write(*,*) 'I will fragment the GAS space'
+c       call memman(idum,idum,'flusm ',idum,'lucia')
+c       call fraggas(imegaloop)
+c      else
+c       exit
+c      end if
+c      end do ! VOG: End of Mega GAS Loop
 *
 * ============================================
 *. Dimension of explicit Hamiltonian subspace
@@ -13386,11 +13422,11 @@ COLD  DIMENSION C(*),HC(*)
 *
       CALL LUCIAQENTER('MV7  ')
 *
-      NTEST = 000
+      NTEST = 0000 !VOG 000
       NTEST = MAX(NTEST, IPRCIX)
       IF(NTEST.GE.5.AND.NTEST.LT.10) THEN
        WRITE(6,*) ' MV7 entered '
-      ELSE IF(NTEST.GE.10) THEN
+      ELSE IF(NTEST.GE.10.and.ga_nodeid().eq.0) THEN
         WRITE(6,*)
         WRITE(6,*) ' Information from MV7: '
         WRITE(6,*) ' ======================'
@@ -13399,8 +13435,10 @@ COLD  DIMENSION C(*),HC(*)
       END IF
 *
       IF(NTEST.GE.1000) THEN
+        if (ga_nodeid().eq.0) then
         WRITE(6,*) ' Input vector to MV7 '
         WRITE(6,*) ' ==================='
+        endif
         IF(ICISTR.GT.1) THEN
           CALL WRTVCD(dbl_mb(CB),LUC,1,-1)
         ELSE
@@ -13425,7 +13463,8 @@ C?    WRITE(6,*) ' Ecore (MV7) = ', ECORE
         IATP = IALTP_FOR_GAS(ISSPC)
         IBTP = IBETP_FOR_GAS(ISSPC)
       END IF
-      IF(NTEST.GE.10) WRITE(6,*) ' MV7TEST: IATP, IBTP = ', IATP, IBTP
+      IF(NTEST.GE.10.and.ga_nodeid().eq.0)
+     &  WRITE(6,*) ' MV7TEST: IATP, IBTP = ', IATP, IBTP
 *
       NOCTPA = NOCTYP(IATP)
       NOCTPB = NOCTYP(IBTP)
@@ -13446,7 +13485,7 @@ C?    WRITE(6,*) ' Ecore (MV7) = ', ECORE
         LBLOCK  = MAX(NSD_FOR_OCCLS_MAX,MXSOOB)
       END IF
       LBLOCK = MAX(LBLOCK,LCSBLK)
-      IF(NTEST.GE.100) THEN
+      IF(NTEST.GE.100.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' TEST, MV7: LCSBLK, LBLOCK, MXSOOB  = ', 
      &                          LCSBLK, LBLOCK, MXSOOB
       END IF
@@ -13454,7 +13493,7 @@ C?    WRITE(6,*) ' Ecore (MV7) = ', ECORE
       ILTEST = -3006
       CALL MEMCHK2('MV7BEZ')
 C?    WRITE(6,*) ' KSIOIO = ', KSIOIO
-      IF(NTEST.GE.1000) THEN
+      IF(NTEST.GE.1000.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' ICSM, ISSM = ', ICSM, ISSM
         WRITE(6,*) ' KCLBT, KSLBT(a) == ', KCLBT, KSLBT
         WRITE(6,*) ' WORK(KCLBT): '
@@ -13478,7 +13517,7 @@ C?    WRITE(6,*) ' KSIOIO = ', KSIOIO
      &       int_mb(KCIBT),
      &       int_mb(KCNOCCLS_BAT),int_mb(KCIBOCCLS_BAT),ILTEST)
         NCOCCLS = NCOCCLS_ACT
-        IF(NTEST.GE.1000) THEN
+        IF(NTEST.GE.1000.and.ga_nodeid().eq.0) THEN
           WRITE(6,*) ' KCLBT, KSLBT(b) == ',int_mb(KCLBT),int_mb(KSLBT)
           WRITE(6,*) ' WORK(KCLBT): '
           CALL IWRTMA(int_mb(KCLBT),1,1,1,1)
@@ -13502,7 +13541,7 @@ C             FILEMAN_MINI(IFILE,ITASK)
 CBERT SHOULD NOT BE CALLED
          CALL FILEMAN_MINI(LU_CDET,'ASSIGN')
          CALL FILEMAN_MINI(LU_SDET,'ASSIGN')
-         IF(NTEST.GE.1000)  THEN
+         IF(NTEST.GE.1000.and.ga_nodeid().eq.0)  THEN
            WRITE(6,*) ' Test: LU_CDET, LU_SDET: ',
      &                        LU_CDET, LU_SDET
          END IF
@@ -13554,7 +13593,7 @@ C            RASSG3(CB,SB,LBATS,LEBATS,I1BATS,IBATS,LUC,LUHC,C,HC,ECORE)
      &         int_mb(KSI1BT),int_mb(KSIBT),LLUC,LLUHC,CB,HCB,ECORE,
      &         CMV7TASK)
 *. Input is in KCOMVEC1_SD, construct output in KCOMVEC2_SD
-          IF(NTEST.GE.1000) THEN
+          IF(NTEST.GE.1000.and.ga_nodeid().eq.0) THEN
             WRITE(6,*) ' NSVAR elements of output vector from RASSG3'
             CALL WRTMAT(dbl_mb(KVEC2P),1,NSVAR,1,NSVAR)
           END IF
@@ -13591,8 +13630,10 @@ C CSDTVCM(CSFVEC,DETVEC,IWAY,ICOPY,ISYM,ISPC,IMAXMIN_OR_GAS)
       END IF
 *
       IF(NTEST.GE.1000) THEN
+        if (ga_nodeid().eq.0) then
         WRITE(6,*) ' Output vector from MV7 '
         WRITE(6,*) ' ===================== '
+        endif
         IF(ICISTR.GT.1) THEN
           CALL WRTVCD(dbl_mb(CB),LUHC,1,-1)
         ELSE 
@@ -15426,7 +15467,7 @@ CNW   DIMENSION SV(*),CV(*)
       LOGICAL ANYLOCAL
 *
       CALL LUCIAQENTER('RASSG')
-      NTEST = 0000
+      NTEST = 20 !0000 
       NTEST = MAX(NTEST,IPRCIX)
       IF(NTEST.GE.20.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' ================='
@@ -15453,8 +15494,8 @@ CNW   DIMENSION SV(*),CV(*)
 * Loop over batches over sigma blocks
       IOFF_S = 1
       DO JBATS = 1, NBATS
-        IF(NTEST.GE.10000) WRITE(6,*) ' JBATS, LBATS(..) = ',
-     &                                  JBATS, LBATS(JBATS),NBATS
+        IF(NTEST.GE.10000)
+     &   WRITE(6,*) ' JBATS, LBATS(..) = ', JBATS, LBATS(JBATS),NBATS
 *. Obtain sigma for batch of blocks
 C            SBLOCK(NBLOCK,IBLOCK,IBOFF,CB,HCB,LUC,IRESTRICT,LUCBLK) 
         LEN = 0
@@ -15511,6 +15552,15 @@ CNW       CALL COPVEC(SB(IOFF),SV(IOFF_S),LEN)
       END DO
 *
       IF(ICISTR.NE.1) CALL ITODS(-1,1,-1,LUHC)
+      cpu_vog  = util_cpusec()
+      wall_vog = util_wallsec()
+      call ga_sync()
+      cpu_vog  = util_cpusec() - cpu_vog
+      wall_vog = util_wallsec()- wall_vog
+      write(*,00002) ga_nodeid(), cpu_vog , wall_vog !VOG timings
+00002     format(/'RASSGProc',i6,' Task  times  cpu:',f11.1,
+     &           's     wall:',f11.1,'s')
+      if (ga_nodeid().eq.0) WRITE(6,*) 'Exit ga_sync of RASSG3'
       IF(NTEST.GE.200) THEN
         IF(ICISTR.NE.1) THEN
           if (ga_nodeid().eq.0) WRITE(6,*) ' Final S-vector on disc'
@@ -19561,7 +19611,6 @@ cnw       GOTO 999
 cglm    ^ end IF for skipping command in NWChem env.
 *
 cGLM   IF(CARD(2:7).EQ.'AKBKME') THEN
-cVOG   Obsolete. This is set to 1 (Q-vectors on DISC/GAs)
        IF(rtdb_get(rtdb,'lucia:IAKBK_MET',mt_int,1,iakbk_met)) then
 
 *. Readin method for performing AKBK calculations
@@ -21910,12 +21959,12 @@ C?    WRITE(6,*) ' Check,  I_DO_NEWCCV = ',  I_DO_NEWCCV
    
 *. Check number of orbitals and insert occupations for ALL/REST
 
-*
-*. VOG: Break GAS-spaces into smaller GAS spaces
 * 
-*      IF(CARDX(1:4).EQ.'AKBK') THEN 
-       write(*,*) 'Fragmeting the active spaces into smaller GAS spaces'
-c      call akbkqspace
+*. VOG: Break GAS-spaces into smaller GAS spaces
+*
+*      IF(CARDX(1:4).EQ.'AKBK') THEN
+c      write(*,*) 'Fragmeting the active spaces into smaller GAS spaces'
+c      call fraggas
 *      END IF
 ************************************************************
 *                                                          *
@@ -32318,7 +32367,9 @@ C
 * construct  STSTSX and STSTDX giving
 * symmetry of sx (dx) connecting two given string symmetries
 *
-      IMPLICIT REAL*8(A-H,O-Z)
+      INCLUDE 'wrkspc.inc'
+#include "global.fh"
+cVOG  IMPLICIT REAL*8(A-H,O-Z)
       INTEGER STSTSX(NSMST,NSMST),STSTDX(NSMST,NSMST)
 *
       DO 100 ILSTSM = 1, NSMST
@@ -32331,7 +32382,7 @@ C
   100 CONTINUE
 *
       NTEST = 0
-      IF(NTEST.NE.0) THEN
+      IF(NTEST.NE.0.and.ga_nodeid().eq.0) THEN
         WRITE(6,*) ' STSTSM: STSTSX, STSTDX '
         CALL IWRTMA(STSTSX,NSMST,NSMST,NSMST,NSMST)
         CALL IWRTMA(STSTDX,NSMST,NSMST,NSMST,NSMST)
@@ -33013,6 +33064,7 @@ C     VVTOV(VECIN1,VECIN2,VECUT,NDIM)
 * = 1 : symmetry block is included , all OO types
 * = 2 : symmetry block is included , lower OO types
 *
+#include "global.fh"
 *. Input
       DIMENSION ISMOST(*),IMMLST(*)
 *. Output
@@ -33060,7 +33112,7 @@ C     VVTOV(VECIN1,VECIN2,VECUT,NDIM)
 *     ^ End of IDC switch 
 *
       NTEST = 0
-      IF ( NTEST .NE. 0 ) THEN
+      IF ( NTEST .NE. 0 .and.ga_nodeid().eq.0) THEN
          WRITE(6,*)
          WRITE(6,*) ' Output from ZBLTP '
          WRITE(6,*) ' =================='

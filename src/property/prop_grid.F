@@ -57,11 +57,19 @@ c     recalculate step
       if(ga_nodeid().eq.0) then
       buffer = "PARAMETERS of gaussian cube file"
       call util_print_centered(luout, trim(buffer),.true., .true.)
+<<<<<<< HEAD
       WRITE(*,'(1X,A,T12,":",3F6.3)') "step (Ang)",step
       write(*,'(1X,A,T12,":",3I4)') "ngrid",ngrid
       write(*,'(1X,A,T12,":",I9)') "npoints",npoints
       write(*,'(1X,A,T12,":",3(F6.3,4X))') "rmax (Ang)",rmax*cau2ang
       write(*,'(1X,A,T12,":",3(F6.3,4X))') "rmin (Ang)",rmin*cau2ang
+=======
+      WRITE(*,'(1X,A,T12,":",3F12.3)') "step",step
+      write(*,'(1X,A,T12,":",3I3)') "ngrid",ngrid
+      write(*,'(1X,A,T12,":",I9)') "npoints",npoints
+      write(*,'(1X,A,T12,":",3(F12.3,4X))') "rmax",rmax*cau2ang
+      write(*,'(1X,A,T12,":",3(F12.3,4X))') "rmin",rmin*cau2ang
+>>>>>>> master
       write(*,*) "------------------------------------------------"
       end if
 c     ---------------------------
@@ -156,7 +164,7 @@ c      un = 54
       if (.not.geom_ncent(geom,nat)) call
      &    errquit('hnd_elpmap: geom_ncent',911,GEOM_ERR)
    
-      write(un,*) "Marat"
+      write(un,*) "NWChem"
       write(un,*) "Gaussian Cube file"
 9498  format(I5,3F12.6)
       write(un,9498)

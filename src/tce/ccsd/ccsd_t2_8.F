@@ -53,6 +53,7 @@ C     i0 ( p3 p4 h1 h2 )_vt + = 1/2 * Sum ( p5 p6 ) * t ( p5 p6 h1 h2 )_t * v ( 
       INTEGER isuperp
       INTEGER l_c
       INTEGER k_c
+      integer p5b_in,p6b_in
       DOUBLE PRECISION FACTORIAL
       EXTERNAL NXTASK
       EXTERNAL FACTORIAL
@@ -76,8 +77,15 @@ C     i0 ( p3 p4 h1 h2 )_vt + = 1/2 * Sum ( p5 p6 ) * t ( p5 p6 h1 h2 )_t * v ( 
       IF (.not.MA_PUSH_GET(mt_dbl,dimc,'cs',l_cs,k_cs)) CALL
      & ERRQUIT('ccsd_t2_8',0,MA_ERR)
       CALL DFILL(dimc,0.0d0,dbl_mb(k_cs),1)
+#if 0
       DO p5b = noab+1,noab+nvab
       DO p6b = p5b,noab+nvab
+#else
+         do p5b_in=ga_nodeid()+1,ga_nodeid()+nvab
+            p5b=mod(p5b_in,nvab)+noab+1
+            do p6b_in=ga_nodeid()+1,ga_nodeid()+nvab+noab-p5b
+               p6b=mod(p6b_in,noab+nvab-p5b+1)+p5b
+#endif
       IF (int_mb(k_spin+p5b-1)+int_mb(k_spin+p6b-1) .eq. int_mb(k_spin+h
      &1b-1)+int_mb(k_spin+h2b-1)) THEN
       IF (ieor(int_mb(k_sym+p5b-1),ieor(int_mb(k_sym+p6b-1),ieor(int_mb(
@@ -198,7 +206,9 @@ C     i0 ( p3 p4 h1 h2 )_vt + = 1/2 * Sum ( p5 p6 ) * t ( p5 p6 h1 h2 )_t * v ( 
       double precision, allocatable :: f_b(:)
       double precision, allocatable :: f_c(:)
       double precision, allocatable :: f_t(:)
+#ifdef USE_FASTMEM
       !dec$ attributes fastmem :: f_a,f_b,f_c,f_t
+#endif
       integer :: e_a,e_b,e_c,e_t
 #else
       integer k_a, l_a
@@ -208,6 +218,7 @@ C     i0 ( p3 p4 h1 h2 )_vt + = 1/2 * Sum ( p5 p6 ) * t ( p5 p6 h1 h2 )_t * v ( 
       logical e_a,e_b,e_c,e_t
 #endif
       double precision alpha
+      integer p5b_in,p6b_in
       INTEGER NXTASK
       EXTERNAL NXTASK
       nprocs = GA_NNODES()
@@ -261,8 +272,15 @@ C     i0 ( p3 p4 h1 h2 )_vt + = 1/2 * Sum ( p5 p6 ) * t ( p5 p6 h1 h2 )_t * v ( 
      &             * int_mb(k_range+h1b-1) * int_mb(k_range+h2b-1)
 #ifdef USE_F90_ALLOCATABLE
               CALL DFILL(dimc,0.0d0,f_c,1)
+#if 0
               DO p5b = noab+1,noab+nvab
                DO p6b = p5b,noab+nvab
+#else
+      DO p5b_in =ga_nodeid(),ga_nodeid()+nvab-1
+         p5b=mod(p5b_in,nvab)+noab+1
+         DO p6b_in=ga_nodeid(),ga_nodeid()+nvab+noab-p5b
+            p6b=mod(p6b_in,noab+nvab-p5b+1)+p5b
+#endif
                 IF (int_mb(k_spin+p5b-1)+int_mb(k_spin+p6b-1) .eq.
      &              int_mb(k_spin+h1b-1)+int_mb(k_spin+h2b-1)) THEN
                  IF (ieor(int_mb(k_sym+p5b-1),ieor(int_mb(k_sym+p6b-1),

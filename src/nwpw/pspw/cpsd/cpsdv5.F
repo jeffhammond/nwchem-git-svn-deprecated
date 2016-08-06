@@ -145,6 +145,8 @@ cccc#include "frac_occ.fh"
       character*12 control_boundry
       external     control_boundry
 
+      logical      pspw_HFX_localize2
+      external     pspw_HFX_localize2
       logical      pspw_SIC,pspw_SIC_relaxed,pspw_qmmm_found
       logical      pspw_HFX,pspw_HFX_relaxed,psp_pawexist
       logical      psp_semicore,control_Mulliken
@@ -174,8 +176,8 @@ cccc#include "frac_occ.fh"
       external psp_U_psputerm,meta_found,ion_disp_on
       integer  ion_nconstraints,ion_ndof
       external ion_nconstraints,ion_ndof
-      logical  control_print
-      external control_print
+      logical  control_print,ion_makehmass2
+      external control_print,ion_makehmass2
 c#include "Parallel.fh"
       integer  Parallel_threadid,Parallel_nthreads,Parallel_maxthreads
       external Parallel_threadid,Parallel_nthreads,Parallel_maxthreads
@@ -508,6 +510,7 @@ c      call frac_occ_init(rtdb,ispin,ne)
          if (fractional) write(luout,1132)
          call pspw_print_SIC(luout)
          call pspw_print_HFX(luout)
+         if (ion_makehmass2()) write(luout,1135)
          write(luout,1140)
          do ia = 1,ion_nkatm()
            call psp_print(ia)
@@ -779,9 +782,11 @@ c         end do
         call Dneall_m_diagonalize(0,dbl_mb(hml(1)),
      >                              dbl_mb(eig(1)),.false.)
 
-        call Dneall_fmf_Multiply(0,dcpl_mb(psi1(1)),npack1,
-     >                            dbl_mb(hml(1)),  1.0d0,
-     >                            dcpl_mb(psi2(1)),0.0d0)
+*       **** do not rotate if wannier localization ***
+        if (.not.pspw_HFX_localize2())
+     >      call Dneall_fmf_Multiply(0,dcpl_mb(psi1(1)),npack1,
+     >                                 dbl_mb(hml(1)),  1.0d0,
+     >                                 dcpl_mb(psi2(1)),0.0d0)
       end if
 
 *                |***************************|
@@ -1099,6 +1104,9 @@ c      call frac_occ_end()
  1130 FORMAT(5X,' electron spin        = ',A)
  1131 FORMAT(5X,' exchange-correlation = ',A)
  1132 FORMAT(5X,' using fractional occupation')
+ 1135 FORMAT(/' The masses of QM H atoms converted to 2.0 amu. ',
+     >       /' To turn off this default',
+     >        ' set nwpw:makehmass2 .false.')
  1140 FORMAT(/' elements involved in the cluster:')
  1150 FORMAT(5X,I2,': ',A4,'  core charge:',F4.1,'  lmax=',I1)
  1151 FORMAT(5X,'        cutoff =',4F8.3)

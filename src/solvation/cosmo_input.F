@@ -128,8 +128,9 @@ c     used which can be overridden by user-provided values
 c
       do_cosmo = .true.
       do_cosmo_model = DO_COSMO_YK 
-      dielec   =78.4d+00
-      dielecinf = 1.333d0*1.333d0 ! n**2 (refractive index squarred)
+      dielec   =78.4d+00 ! default water dielectric
+      solvname_short = 'h2o'
+      solvname_long = 'water'
       cosmo_screen = COSMO_SCREEN_ST
       cosmo_sccor  = COSMO_SCCOR_LAGRA ! surface charge correction adapted for geometry optimzations
       minbem   =2
@@ -146,12 +147,17 @@ c
 c     smd model defaults
 c
       do_cosmo_smd = .false.
-      sola = -1.d0
-      solb = -1.d0
-      solc = -1.d0
-      solg = -1.d0
-      solh = -1.d0
-      soln = -1.d0
+      if (dielec.eq.78.4d+00) then
+         solvname_short  = 'h2o'
+         solvname_long  = 'water'
+         sola =  0.82d0
+         solb =  0.35d0
+         solc =  0.d0
+         solg =  103.62d0
+         solh =  0.d0
+         soln =  1.333d0
+         dielecinf = soln*soln ! n**2 (refractive index squared)
+      end if
 c
 c     vem model defaults
 c
@@ -215,6 +221,10 @@ c
       else if(inp_compare(.false.,'solvent',field)) then
          if(.not. inp_a(solvname_short))
      $     call errquit('cosmo_input: solvent',911,INPUT_ERR)
+         if (solvname_short.eq.'water') then
+             solvname_short = 'h2o'
+             solvname_long = 'water'
+         end if
          if (.not.rtdb_cput(rtdb,'cosmo:solvent',1,solvname_short))
      $     call errquit('cosmo_input: rtdb put failed',911,RTDB_ERR)
 c

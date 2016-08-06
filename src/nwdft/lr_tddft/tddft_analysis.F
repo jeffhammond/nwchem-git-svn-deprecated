@@ -130,11 +130,14 @@ c
       double precision na,nb,s2
       integer ja1,ja2,ka1,ka2,jb1,jb2,kb1,kb2,la1,la2,lb1,lb2,ja3,jb3
       double precision xa1,xa2,ya1,ya2,xb1,xb2,yb1,yb2,rc1,rc2
+      integer itrial
+      integer l_trials,k_trials
       integer l_x(2),k_x(2)
       integer l_y(2),k_y(2)
       integer l_corr,k_corr
       integer dummy,request
-      double precision osc_str
+      double precision osc_str(3),osc_str_tot
+      logical oscstr
 c
 c     jochen 2009, 2011, 2014:
 c     rotatory strengths, CD spectra, velocity gauge:
@@ -219,8 +222,17 @@ c
       if (ipol.lt.1 .or. ipol.gt.2) call errquit(
      &   pname//'ipol out of range',0,CALC_ERR)
 c
-      osc_str = 0.0d0
       call dcopy(20,0.0d0,0,tmom,1)
+c
+      oscstr = .true. 
+      osc_str_tot = 0.0d0
+      do i=1,3
+        cntr(i)=0.0d0
+        osc_str(i) = 0.d0
+      enddo
+      do i=1,20
+        tmom(i)=0.0d0
+      enddo
 c
 c     MN solvation models
       if(cosmo_on.and.cosmo_phase.eq.2) then
@@ -264,12 +276,11 @@ c     cdspectrum, so we make that option dependent on cdspectrum
 c     
       reverse = (reverse.and.cdspectrum)
 c
-c     sanity check: right now we can't do unrestricted calcs with GIAOs
-      if (lgiao .and. ipol.ne.1) then
-        call errquit('TDDFT: GIAO and Unrestricted not yet supported',
-     &     0, INPUT_ERR)
-      end if
-c
+c ... jochen 01/16: UDFT should now be possible with GIAOs,
+c     but the results don't yet seem correct
+      if (lgiao .and. ipol.ne.1 .and. nodezero) write(luout,*)
+     &  '*** WARNING: UDFT GIAO Rotatory Strengths Not (yet) Correct'
+c     
 c     calculate Buckingham-Dunn rotatory strength tensor?
       if (.not.rtdb_get(rtdb,'tddft:bdtensor',mt_log,1,lquad))
      $  lquad=.false.
@@ -315,7 +326,7 @@ c     Initialize for GMH coupling
         enddo
       end if  ! gmh  
 c        
-      if ((cdspectrum.and.lgiao) .or. gmh) then         
+      if ((cdspectrum.and.lgiao) .or. gmh. or. oscstr) then         
 c        
 c        Calculate the overlap: S matrix
          if (.not. ga_create(mt_dbl, nbf_ao, nbf_ao, 'AO ovl',
@@ -326,7 +337,7 @@ c        Calculate the overlap: S matrix
          if (oskel)call sym_symmetrize(geom, ao_bas_han,.false.,g_smat)
        end if
 c
-       if (cdspectrum .or. gmh) then 
+       if (cdspectrum .or. gmh .or. oscstr) then 
 c        
 c        We will create arrays for some dipole matrix elements here.
 c        adapted from dft_main0d.F
@@ -344,7 +355,7 @@ c        == Compute the dipole integrals for the 3 components ==
 c
        end if
 c
-       if (cdspectrum) then
+       if (cdspectrum .or. oscstr) then
 c
 c        magnetic dipole moment integrals (r x nabla), times 0.5:
 c
@@ -412,7 +423,7 @@ c       need to re-initialize
         call schwarz_init(geom,ao_bas_han)                
       end if                    ! cdspectrum .and. lgiao
 
-      if (cdspectrum .or. velocity) then
+      if (cdspectrum .or. velocity .or. oscstr) then
         if (.not. ga_create(MT_DBL, nbf_ao, nbf_ao, 'g_tmpdip',
      $     nbf_ao, 0, g_tmpdip))
      $     call errquit(pname//'g_tmpdip',0, GA_ERR)
@@ -456,7 +467,7 @@ c
      &       'tddft_analysis: cannot get cnc from rtdb',
      &       0,rtdb_err)
         end if
-      end if
+      end if  ! reverse
 c
 c --------------------------------
 c Number of occupied virtual pairs
@@ -719,7 +730,7 @@ c
         if (.not.ga_create(mt_dbl,n,n,'work',-1,-1,g_work)) call
      &     errquit('tddft_analysis: failed to create g_work 2',
      &     0, GA_ERR)
-      end if
+      end if  ! cdspectrum .and. lgiao
 
       if (nodezero.and.util_print('excited state',print_default))
      1  write(LuOut,*)
@@ -732,10 +743,10 @@ c outer loop over roots
 c
         do i=1,ipol
           if (nov(i).gt.0) then
-            call ga_get(g_x(i),1,nov(i),n,n,dbl_mb(k_x(i)),1)
+            call ga_get(g_x(i),1,nov(i),n,n,dbl_mb(k_x(i)),nov(i))
           endif
           if (.not.tda.and.nov(i).gt.0)
-     1    call ga_get(g_y(i),1,nov(i),n,n,dbl_mb(k_y(i)),1)
+     1    call ga_get(g_y(i),1,nov(i),n,n,dbl_mb(k_y(i)),nov(i))
 c
           call ga_zero(g_td(i))  ! zero out transition density matrices
           call ga_zero(g_tdtot(i)) ! zero out total transition density matrices
@@ -791,126 +802,18 @@ c
        if (.not. do_s2) goto 1111
 c
         if (ipol.eq.2) then
-          s2=na-(na-nb)/2.0d0+((na-nb)/2.0d0)**2
 c
-c alpha excitation ket
+          call tddft_s2(tda,nfc,nocc,nmo,nfv,nov,
+     &         dbl_mb(k_x(1)),dbl_mb(k_x(2)),
+     &         dbl_mb(k_y(1)),dbl_mb(k_y(2)),
+     &         dbl_mb(k_corr),s2)
 c
-          la1=0
-          do ja1=nfc(1)+1,nocc(1)
-            do ka1=nocc(1)+1,nmo(1)-nfv(1)
-              la1=la1+1
-              xa1=dbl_mb(k_x(1)+la1-1)
-              ya1=0.0d0
-              if (.not.tda) ya1=dbl_mb(k_y(1)+la1-1)
-              if (dabs(xa1+ya1).gt.1.0d-5) then
-c a alpha and j beta exchange
-                do jb1=nfc(2)+1,nocc(2)
-c alpha excitation bra
-                  la2=0
-                  do ja2=nfc(1)+1,nocc(1)
-                    do ka2=nocc(1)+1,nmo(1)-nfv(1)
-                      la2=la2+1
-                      if (ja1.eq.ja2) then
-                        xa2=dbl_mb(k_x(1)+la2-1)
-                        ya2=0.0d0
-                        if (.not.tda) ya2=dbl_mb(k_y(1)+la2-1)
-                        rc1=dbl_mb(k_corr+(jb1-1)*nmo(1)+ka2-1)
-                        rc2=dbl_mb(k_corr+(jb1-1)*nmo(1)+ka1-1)
-                        s2=s2-(xa2-ya2)*(xa1+ya1)*rc1*rc2
-                      endif
-                    enddo
-                  enddo
-c beta excitation bra
-                  lb2=0
-                  do jb2=nfc(2)+1,nocc(2)
-                    do kb2=nocc(2)+1,nmo(2)-nfv(2)
-                      lb2=lb2+1
-                      if (jb1.eq.jb2) then
-                        xb2=dbl_mb(k_x(2)+lb2-1)
-                        yb2=0.0d0
-                        if (.not.tda) yb2=dbl_mb(k_y(2)+lb2-1)
-                        rc1=dbl_mb(k_corr+(jb2-1)*nmo(1)+ja1-1)
-                        rc2=dbl_mb(k_corr+(kb2-1)*nmo(1)+ka1-1)
-                        s2=s2-(xb2-yb2)*(xa1+ya1)*rc1*rc2
-                      endif
-                    enddo
-                  enddo
-                enddo
-c i alpha and j beta exchange
-                do ja3=nfc(1)+1,nocc(1)
-                  if (ja3.ne.ja1) then
-                    do jb1=nfc(2)+1,nocc(2)
-c same alpha excitation bra
-                      rc1=dbl_mb(k_corr+(jb1-1)*nmo(1)+ja3-1)
-                      s2=s2-(xa1-ya1)*(xa1+ya1)*rc1*rc1
-                    enddo
-                  endif
-                enddo
-              endif
-            enddo
-          enddo
-c
-c beta excitation ket
-c
-          lb1=0
-          do jb1=nfc(2)+1,nocc(2)
-            do kb1=nocc(2)+1,nmo(2)-nfv(2)
-              lb1=lb1+1
-              xb1=dbl_mb(k_x(2)+lb1-1)
-              yb1=0.0d0
-              if (.not.tda) yb1=dbl_mb(k_y(2)+lb1-1)
-              if (dabs(xb1+yb1).gt.1.0d-5) then
-c i alpha and b beta exchange
-                do ja1=nfc(1)+1,nocc(1)
-c beta excitation bra
-                  lb2=0
-                  do jb2=nfc(2)+1,nocc(2)
-                    do kb2=nocc(2)+1,nmo(2)-nfv(2)
-                      lb2=lb2+1
-                      if (jb1.eq.jb2) then
-                        xb2=dbl_mb(k_x(2)+lb2-1)
-                        yb2=0.0d0
-                        if (.not.tda) yb2=dbl_mb(k_y(2)+lb2-1)
-                        rc1=dbl_mb(k_corr+(kb1-1)*nmo(1)+ja1-1)
-                        rc2=dbl_mb(k_corr+(kb2-1)*nmo(1)+ja1-1)
-                        s2=s2-(xb2-yb2)*(xb1+yb1)*rc1*rc2
-                      endif
-                    enddo
-                  enddo
-c alpha excitation bra
-                  la2=0
-                  do ja2=nfc(1)+1,nocc(1)
-                    do ka2=nocc(1)+1,nmo(1)-nfv(1)
-                      la2=la2+1
-                      if (ja1.eq.ja2) then
-                        xa2=dbl_mb(k_x(1)+la2-1)
-                        ya2=0.0d0
-                        if (.not.tda) ya2=dbl_mb(k_y(1)+la2-1)
-                        rc1=dbl_mb(k_corr+(jb1-1)*nmo(1)+ja2-1)
-                        rc2=dbl_mb(k_corr+(kb1-1)*nmo(1)+ka2-1)
-                        s2=s2-(xa2-ya2)*(xb1+yb1)*rc1*rc2
-                      endif
-                    enddo
-                  enddo
-                enddo
-c i alpha and j beta exchange
-                do jb3=nfc(2)+1,nocc(2)
-                  if (jb3.ne.jb1) then
-                    do ja1=nfc(1)+1,nocc(1)
-c same beta excitation bra
-                      rc1=dbl_mb(k_corr+(jb3-1)*nmo(1)+ja1-1)
-                      s2=s2-(xb1-yb1)*(xb1+yb1)*rc1*rc1
-                    enddo
-                  endif
-                enddo
-              endif
-            enddo
-          enddo
           if (nodezero.and.util_print('excited state',print_default)
      1      .and.(nfc(1).eq.nfc(2)))
      2      write(LuOut,9180) s2
           if (lcivecs) s2_save(n) = s2
-        endif
+c
+        endif ! ipol
 c
  1111   continue ! skip over s2 calculation, if set
 c
@@ -918,14 +821,16 @@ c --------------------------------------------------
 c Compute transition moments and oscillator strength
 c --------------------------------------------------
 c
+        osc_str_tot = 0.0d0
         do i=1,3
-           cntr(i)=0.0d0
+          cntr(i)=0.0d0
+          osc_str(i) = 0.d0
         enddo
         do i=1,20
           tmom(i)=0.0d0
         enddo
 c
-        if (cdspectrum) then           
+        if (cdspectrum .or. oscstr) then           
 c     initialize transition dipoles for this transition (mainly debug)
            do icomp = 1,3
               el_transdip (icomp) = 0d0
@@ -953,6 +858,8 @@ c       magnetic transition dipoles if that was requested by input:
         if (cdspectrum .and. lgiao) then
           
           do i = 1, ipol
+
+            if (debug) write(luout,*) 'giao: spin i = ',ipol
 
 c           step 1: calculate 'transition perturbed MOs' from the
 c           solution vectors
@@ -1127,7 +1034,7 @@ c       Continue with non-GIAO magnetic dipoles
 c       and electric multipoles in length representation
 c       ------------------------------------------------
 
-        if (cdspectrum .or. velocity) then
+        if (cdspectrum .or. velocity .or. oscstr) then
            alo(1) = 1
            ahi(1) = nbf_ao
            alo(2) = 1
@@ -1153,7 +1060,7 @@ c       g_td has X component here
 c
         do i=1,ipol
 c
-          if (cdspectrum) then
+          if (cdspectrum .or. oscstr) then
 c
 c     The following is adapted from rttdf_utils.F:
 c     recompute the electric transition dipoles (mainly to
@@ -1228,7 +1135,7 @@ c
           do i=1,ipol
 
 c     jochen: 
-            if (cdspectrum) then
+            if (cdspectrum .or. oscstr) then
 
              do icomp = 1,3
 
@@ -1297,7 +1204,7 @@ c
           enddo
 
 c     jochen:
-          if (cdspectrum) then
+          if (cdspectrum .or. oscstr) then
             do icomp = 1,3
               el_transdip(icomp) = el_transdip(icomp) *dsqrt(2.0d0)
               mag_transdip(icomp) = mag_transdip(icomp) *dsqrt(2.0d0)
@@ -1325,13 +1232,18 @@ c
      1        (triplet.and.(mult.ne.3))) then
             write(LuOut,9210)
           else
-            osc_str = 
-     &        2.0d0/3.0d0*(tmom(2)**2+tmom(3)**2+tmom(4)**2)*apbval(n)
+c            osc_str = 
+c     &        2.0d0/3.0d0*(tmom(2)**2+tmom(3)**2+tmom(4)**2)*apbval(n)
 c
+            call tddft_oscstr(tmom, apbval(n), mag_transdip, 
+     &          osc_str, osc_str_tot)
+
             write(LuOut,9200) tmom(2),tmom(3),tmom(4),
      1                        tmom(5),tmom(6),tmom(7),
      2                        tmom(8),tmom(9),tmom(10),
-     2                        osc_str
+     2                        osc_str(1),osc_str(2),osc_str(3),
+     2                        osc_str_tot
+
 c
 c           ------------------------
 c           print data related to CD
@@ -1724,7 +1636,7 @@ c
      1  util_print('excited state',print_default)) write(LuOut,*)
 
 c       jochen:
-      if (cdspectrum .or. gmh) then
+      if (cdspectrum .or. gmh .or. oscstr) then
 c       Clean up arrays used for CD spectra
         do icomp = 1,3
           if (.not. ga_destroy(g_dipole(icomp))) call errquit
@@ -1736,8 +1648,10 @@ c       Clean up arrays used for CD spectra
       
       if (cdspectrum .and. lgiao) then
         do i = 1,ipol
-          if (.not.ga_destroy(g_vecB1)) call
-     &       errquit(pname//'ga_destroy failed g_vecB1',0,GA_ERR)
+          if (.not.ga_destroy(g_vecB1(i))) then
+            write(word,'(a,i1)') 'vecB1',i
+            call errquit(pname//'ga_destroy failed '//word,0,GA_ERR)
+          end if
         end do
         if (.not.ga_destroy(g_vecT)) call
      &     errquit(pname//'ga_destroy failed g_vecT',0,GA_ERR)
@@ -1755,7 +1669,7 @@ c
       if (.not. ga_destroy(g_temp)) call errquit
      &   (pname//'Could not destroy g_temp', 0, GA_ERR)
 c     
-      if (cdspectrum .or. velocity) then
+      if (cdspectrum .or. velocity .or. oscstr) then
         if (.not. ga_destroy(g_tmpdip)) call errquit
      &     (pname//'Could not destroy g_tmpdip', 0, GA_ERR)
       endif                     ! cdspectrum .or. velocity
@@ -1778,14 +1692,17 @@ c
  9200 format(5x,'Transition Moments    X',f9.5,'   Y',f9.5,'   Z',f9.5
      1    ,/,5x,'Transition Moments   XX',f9.5,'  XY',f9.5,'  XZ',f9.5
      2    ,/,5x,'Transition Moments   YY',f9.5,'  YZ',f9.5,'  ZZ',f9.5
-     7    ,/,5x,'Dipole Oscillator Strength',20x,f12.5)
+     5    ,/,5x,'Dipole Oscillator Strength',18x,f14.10
+     5    ,/,5x,'Electric Quadrupole       ',18x,f14.10
+     5    ,/,5x,'Magnetic Dipole           ',18x,f14.10
+     5    ,/,5x,'Total Oscillator Strength ',18x,f14.10)
  9210 format(5x,'Transition Moments                    Spin forbidden'
      1    ,/,5x,'Oscillator Strength                   Spin forbidden')
- 9120 format(5x,'Occ.',i5,2x,a4,'---  Virt.',i5,2x,a4,f10.5)
+ 9120 format(5x,'Occ.',i5,2x,a4,'---  Virt.',i5,2x,a4,f12.5)
  9130 format(5x,'Occ.',i5,2x,a4,'---  Virt.',i5,2x,a4,f8.5,' X')
  9140 format(5x,'Occ.',i5,2x,a4,'---  Virt.',i5,2x,a4,f8.5,' Y')
  9150 format(5x,'Occ.',i5,1x,a5,1x,a4,'---  Virt.',
-     1  i5,1x,a5,1x,a4,f10.5)
+     1  i5,1x,a5,1x,a4,f12.5)
  9160 format(5x,'Occ.',i5,1x,a5,1x,a4,'---  Virt.',
      1  i5,1x,a5,1x,a4,f8.5,' X')
  9170 format(5x,'Occ.',i5,1x,a5,1x,a4,'---  Virt.',
@@ -1819,6 +1736,11 @@ c
       if (.not.rtdb_put(rtdb,'tddft:energy',mt_dbl,1,energy))
      1  call errquit('tddft_analysis: failed to put tddft energy',0,
      &       RTDB_ERR)
+c     storing all calculated excited state energies on RTDB
+      if(.not.rtdb_put(rtdb,'tddft:energy-all',mt_dbl,nroots,
+     $                 apbval(1:nroots)))
+     $  call errquit('tddft_analysis: failed to put tddft all energy',0,
+     $       RTDB_ERR)
 c
 c -----------------------
 c MN solvation models --> 
@@ -1887,6 +1809,8 @@ c it is possible that the states reorder.  We can't use the character
 c of singlet and triplet states to identify states since they can be
 c similar.
 c
+      call civecs_fix_phase(g_x,g_y,ipol,tda)
+c
       if (lcivecs) then
         if (.not.rtdb_cget(rtdb,'tddft:civecs',1,fn_civecs))
      1   call errquit('tddft_analysis: failed to read vector',0,
@@ -1897,91 +1821,80 @@ c
         if (triplet) fn_civecs=fn_civecs(1:len_fn_civecs)//"_triplet"
        endif  ! lcivecs
 c
-       if (nodezero.and.lcivecs) then
+      if (nodezero.and.lcivecs) then
          write(luout,*) "fn_civecs: ",fn_civecs
          call util_file_name_resolve(fn_civecs, .false.)
-         open(unit=69,file=fn_civecs,form='formatted',status='unknown')
+         open(unit=69,file=fn_civecs,form='unformatted',
+     1             status='unknown')
          write(LuOut,2010) fn_civecs
          rewind(69)
-         write(69,*) tda
-         write(69,*) ipol
-         write(69,*) nroots
+         write(69) tda
+         write(69) ipol
+         write(69) nroots
          if (ipol.eq.1) nocc(2) = 0
-         write(69,*) nocc(1),nocc(2)
+         write(69) nocc(1),nocc(2)
          if (ipol.eq.1) nmo(2) = 0
-         write(69,*) nmo(1),nmo(2)
+         write(69) nmo(1),nmo(2)
          if (ipol.eq.1) nfc(2) = 0
-         write(69,*) nfc(1),nfc(2)
+         write(69) nfc(1),nfc(2)
          if (ipol.eq.1) nfv(2) = 0
-         write(69,*) nfv(1),nfv(2)
+         write(69) nfv(1),nfv(2)
          if (ipol.eq.1) nov(2) = 0
-         write(69,*) nov(1),nov(2)
-         write(69,*)
-       endif ! nodezero
+         write(69) nov(1),nov(2)
+         write(69)
+      endif ! nodezero
 c
  2000 format(/,2x,'No CI vector file is created')
  2010 format(/,2x,'CI vectors are stored in ',a32)
 c
-c ------------
-c Tamm-Dancoff
-c ------------
+c ------------------------------------------------
+c Write out the solution vectors for TDDFT and TDA
+c ------------------------------------------------
 c
-c Modified for RPA with B = 0
+       do i=1,ipol
+        if (.not.tda) then
+           call ga_add(1.0d0,g_x(i),1.0d0,g_y(i),g_x(i))  ! g_x = X+Y
+           call ga_add(1.0d0,g_x(i),-2.0d0,g_y(i),g_y(i)) ! g_y = X+Y-2Y = X-Y
+        endif
+       enddo ! ipol
 c
-      if (tda) then
+       do n=1,nroots
 c
-c       Write out solution vectors: X (Y=0 in TDA)
+         if (nodezero.and.lcivecs) then
+           write(69)apbval(n)  ! energy of the root
+           write(69)s2_save(n) ! <S2> value of the root
+         endif ! nodezero
 c
-        if (nodezero.and.lcivecs) then
-         do n=1,nroots
-           write(69,*)apbval(n)  ! energy of the root
-           write(69,*)s2_save(n) ! <S2> value of the root
-           do i=1,ipol
-             do m=1,nov(i)
-               call ga_get(g_x(i),m,m,n,n,r,1)
-               write(69,*) r
-             enddo ! nov
-           enddo ! ipol
-         enddo  ! nroots
-        endif  ! nodezero and lcivecs
+         do i=1,ipol
 c
-c --------------------
-c Full linear response
-c --------------------
+c         Allocate memory
+          if (.not.ma_push_get(mt_dbl,nov(i),"slice",l_trials,k_trials))
+     1      call errquit(trim(pname)//"failed to alloc slice",0,0)
 c
-      else  ! full tddft
+          if (.not.tda) then
+            call ga_get(g_x(i),1,nov(i),n,n,dbl_mb(k_trials),nov(i))
+            if (nodezero.and.lcivecs) 
+     &         call swrite(69,dbl_mb(k_trials),nov(i))
 c
-c       g_x = X+Y and g_y = X-Y
+            call ga_get(g_y(i),1,nov(i),n,n,dbl_mb(k_trials),nov(i))
+            if (nodezero.and.lcivecs)
+     &         call swrite(69,dbl_mb(k_trials),nov(i))
 c
-        do i=1,ipol
-           call ga_add(1.0d0,g_x(i), 1.0d0,g_y(i),g_x(i)) ! X+Y
-           call ga_add(1.0d0,g_x(i),-2.0d0,g_y(i),g_y(i)) ! X+Y-2Y = X-Y
-        enddo
+          else 
+            call ga_get(g_x(i),1,nov(i),n,n,dbl_mb(k_trials),nov(i)) ! Y = 0
+            if (nodezero.and.lcivecs) 
+     &         call swrite(69,dbl_mb(k_trials),nov(i))
+          endif ! tda
 c
-c       Write out vectors: X+Y and X-Y
+c         Deallocate memory
+          if (.not.ma_pop_stack(l_trials))
+     $       call errquit(pname//"failed to pop stack",0,0)
 c
-        if (nodezero.and.lcivecs) then
-           do n=1,nroots
-             write(69,*)apbval(n)  ! energy of the root
-             write(69,*)s2_save(n) ! <S2> value of the root
-             do i=1,ipol
-               do m=1,nov(i)
-                 call ga_get(g_x(i),m,m,n,n,r,1) ! X vectors
-                 write(69,*) r
-               enddo ! nov
-             enddo ! ipol
+         enddo ! ipol
 c
-             do i=1,ipol
-               do m=1,nov(i)
-                 call ga_get(g_y(i),m,m,n,n,r,1) ! Y vectors
-                 write(69,*) r
-               enddo ! nov
-             enddo ! ipol
-           enddo ! nroots
-        endif  ! nodezero or lcivecs
-      endif ! tda
+       enddo ! nroots
 c
-      if (nodezero.and.lcivecs) close(unit=69)
+       if (nodezero.and.lcivecs) close(unit=69)
 c
 c ------
 c Return
@@ -2027,7 +1940,7 @@ c
        enddo
       end if ! gmh
 c
-      if (cdspectrum.and.lgiao) then
+      if ((cdspectrum.and.lgiao) .or. oscstr) then
         if (.not.ga_destroy(g_smat)) call errquit
      2     ('tddft_analysis: failed to destroy g_smat',0, GA_ERR)
       end if
